@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from PIL import Image
+import base64
 
 # Set up page layout and appearance
 st.set_page_config(
@@ -89,7 +90,7 @@ except Exception as e:
 st.sidebar.header("⚙️ Product Specifications")
 
 # Visual Input Method Selector
-upload_method = st.sidebar.radio("Select Visual Reference Method:", ["Multi-Angle 2D Photos", "3D CAD Model (.STL)"])
+upload_method = st.sidebar.radio("Select Visual Reference Method:", ["Multi-Angle 2D Photos", "3D CAD Model (.STL/.STEP)"])
 
 uploaded_top = None
 uploaded_front = None
@@ -104,7 +105,8 @@ if upload_method == "Multi-Angle 2D Photos":
     uploaded_front = st.sidebar.file_uploader("Upload FRONT View (Length x Height)", type=["png", "jpg", "jpeg"])
     uploaded_side = st.sidebar.file_uploader("Upload SIDE View (Width x Height)", type=["png", "jpg", "jpeg"])
 else:
-    uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL)", type=["stl"])
+    # FIXED: FILE TYPES EXPANDED TO ACCEPT STL, STEP AND STP
+    uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
     if uploaded_stl is not None:
         try:
             import trimesh
@@ -466,77 +468,146 @@ if results:
             plt.close(fig)
             
         with col_stack:
-            # --- PURE PYTHON 3D DYNAMIC STACKING VISUALIZER (Manager's Feature 3.2!) ---
-            fig3d = plt.figure(figsize=(4, 4))
-            ax3d = fig3d.add_subplot(111, projection='3d')
-            
-            # Render realistic 3D wireframe boxes aligned in 3D representing your actual parts inside
-            l_box = best_box["Int. Length [mm]"]
-            w_box = best_box["Int. Width [mm]"]
-            h_box = best_box["Int. Height [mm]"]
-            
-            # Scale coordinates down for Matplotlib aspect ratio rendering stability
-            scale_factor = 100.0 / l_box
-            l_scaled = l_box * scale_factor
-            w_scaled = w_box * scale_factor
-            h_scaled = h_box * scale_factor
-            
-            part_l_scaled = ox * scale_factor
-            part_w_scaled = oy * scale_factor
-            part_h_scaled = oz * scale_factor
-            
-            # Draw the outer box wireframe
-            v_box = np.array([
-                [0, 0, 0], [l_scaled, 0, 0], [l_scaled, w_scaled, 0], [0, w_scaled, 0],
-                [0, 0, h_scaled], [l_scaled, 0, h_scaled], [l_scaled, w_scaled, h_scaled], [0, w_scaled, h_scaled]
-            ])
-            box_faces = [
-                [v_box[0], v_box[1], v_box[5], v_box[4]], [v_box[1], v_box[2], v_box[6], v_box[5]],
-                [v_box[2], v_box[3], v_box[7], v_box[6]], [v_box[3], v_box[0], v_box[4], v_box[7]]
-            ]
-            box_poly = Poly3DCollection(box_faces, facecolors='none', edgecolors='#212529', linewidths=1.5, alpha=0.5)
-            ax3d.add_collection3d(box_poly)
-            
-            # Draw stacked part compartments dynamically layer-by-layer!
-            for layer in range(nz):
-                z_floor = layer * (part_h_scaled + 2)  # slight gap for dividers
+            if upload_method == "3D CAD Model (.STL/.STEP)" and uploaded_stl is not None:
+                # --- ACTIVE 3D STL MODEL VIEWER ---
+                st.markdown("##### 🧊 Interactive 3D CAD Mesh Viewer:")
                 
-                # Draw grid compartments
-                for r in range(ny):
-                    y_start = (start_y_offset + r * (oy + sep_xy)) * scale_factor
-                    for c in range(nx):
-                        x_start = (start_x_offset + c * (ox + sep_xy)) * scale_factor
-                        
-                        # Draw individual 3D solid parts inside the wireframe box!
-                        vp = np.array([
-                            [x_start, y_start, z_floor], 
-                            [x_start + part_l_scaled, y_start, z_floor], 
-                            [x_start + part_l_scaled, y_start + part_w_scaled, z_floor], 
-                            [x_start, y_start + part_w_scaled, z_floor],
-                            [x_start, y_start, z_floor + part_h_scaled], 
-                            [x_start + part_l_scaled, y_start, z_floor + part_h_scaled], 
-                            [x_start + part_l_scaled, y_start + part_w_scaled, z_floor + part_h_scaled], 
-                            [x_start, y_start + part_w_scaled, z_floor + part_h_scaled]
-                        ])
-                        part_faces = [
-                            [vp[0], vp[1], vp[5], vp[4]], [vp[1], vp[2], vp[6], vp[5]],
-                            [vp[2], vp[3], vp[7], vp[6]], [vp[3], vp[0], vp[4], vp[7]],
-                            [vp[4], vp[5], vp[6], vp[7]]
-                        ]
-                        part_poly = Poly3DCollection(part_faces, facecolors='#a5d8ff', edgecolors='#1971c2', linewidths=0.5, alpha=0.7)
-                        ax3d.add_collection3d(part_poly)
+                filename = uploaded_stl.name.lower()
+                try:
+                    uploaded_stl.seek(0) # Reset stream buffer to prevent empty models
+                    
+                    if filename.endswith('.step') or filename.endswith('.stp'):
+                        import trimesh
+                        mesh_cad = trimesh.load(uploaded_stl, file_type='step')
+                        stl_bytes = mesh_cad.export(file_type='stl')
+                        b64_stl = base64.b64encode(stl_bytes).decode('utf-8')
+                    else:
+                        stl_data = uploaded_stl.read()
+                        b64_stl = base64.b64encode(stl_data).decode('utf-8')
+                    
+                    raw_html = """
+                    <html>
+                    <head>
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+                        <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/STLLoader.js"></script>
+                        <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/controls/OrbitControls.js"></script>
+                        <style>body { margin: 0; overflow: hidden; } #canvas { width: 100%; height: 260px; }</style>
+                    </head>
+                    <body>
+                        <div id="canvas"></div>
+                        <script>
+                            const container = document.getElementById('canvas');
+                            const scene = new THREE.Scene();
+                            scene.background = new THREE.Color(0xf8f9fa);
+                            
+                            const camera = new THREE.PerspectiveCamera(45, container.clientWidth / 260, 0.1, 1000);
+                            
+                            const renderer = new THREE.WebGLRenderer({ antialias: true });
+                            renderer.setSize(container.clientWidth, 260);
+                            container.appendChild(renderer.domElement);
+                            
+                            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+                            controls.enableDamping = true;
+                            
+                            const ambientLight = new THREE.AmbientLight(0x888888);
+                            scene.add(ambientLight);
+                            const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+                            dirLight1.position.set(1, 1, 1).normalize();
+                            scene.add(dirLight1);
+                            
+                            const stlBase64 = "REPLACE_STL_BASE64";
+                            const binString = atob(stlBase64);
+                            const len = binString.length;
+                            const bytes = new Uint8Array(len);
+                            for (let i = 0; i < len; i++) {
+                                bytes[i] = binString.charCodeAt(i);
+                            }
+                            
+                            const loader = new THREE.STLLoader();
+                            const geometry = loader.parse(bytes.buffer);
+                            
+                            const material = new THREE.MeshPhongMaterial({ 
+                                color: 0x74c0fc, 
+                                specular: 0x111111, 
+                                shininess: 200,
+                                side: THREE.DoubleSide
+                            });
+                            const mesh = new THREE.Mesh(geometry, material);
+                            
+                            geometry.computeBoundingBox();
+                            const boundingBox = geometry.boundingBox;
+                            const center = new THREE.Vector3();
+                            boundingBox.getCenter(center);
+                            mesh.position.sub(center);
+                            scene.add(mesh);
+                            
+                            const size = new THREE.Vector3();
+                            boundingBox.getSize(size);
+                            const maxDim = Math.max(size.x, size.y, size.z);
+                            const fov = camera.fov * (Math.PI / 180);
+                            let cameraZ = Math.abs(maxDim / 2 * Math.tan(fov * 2));
+                            cameraZ *= 2.0; 
+                            
+                            camera.position.set(maxDim, maxDim, cameraZ);
+                            camera.lookAt(new THREE.Vector3(0, 0, 0));
+                            controls.target.set(0, 0, 0);
+                            controls.update();
+                            
+                            const gridHelper = new THREE.GridHelper(maxDim * 2, 20);
+                            gridHelper.position.y = - (size.y / 2);
+                            scene.add(gridHelper);
+                            
+                            function animate() {
+                                requestAnimationFrame(animate);
+                                controls.update();
+                                renderer.render(scene, camera);
+                            }
+                            animate();
+                            
+                            window.addEventListener('resize', () => {
+                                camera.aspect = container.clientWidth / 260;
+                                camera.updateProjectionMatrix();
+                                renderer.setSize(container.clientWidth, 260);
+                            });
+                        </script>
+                    </body>
+                    </html>
+                    """
+                    html_template = raw_html.replace("REPLACE_STL_BASE64", b64_stl)
+                    st.components.v1.html(html_template, height=270)
+                except Exception as e3d:
+                    st.error(f"⚠️ 3D CAD Parsing Error: {e3d}")
+            else:
+                # Standard 3D Stacking Blueprint if no STL is uploaded
+                fig3d = plt.figure(figsize=(4, 3.5))
+                ax3d = fig3d.add_subplot(111, projection='3d')
+                w_scale = 100
+                l_scale = w_scale * (box_l / box_w)
+                h_scale = 30
                 
-                # Big Red Layer annotation on the front panel
-                ax3d.text(-15, -15, z_floor + part_h_scaled/2, f"{layer + 1}", color='#dc3545', fontweight='bold', fontsize=20, ha='center', va='center', zorder=100)
+                for layer in range(nz):
+                    z_start = layer * (h_scale + 5)
+                    v = np.array([
+                        [0, 0, z_start], [l_scale, 0, z_start], [l_scale, w_scale, z_start], [0, w_scale, z_start],
+                        [0, 0, z_start + h_scale], [l_scale, 0, z_start + h_scale], [l_scale, w_scale, z_start + h_scale], [0, w_scale, z_start + h_scale]
+                    ])
+                    faces = [
+                        [v[0], v[1], v[5], v[4]], [v[1], v[2], v[6], v[5]], [v[2], v[3], v[7], v[6]],
+                        [v[3], v[0], v[4], v[7]], [v[4], v[5], v[6], v[7]], [v[0], v[1], v[2], v[3]]
+                    ]
+                    color = '#a5d8ff' if layer < nz - 1 else '#74c0fc'
+                    poly = Poly3DCollection(faces, facecolors=color, edgecolors='#1971c2', linewidths=1.5, alpha=0.8)
+                    ax3d.add_collection3d(poly)
+                    ax3d.text(l_scale/2, -10, z_start + h_scale/2, f"{layer + 1}", color='#dc3545', fontweight='bold', fontsize=22, ha='center', va='center', zorder=100)
+                    
+                ax3d.set_xlim(-10, l_scale + 10)
+                ax3d.set_ylim(-20, w_scale + 10)
+                ax3d.set_zlim(0, nz * (h_scale + 5) + 10)
+                ax3d.view_init(elev=22, azim=-65)
+                ax3d.axis('off')
                 
-            ax3d.set_xlim(-20, l_scaled + 20)
-            ax3d.set_ylim(-20, w_scaled + 20)
-            ax3d.set_zlim(-10, h_scaled + 10)
-            ax3d.view_init(elev=22, azim=-65)
-            ax3d.axis('off')
-            
-            plt.title("3D Part Stacking View", fontsize=11, fontweight='bold', color='#212529', pad=10)
-            st.pyplot(fig3d)
-            plt.close(fig3d)
+                plt.title("Vertical Stacking Blueprint", fontsize=11, fontweight='bold', color='#212529', pad=10)
+                st.pyplot(fig3d)
+                plt.close(fig3d)
 else:
     st.warning("⚠️ No suitable boxes in your database can fit this product under the active weight or dimension parameters.")
