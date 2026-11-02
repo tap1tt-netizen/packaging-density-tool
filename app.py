@@ -443,7 +443,7 @@ if results:
             
         with col_stack:
             if upload_method == "3D CAD Model (.STL)" and uploaded_stl is not None:
-                # --- ACTIVE 3D STL MODEL ---
+                # --- ACTIVE 3D STL MODEL VIEWER ---
                 st.markdown("##### 🧊 Interactive 3D STL Model:")
                 stl_data = uploaded_stl.read()
                 b64_stl = base64.b64encode(stl_data).decode('utf-8')
