@@ -88,9 +88,9 @@ st.sidebar.header("⚙️ Product Specifications")
 
 # Product Physical Dimensions
 st.sidebar.markdown("#### Part Dimensions (mm)")
-prod_l = st.sidebar.number_input("Part Length (mm)", min_value=1, value=170, step=1)
-prod_w = st.sidebar.number_input("Part Width (mm)", min_value=1, value=110, step=1)
-prod_h = st.sidebar.number_input("Part Height (mm)", min_value=1, value=40, step=1)
+prod_l = st.sidebar.number_input("Part Length (mm)", min_value=1, value=170, step=1, help="Horizontal flat length (e.g. ear-to-ear span)")
+prod_w = st.sidebar.number_input("Part Width (mm)", min_value=1, value=110, step=1, help="Horizontal flat width (e.g. base depth)")
+prod_h = st.sidebar.number_input("Part Height (mm)", min_value=1, value=40, step=1, help="Vertical thickness (how high it stands when flat)")
 
 # Product Weight
 st.sidebar.markdown("#### Part Weight (kg)")
@@ -106,27 +106,35 @@ clear_height = st.sidebar.slider("Height Clearance buffer (mm)", min_value=0, ma
 sep_xy = st.sidebar.slider("Separator X/Y Thickness (mm)", min_value=0, max_value=10, value=2, help="Thickness of the horizontal dividers")
 sep_z = st.sidebar.slider("Separator Z Thickness (mm)", min_value=0, max_value=10, value=4, help="Thickness of the vertical shelf dividers")
 
+# Enforce stable flat orientation
+strict_flat = st.sidebar.checkbox("Strict Flat Packing (Highly Recommended)", value=True, help="Force the part to remain flat on its base (height stays at 40 mm) so it does not tip over in transit.")
+
 sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Volumetric Efficiency (%)", "Number of Parts per Box", "Box Price (€)"])
 
 
 # --- RECONMENDATION SYSTEM MATHEMATICS ---
-def calculate_3d_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h):
-    orientations = [
-        (p_l, p_w, p_h), (p_l, p_h, p_w),
-        (p_w, p_l, p_h), (p_w, p_h, p_l),
-        (p_h, p_l, p_w), (p_h, p_w, p_l)
-    ]
+def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h):
+    if strict_flat:
+        # Only allow flat orientations where 40 mm is locked as the vertical height
+        orientations = [
+            (p_l, p_w, p_h),
+            (p_w, p_l, p_h)
+        ]
+    else:
+        # Full 3D rotation (allowing parts to stand vertically on ears)
+        orientations = [
+            (p_l, p_w, p_h), (p_l, p_h, p_w),
+            (p_w, p_l, p_h), (p_w, p_h, p_l),
+            (p_h, p_l, p_w), (p_h, p_w, p_l)
+        ]
     
     best_qty = 0
     best_config = None
     best_grid_layout = (0, 0, 0)
     
     for px, py, pz in orientations:
-        # Number of slots along Length (X)
         nx = max(0, int((box_int_l - (2 * clear_side) + sep_xy) // (px + sep_xy)))
-        # Number of slots along Width (Y)
         ny = max(0, int((box_int_w - (2 * clear_side) + sep_xy) // (py + sep_xy)))
-        # Number of slots along Height (Z)
         nz = max(0, int((box_int_h - clear_height + sep_z) // (pz + sep_z)))
         
         total_parts = nx * ny * nz
@@ -136,6 +144,17 @@ def calculate_3d_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h):
             best_grid_layout = (nx, ny, nz)
             
     return best_qty, best_config, best_grid_layout
+
+
+# Helper to identify the physical placement style
+def determine_placement_style(p_l, p_w, p_h, oz):
+    dims = sorted([p_l, p_w, p_h]) # [40, 110, 170]
+    if int(oz) == int(dims[0]):
+        return "🟢 FLAT / HORIZONTAL (Resting on wide base, most stable)"
+    elif int(oz) == int(dims[1]):
+        return "⚠️ STANDING ON SIDE / EDGE"
+    else:
+        return "🚨 STANDING VERTICAL / ON END (Unstable, prone to tipping)"
 
 
 # Dynamic empty weight estimation of the FEFCO0201 flat sheets
@@ -165,8 +184,7 @@ for idx, row in df_inventory.iterrows():
     if pd.isna(box_int_l) or pd.isna(box_int_w) or pd.isna(box_int_h):
         continue
         
-    # Get optimal 3D layout count
-    parts_count, pack_orient, grid_layout = calculate_3d_packing(
+    parts_count, pack_orient, grid_layout = calculate_packing(
         box_int_l, box_int_w, box_int_h, 
         prod_l, prod_w, prod_h
     )
@@ -232,8 +250,6 @@ if results:
     # KPI Metric Cards
     st.subheader("💡 Best Matched Packing Insights")
     best_box = ranked_df.iloc[0]
-    
-    # Extract clean name so it doesn't wrap/truncate
     clean_box_size = best_box['Box ID / Specification'].split(':')[-1].strip()
     
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -292,17 +308,20 @@ if results:
         oy = int(best_box["_oy"])
         oz = int(best_box["_oz"])
         
+        # Calculate dynamic placement style
+        placement_style = determine_placement_style(prod_l, prod_w, prod_h, oz)
+        
         with col_text:
             st.markdown("<div class='guide-box'><h4><b>🛠️ 3-Step Simple Packing Guide</b></h4><hr>", unsafe_allow_html=True)
             
-            # Step 1: Orientation
+            # Step 1: Orientation with Placement Style description
             st.markdown(f"""
             <b>Step 1: Orient the Part</b><br>
-            Place each individual part into the box so that:
+            Place each individual part flat on its wide base (ears up, exactly as pictured in the photo):
             <ul>
-                <li>📐 <b>Lengthwise side:</b> {ox} mm</li>
-                <li>📐 <b>Widthwise side:</b> {oy} mm</li>
-                <li>📐 <b>Height side (pointing UP):</b> {oz} mm</li>
+                <li>📐 <b>Lengthwise (Left-to-Right):</b> {ox} mm</li>
+                <li>📐 <b>Widthwise (Front-to-Back):</b> {oy} mm</li>
+                <li>📐 <b>Height (pointing UP):</b> {oz} mm</li>
             </ul>
             """, unsafe_allow_html=True)
             
@@ -311,18 +330,18 @@ if results:
             <b>Step 2: Arrange the Floor Grid</b><br>
             Lay down a grid of <b>{nx} columns</b> and <b>{ny} rows</b> of parts on the floor of the box. 
             <ul>
-                <li>This packs exactly <b>{nx * ny} parts</b> on the layer.</li>
+                <li>This packs exactly <b>{nx * ny} parts</b> on this layer.</li>
                 <li>Place the 2mm partition grids between each part.</li>
             </ul>
             """, unsafe_allow_html=True)
             
-            # Step 3: Dynamic stacking guide (Checks if layers > 1)
+            # Step 3: Dynamic stacking guide
             if nz > 1:
                 st.markdown(f"""
                 <b>Step 3: Stacking Vertical Layers</b><br>
                 <ul>
                     <li>Lay down a flat 4mm cardboard divider sheet on top of your completed layer.</li>
-                    <li>Repeat the same grid layout on top of the divider sheet.</li>
+                    <li>Repeat the same grid layout of {nx*ny} parts on top.</li>
                     <li>Do this until you have built a total of <b>{nz} vertical layers</b> (reaching <b>{int(best_box['Number of Parts per Box'])} pieces</b> in total).</li>
                 </ul>
                 """, unsafe_allow_html=True)
