@@ -89,14 +89,14 @@ except Exception as e:
 st.sidebar.header("⚙️ Product Specifications")
 
 # Visual Input Method Selector
-upload_method = st.sidebar.radio("Select Visual Reference Method:", ["Multi-Angle 2D Photos", "3D CAD Model (.STL/.STEP)"])
+upload_method = st.sidebar.radio("Select Visual Reference Method:", ["Multi-Angle 2D Photos", "3D CAD Model (.STL)"])
 
 uploaded_top = None
 uploaded_front = None
 uploaded_side = None
 uploaded_stl = None
 
-# Auto-extraction variables
+# Default part dimensions
 auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
 
 if upload_method == "Multi-Angle 2D Photos":
@@ -104,20 +104,15 @@ if upload_method == "Multi-Angle 2D Photos":
     uploaded_front = st.sidebar.file_uploader("Upload FRONT View (Length x Height)", type=["png", "jpg", "jpeg"])
     uploaded_side = st.sidebar.file_uploader("Upload SIDE View (Width x Height)", type=["png", "jpg", "jpeg"])
 else:
-    uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
+    uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL)", type=["stl"])
     if uploaded_stl is not None:
-        filename = uploaded_stl.name.lower()
         try:
             import trimesh
             uploaded_stl.seek(0)
-            if filename.endswith('.step') or filename.endswith('.stp'):
-                mesh_cad = trimesh.load(uploaded_stl, file_type='step')
-            else:
-                mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
+            mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
             
-            # Automatically extract bounding box boundaries
+            # Extract bounding box boundaries dynamically (Manager's Feature 3.1!)
             bounds = mesh_cad.bounding_box.extents
-            # Sort to align with Length (longest), Width (medium), Height (shortest)
             dims = sorted(bounds)
             auto_h = round(dims[0], 1)
             auto_w = round(dims[1], 1)
@@ -151,7 +146,7 @@ strict_flat = st.sidebar.checkbox("Strict Flat Packing (Highly Recommended)", va
 sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Volumetric Efficiency (%)", "Number of Parts per Box", "Box Price (€)"])
 
 
-# --- RECONMENDATION SYSTEM MATHEMATICS ---
+# --- RECOMMENDATION SYSTEM MATHEMATICS ---
 def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h):
     if strict_flat:
         orientations = [
@@ -183,8 +178,9 @@ def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h):
     return best_qty, best_config, best_grid_layout
 
 
+# Helper to identify the physical placement style
 def determine_placement_style(p_l, p_w, p_h, oz):
-    dims = sorted([p_l, p_w, p_h])
+    dims = sorted([p_l, p_w, p_h]) # [40, 110, 170]
     if int(oz) == int(dims[0]):
         return "🟢 FLAT / HORIZONTAL (Resting on wide base, most stable)"
     elif int(oz) == int(dims[1]):
@@ -193,6 +189,7 @@ def determine_placement_style(p_l, p_w, p_h, oz):
         return "🚨 STANDING VERTICAL / ON END (Unstable, prone to tipping)"
 
 
+# Dynamic empty weight estimation of the FEFCO 0201 flat sheets
 def estimate_box_weight(ext_l, ext_w, ext_h, quality):
     if pd.isna(ext_l) or pd.isna(ext_w) or pd.isna(ext_h):
         return 0.15
@@ -220,6 +217,7 @@ for idx, row in df_inventory.iterrows():
     if pd.isna(box_int_l) or pd.isna(box_int_w) or pd.isna(box_int_h):
         continue
         
+    # Get optimal 3D layout count
     parts_count, pack_orient, grid_layout = calculate_packing(
         box_int_l, box_int_w, box_int_h, 
         prod_l, prod_w, prod_h
@@ -228,17 +226,21 @@ for idx, row in df_inventory.iterrows():
     if parts_count == 0:
         continue
         
+    # Calculate Weights
     box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row['Quality'])
     total_payload_wt = parts_count * prod_wt
     total_package_weight = total_payload_wt + box_weight
     
+    # Weight Rule Check (Boxes >= 600x400 bypass 15kg limit)
     is_large_box = (ext_l >= 600.0) and (ext_w >= 400.0)
     if not is_large_box and total_package_weight > 15.0:
         continue
         
+    # Structural Box Load check
     if total_payload_wt > row['Max. Load [kg]']:
         continue
         
+    # Volumes & Air Spaces
     box_internal_vol = box_int_l * box_int_w * box_int_h
     occupied_volume = parts_count * single_part_vol
     vol_efficiency = (occupied_volume / box_internal_vol) * 100
@@ -427,7 +429,7 @@ if results:
             ax.add_patch(patches.Rectangle((0, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
             ax.add_patch(patches.Rectangle((box_l - clear_side, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
             
-            # --- DYNAMIC GRID CENTERING LOGIC ---
+            # --- PERFECT CENTERING BLUEPRINT MATH ---
             total_grid_w = nx * ox + (nx - 1) * sep_xy
             total_grid_h = ny * oy + (ny - 1) * sep_xy
             leftover_x = (box_l - 2 * clear_side) - total_grid_w
@@ -436,7 +438,7 @@ if results:
             start_x_offset = clear_side + (leftover_x / 2)
             start_y_offset = clear_side + (leftover_y / 2)
             
-            # Draw perfectly centered parts
+            # Draw centered parts
             for r in range(ny):
                 y_pos = start_y_offset + r * (oy + sep_xy)
                 for c in range(nx):
@@ -464,7 +466,7 @@ if results:
             plt.close(fig)
             
         with col_stack:
-            # --- PURE PYTHON 3D DYNAMIC STACKING VISUALIZER (WebGL sandbox block proof!) ---
+            # --- PURE PYTHON 3D DYNAMIC STACKING VISUALIZER (Manager's Feature 3.2!) ---
             fig3d = plt.figure(figsize=(4, 4))
             ax3d = fig3d.add_subplot(111, projection='3d')
             
@@ -525,7 +527,7 @@ if results:
                         ax3d.add_collection3d(part_poly)
                 
                 # Big Red Layer annotation on the front panel
-                ax3d.text(-15, -15, z_floor + part_h_scaled/2, f"{layer + 1}", color='#dc3545', fontweight='bold', fontsize=20, ha='center', va='center')
+                ax3d.text(-15, -15, z_floor + part_h_scaled/2, f"{layer + 1}", color='#dc3545', fontweight='bold', fontsize=20, ha='center', va='center', zorder=100)
                 
             ax3d.set_xlim(-20, l_scaled + 20)
             ax3d.set_ylim(-20, w_scaled + 20)
