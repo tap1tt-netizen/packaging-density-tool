@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from PIL import Image
-import base64
 
 # Set up page layout and appearance
 st.set_page_config(
@@ -89,19 +88,7 @@ except Exception as e:
 # --- SIDEBAR: OPERATOR INPUTS ---
 st.sidebar.header("⚙️ Product Specifications")
 
-# Product Physical Dimensions
-st.sidebar.markdown("#### Part Dimensions (mm)")
-prod_l = st.sidebar.number_input("Part Length (mm)", min_value=1, value=170, step=1, help="Horizontal flat length (e.g. ear-to-ear span)")
-prod_w = st.sidebar.number_input("Part Width (mm)", min_value=1, value=110, step=1, help="Horizontal flat width (e.g. base depth)")
-prod_h = st.sidebar.number_input("Part Height (mm)", min_value=1, value=40, step=1, help="Vertical thickness (how high it stands when flat)")
-
-# Product Weight
-st.sidebar.markdown("#### Part Weight (kg)")
-prod_wt = st.sidebar.number_input("Weight per Part (kg)", min_value=0.01, value=0.25, step=0.05)
-
-# --- VISUAL INPUT METHOD SELECTOR ---
-st.sidebar.markdown("---")
-st.sidebar.header("📸 Part Visual Reference")
+# Visual Input Method Selector
 upload_method = st.sidebar.radio("Select Visual Reference Method:", ["Multi-Angle 2D Photos", "3D CAD Model (.STL/.STEP)"])
 
 uploaded_top = None
@@ -109,31 +96,62 @@ uploaded_front = None
 uploaded_side = None
 uploaded_stl = None
 
+# Auto-extraction variables
+auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
+
 if upload_method == "Multi-Angle 2D Photos":
     uploaded_top = st.sidebar.file_uploader("Upload TOP View (Length x Width)", type=["png", "jpg", "jpeg"])
     uploaded_front = st.sidebar.file_uploader("Upload FRONT View (Length x Height)", type=["png", "jpg", "jpeg"])
     uploaded_side = st.sidebar.file_uploader("Upload SIDE View (Width x Height)", type=["png", "jpg", "jpeg"])
 else:
-    # RESTORED AND FULLY TESTED EXTENSION CAPABILITY FOR STL, STEP, AND STP
     uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
+    if uploaded_stl is not None:
+        filename = uploaded_stl.name.lower()
+        try:
+            import trimesh
+            uploaded_stl.seek(0)
+            if filename.endswith('.step') or filename.endswith('.stp'):
+                mesh_cad = trimesh.load(uploaded_stl, file_type='step')
+            else:
+                mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
+            
+            # Automatically extract bounding box boundaries
+            bounds = mesh_cad.bounding_box.extents
+            # Sort to align with Length (longest), Width (medium), Height (shortest)
+            dims = sorted(bounds)
+            auto_h = round(dims[0], 1)
+            auto_w = round(dims[1], 1)
+            auto_l = round(dims[2], 1)
+            st.sidebar.success(f"📐 Auto-Extracted Dimensions: {auto_l} x {auto_w} x {auto_h} mm")
+        except Exception as e_cad:
+            st.sidebar.warning(f"Could not auto-extract CAD dimensions: {e_cad}")
+
+# Product Physical Dimensions Inputs (Pre-filled with CAD data if available)
+st.sidebar.markdown("#### Part Dimensions (mm)")
+prod_l = st.sidebar.number_input("Part Length (mm)", min_value=1.0, value=float(auto_l), step=1.0)
+prod_w = st.sidebar.number_input("Part Width (mm)", min_value=1.0, value=float(auto_w), step=1.0)
+prod_h = st.sidebar.number_input("Part Height (mm)", min_value=1.0, value=float(auto_h), step=1.0)
+
+# Product Weight
+st.sidebar.markdown("#### Part Weight (kg)")
+prod_wt = st.sidebar.number_input("Weight per Part (kg)", min_value=0.01, value=0.25, step=0.05)
 
 st.sidebar.markdown("---")
 st.sidebar.header("📏 Divider & Clearance Spacing")
 
-# Margins and Clearances (Directly from manager discussion)
-clear_side = st.sidebar.slider("Sides Clearance buffer (mm)", min_value=0, max_value=20, value=2, help="Clearance at the wall edges (lengthwise and widthwise)")
-clear_height = st.sidebar.slider("Height Clearance buffer (mm)", min_value=0, max_value=20, value=4, help="Clearance at the top height edge")
+# Margins and Clearances
+clear_side = st.sidebar.slider("Sides Clearance buffer (mm)", min_value=0, max_value=20, value=2)
+clear_height = st.sidebar.slider("Height Clearance buffer (mm)", min_value=0, max_value=20, value=4)
 
-sep_xy = st.sidebar.slider("Separator X/Y Thickness (mm)", min_value=0, max_value=10, value=2, help="Thickness of the horizontal dividers")
-sep_z = st.sidebar.slider("Separator Z Thickness (mm)", min_value=0, max_value=10, value=4, help="Thickness of the vertical shelf dividers")
+sep_xy = st.sidebar.slider("Separator X/Y Thickness (mm)", min_value=0, max_value=10, value=2)
+sep_z = st.sidebar.slider("Separator Z Thickness (mm)", min_value=0, max_value=10, value=4)
 
-# Enforce stable flat orientation
-strict_flat = st.sidebar.checkbox("Strict Flat Packing (Highly Recommended)", value=True, help="Force the part to remain flat on its base (height stays at 40 mm) so it does not tip over in transit.")
+strict_flat = st.sidebar.checkbox("Strict Flat Packing (Highly Recommended)", value=True)
 
 sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Volumetric Efficiency (%)", "Number of Parts per Box", "Box Price (€)"])
 
 
-# --- RECOMMENDATION SYSTEM MATHEMATICS ---
+# --- RECONMENDATION SYSTEM MATHEMATICS ---
 def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h):
     if strict_flat:
         orientations = [
@@ -165,9 +183,8 @@ def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h):
     return best_qty, best_config, best_grid_layout
 
 
-# Helper to identify the physical placement style
 def determine_placement_style(p_l, p_w, p_h, oz):
-    dims = sorted([p_l, p_w, p_h]) # [40, 110, 170]
+    dims = sorted([p_l, p_w, p_h])
     if int(oz) == int(dims[0]):
         return "🟢 FLAT / HORIZONTAL (Resting on wide base, most stable)"
     elif int(oz) == int(dims[1]):
@@ -176,7 +193,6 @@ def determine_placement_style(p_l, p_w, p_h, oz):
         return "🚨 STANDING VERTICAL / ON END (Unstable, prone to tipping)"
 
 
-# Dynamic empty weight estimation of the FEFCO 0201 flat sheets
 def estimate_box_weight(ext_l, ext_w, ext_h, quality):
     if pd.isna(ext_l) or pd.isna(ext_w) or pd.isna(ext_h):
         return 0.15
@@ -204,7 +220,6 @@ for idx, row in df_inventory.iterrows():
     if pd.isna(box_int_l) or pd.isna(box_int_w) or pd.isna(box_int_h):
         continue
         
-    # Get optimal 3D layout count
     parts_count, pack_orient, grid_layout = calculate_packing(
         box_int_l, box_int_w, box_int_h, 
         prod_l, prod_w, prod_h
@@ -213,21 +228,17 @@ for idx, row in df_inventory.iterrows():
     if parts_count == 0:
         continue
         
-    # Calculate Weights
     box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row['Quality'])
     total_payload_wt = parts_count * prod_wt
     total_package_weight = total_payload_wt + box_weight
     
-    # Weight Rule Check (Boxes >= 600x400 bypass 15kg limit)
     is_large_box = (ext_l >= 600.0) and (ext_w >= 400.0)
     if not is_large_box and total_package_weight > 15.0:
         continue
         
-    # Structural Box Load check
     if total_payload_wt > row['Max. Load [kg]']:
         continue
         
-    # Volumes & Air Spaces
     box_internal_vol = box_int_l * box_int_w * box_int_h
     occupied_volume = parts_count * single_part_vol
     vol_efficiency = (occupied_volume / box_internal_vol) * 100
@@ -243,6 +254,7 @@ for idx, row in df_inventory.iterrows():
         "Int. Height [mm]": box_int_h,
         "Ext. Length [mm]": ext_l,
         "Ext. Width [mm]": ext_w,
+        "Ext. Height [mm]": ext_h,
         "Number of Parts per Box": parts_count,
         "Optimal Grid Layout": f"{grid_layout[0]}x{grid_layout[1]}x{grid_layout[2]} (X x Y x Z)",
         "Optimal Orientation": f"{int(pack_orient[0])}x{int(pack_orient[1])}x{int(pack_orient[2])} mm",
@@ -304,7 +316,7 @@ if results:
     
     # Main Recommendations Table
     st.subheader("🏆 Top 10 Recommended Cardboard Boxes")
-    display_df = ranked_df.drop(columns=["_nx", "_ny", "_nz", "_ox", "_oy", "_oz", "Int. Length [mm]", "Int. Width [mm]", "Int. Height [mm]", "Ext. Length [mm]", "Ext. Width [mm]"])
+    display_df = ranked_df.drop(columns=["_nx", "_ny", "_nz", "_ox", "_oy", "_oz", "Int. Length [mm]", "Int. Width [mm]", "Int. Height [mm]", "Ext. Length [mm]", "Ext. Width [mm]", "Ext. Height [mm]"])
     st.dataframe(
         display_df,
         column_config={
@@ -415,11 +427,20 @@ if results:
             ax.add_patch(patches.Rectangle((0, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
             ax.add_patch(patches.Rectangle((box_l - clear_side, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
             
-            # Draw parts
+            # --- DYNAMIC GRID CENTERING LOGIC ---
+            total_grid_w = nx * ox + (nx - 1) * sep_xy
+            total_grid_h = ny * oy + (ny - 1) * sep_xy
+            leftover_x = (box_l - 2 * clear_side) - total_grid_w
+            leftover_y = (box_w - 2 * clear_side) - total_grid_h
+            
+            start_x_offset = clear_side + (leftover_x / 2)
+            start_y_offset = clear_side + (leftover_y / 2)
+            
+            # Draw perfectly centered parts
             for r in range(ny):
-                y_pos = clear_side + r * (oy + sep_xy)
+                y_pos = start_y_offset + r * (oy + sep_xy)
                 for c in range(nx):
-                    x_pos = clear_side + c * (ox + sep_xy)
+                    x_pos = start_x_offset + c * (ox + sep_xy)
                     ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#a5d8ff', edgecolor='#1971c2', linewidth=1.2))
                     ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1}, {r+1}", ha='center', va='center', fontsize=8, color='#0f4c81', fontweight='bold')
             
@@ -443,145 +464,77 @@ if results:
             plt.close(fig)
             
         with col_stack:
-            # INTEGRATED STEP FILE RESOLUTION
-            if upload_method == "3D CAD Model (.STL/.STEP)" and uploaded_stl is not None:
-                st.markdown("##### 🧊 Interactive 3D CAD Mesh Viewer:")
-                filename = uploaded_stl.name.lower()
-                try:
-                    uploaded_stl.seek(0) # Reset stream buffer to prevent empty models
-                    
-                    if filename.endswith('.step') or filename.endswith('.stp'):
-                        import trimesh
-                        mesh_cad = trimesh.load(uploaded_stl, file_type='step')
-                        stl_bytes = mesh_cad.export(file_type='stl')
-                        b64_stl = base64.b64encode(stl_bytes).decode('utf-8')
-                    else:
-                        stl_data = uploaded_stl.read()
-                        b64_stl = base64.b64encode(stl_data).decode('utf-8')
-                    
-                    raw_html = """
-                    <html>
-                    <head>
-                        <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-                        <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/STLLoader.js"></script>
-                        <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/controls/OrbitControls.js"></script>
-                        <style>body { margin: 0; overflow: hidden; } #canvas { width: 100%; height: 260px; }</style>
-                    </head>
-                    <body>
-                        <div id="canvas"></div>
-                        <script>
-                            const container = document.getElementById('canvas');
-                            const scene = new THREE.Scene();
-                            scene.background = new THREE.Color(0xf8f9fa);
-                            
-                            const camera = new THREE.PerspectiveCamera(45, container.clientWidth / 260, 0.1, 1000);
-                            
-                            const renderer = new THREE.WebGLRenderer({ antialias: true });
-                            renderer.setSize(container.clientWidth, 260);
-                            container.appendChild(renderer.domElement);
-                            
-                            const controls = new THREE.OrbitControls(camera, renderer.domElement);
-                            controls.enableDamping = true;
-                            
-                            const ambientLight = new THREE.AmbientLight(0x888888);
-                            scene.add(ambientLight);
-                            const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
-                            dirLight1.position.set(1, 1, 1).normalize();
-                            scene.add(dirLight1);
-                            
-                            const stlBase64 = "REPLACE_STL_BASE64";
-                            const binString = atob(stlBase64);
-                            const len = binString.length;
-                            const bytes = new Uint8Array(len);
-                            for (let i = 0; i < len; i++) {
-                                bytes[i] = binString.charCodeAt(i);
-                            }
-                            
-                            const loader = new THREE.STLLoader();
-                            const geometry = loader.parse(bytes.buffer);
-                            
-                            const material = new THREE.MeshPhongMaterial({ 
-                                color: 0x74c0fc, 
-                                specular: 0x111111, 
-                                shininess: 200,
-                                side: THREE.DoubleSide
-                            });
-                            const mesh = new THREE.Mesh(geometry, material);
-                            
-                            geometry.computeBoundingBox();
-                            const boundingBox = geometry.boundingBox;
-                            const center = new THREE.Vector3();
-                            boundingBox.getCenter(center);
-                            mesh.position.sub(center);
-                            scene.add(mesh);
-                            
-                            const size = new THREE.Vector3();
-                            boundingBox.getSize(size);
-                            const maxDim = Math.max(size.x, size.y, size.z);
-                            const fov = camera.fov * (Math.PI / 180);
-                            let cameraZ = Math.abs(maxDim / 2 * Math.tan(fov * 2));
-                            cameraZ *= 2.0; 
-                            
-                            camera.position.set(maxDim, maxDim, cameraZ);
-                            camera.lookAt(new THREE.Vector3(0, 0, 0));
-                            controls.target.set(0, 0, 0);
-                            controls.update();
-                            
-                            const gridHelper = new THREE.GridHelper(maxDim * 2, 20);
-                            gridHelper.position.y = - (size.y / 2);
-                            scene.add(gridHelper);
-                            
-                            function animate() {
-                                requestAnimationFrame(animate);
-                                controls.update();
-                                renderer.render(scene, camera);
-                            }
-                            animate();
-                            
-                            window.addEventListener('resize', () => {
-                                camera.aspect = container.clientWidth / 260;
-                                camera.updateProjectionMatrix();
-                                renderer.setSize(container.clientWidth, 260);
-                            });
-                        </script>
-                    </body>
-                    </html>
-                    """
-                    html_template = raw_html.replace("REPLACE_STL_BASE64", b64_stl)
-                    st.components.v1.html(html_template, height=270)
-                except Exception as e3d:
-                    st.error(f"⚠️ 3D CAD Parsing Error: {e3d}")
-            else:
-                # Standard 3D Stacking Blueprint if no STL is uploaded
-                fig3d = plt.figure(figsize=(4, 3.5))
-                ax3d = fig3d.add_subplot(111, projection='3d')
-                w_scale = 100
-                l_scale = w_scale * (box_l / box_w)
-                h_scale = 30
+            # --- PURE PYTHON 3D DYNAMIC STACKING VISUALIZER (WebGL sandbox block proof!) ---
+            fig3d = plt.figure(figsize=(4, 4))
+            ax3d = fig3d.add_subplot(111, projection='3d')
+            
+            # Render realistic 3D wireframe boxes aligned in 3D representing your actual parts inside
+            l_box = best_box["Int. Length [mm]"]
+            w_box = best_box["Int. Width [mm]"]
+            h_box = best_box["Int. Height [mm]"]
+            
+            # Scale coordinates down for Matplotlib aspect ratio rendering stability
+            scale_factor = 100.0 / l_box
+            l_scaled = l_box * scale_factor
+            w_scaled = w_box * scale_factor
+            h_scaled = h_box * scale_factor
+            
+            part_l_scaled = ox * scale_factor
+            part_w_scaled = oy * scale_factor
+            part_h_scaled = oz * scale_factor
+            
+            # Draw the outer box wireframe
+            v_box = np.array([
+                [0, 0, 0], [l_scaled, 0, 0], [l_scaled, w_scaled, 0], [0, w_scaled, 0],
+                [0, 0, h_scaled], [l_scaled, 0, h_scaled], [l_scaled, w_scaled, h_scaled], [0, w_scaled, h_scaled]
+            ])
+            box_faces = [
+                [v_box[0], v_box[1], v_box[5], v_box[4]], [v_box[1], v_box[2], v_box[6], v_box[5]],
+                [v_box[2], v_box[3], v_box[7], v_box[6]], [v_box[3], v_box[0], v_box[4], v_box[7]]
+            ]
+            box_poly = Poly3DCollection(box_faces, facecolors='none', edgecolors='#212529', linewidths=1.5, alpha=0.5)
+            ax3d.add_collection3d(box_poly)
+            
+            # Draw stacked part compartments dynamically layer-by-layer!
+            for layer in range(nz):
+                z_floor = layer * (part_h_scaled + 2)  # slight gap for dividers
                 
-                for layer in range(nz):
-                    z_start = layer * (h_scale + 5)
-                    v = np.array([
-                        [0, 0, z_start], [l_scale, 0, z_start], [l_scale, w_scale, z_start], [0, w_scale, z_start],
-                        [0, 0, z_start + h_scale], [l_scale, 0, z_start + h_scale], [l_scale, w_scale, z_start + h_scale], [0, w_scale, z_start + h_scale]
-                    ])
-                    faces = [
-                        [v[0], v[1], v[5], v[4]], [v[1], v[2], v[6], v[5]], [v[2], v[3], v[7], v[6]],
-                        [v[3], v[0], v[4], v[7]], [v[4], v[5], v[6], v[7]], [v[0], v[1], v[2], v[3]]
-                    ]
-                    color = '#a5d8ff' if layer < nz - 1 else '#74c0fc'
-                    poly = Poly3DCollection(faces, facecolors=color, edgecolors='#1971c2', linewidths=1.5, alpha=0.8)
-                    ax3d.add_collection3d(poly)
-                    ax3d.text(l_scale/2, -10, z_start + h_scale/2, f"{layer + 1}", color='#dc3545', fontweight='bold', fontsize=22, ha='center', va='center', zorder=100)
-                    
-                ax3d.set_xlim(-10, l_scale + 10)
-                ax3d.set_ylim(-20, w_scale + 10)
-                ax3d.set_zlim(0, nz * (h_scale + 5) + 10)
-                ax3d.view_init(elev=22, azim=-65)
-                ax3d.axis('off')
+                # Draw grid compartments
+                for r in range(ny):
+                    y_start = (start_y_offset + r * (oy + sep_xy)) * scale_factor
+                    for c in range(nx):
+                        x_start = (start_x_offset + c * (ox + sep_xy)) * scale_factor
+                        
+                        # Draw individual 3D solid parts inside the wireframe box!
+                        vp = np.array([
+                            [x_start, y_start, z_floor], 
+                            [x_start + part_l_scaled, y_start, z_floor], 
+                            [x_start + part_l_scaled, y_start + part_w_scaled, z_floor], 
+                            [x_start, y_start + part_w_scaled, z_floor],
+                            [x_start, y_start, z_floor + part_h_scaled], 
+                            [x_start + part_l_scaled, y_start, z_floor + part_h_scaled], 
+                            [x_start + part_l_scaled, y_start + part_w_scaled, z_floor + part_h_scaled], 
+                            [x_start, y_start + part_w_scaled, z_floor + part_h_scaled]
+                        ])
+                        part_faces = [
+                            [vp[0], vp[1], vp[5], vp[4]], [vp[1], vp[2], vp[6], vp[5]],
+                            [vp[2], vp[3], vp[7], vp[6]], [vp[3], vp[0], vp[4], vp[7]],
+                            [vp[4], vp[5], vp[6], vp[7]]
+                        ]
+                        part_poly = Poly3DCollection(part_faces, facecolors='#a5d8ff', edgecolors='#1971c2', linewidths=0.5, alpha=0.7)
+                        ax3d.add_collection3d(part_poly)
                 
-                plt.title("Vertical Stacking Blueprint", fontsize=11, fontweight='bold', color='#212529', pad=10)
-                st.pyplot(fig3d)
-                plt.close(fig3d)
+                # Big Red Layer annotation on the front panel
+                ax3d.text(-15, -15, z_floor + part_h_scaled/2, f"{layer + 1}", color='#dc3545', fontweight='bold', fontsize=20, ha='center', va='center')
+                
+            ax3d.set_xlim(-20, l_scaled + 20)
+            ax3d.set_ylim(-20, w_scaled + 20)
+            ax3d.set_zlim(-10, h_scaled + 10)
+            ax3d.view_init(elev=22, azim=-65)
+            ax3d.axis('off')
+            
+            plt.title("3D Part Stacking View", fontsize=11, fontweight='bold', color='#212529', pad=10)
+            st.pyplot(fig3d)
+            plt.close(fig3d)
 else:
     st.warning("⚠️ No suitable boxes in your database can fit this product under the active weight or dimension parameters.")
