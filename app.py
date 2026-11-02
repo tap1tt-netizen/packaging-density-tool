@@ -114,7 +114,6 @@ if upload_method == "Multi-Angle 2D Photos":
     uploaded_front = st.sidebar.file_uploader("Upload FRONT View (Length x Height)", type=["png", "jpg", "jpeg"])
     uploaded_side = st.sidebar.file_uploader("Upload SIDE View (Width x Height)", type=["png", "jpg", "jpeg"])
 else:
-    # UPDATED FILE UPLOADER TYPE TO ACCEPT STL, STEP, AND STP
     uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
 
 st.sidebar.markdown("---")
@@ -444,14 +443,17 @@ if results:
             
         with col_stack:
             if upload_method == "3D CAD Model (.STL/.STEP)" and uploaded_stl is not None:
-                # --- ACTIVE 3D STL MODEL VIEWER ---
+                # --- ACTIVE 3D CAD MODEL VIEWER ---
                 st.markdown("##### 🧊 Interactive 3D CAD Mesh Viewer:")
                 
                 filename = uploaded_stl.name.lower()
                 try:
-                    # SECURELY PARSE BOTH STL AND STEP CAD FORMATS
+                    # RESET FILE STREAM POINTERS (Locks the empty viewer bug!)
+                    uploaded_stl.seek(0)
+                    
                     if filename.endswith('.step') or filename.endswith('.stp'):
                         import trimesh
+                        # Safely load the STEP file model using trimesh
                         mesh_cad = trimesh.load(uploaded_stl, file_type='step')
                         stl_bytes = mesh_cad.export(file_type='stl')
                         b64_stl = base64.b64encode(stl_bytes).decode('utf-8')
