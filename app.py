@@ -133,7 +133,7 @@ strict_flat = st.sidebar.checkbox("Strict Flat Packing (Highly Recommended)", va
 sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Volumetric Efficiency (%)", "Number of Parts per Box", "Box Price (€)"])
 
 
-# --- RECOMMENDATION SYSTEM MATHEMATICS ---
+# --- RECONMENDATION SYSTEM MATHEMATICS ---
 def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h):
     if strict_flat:
         orientations = [
@@ -176,7 +176,7 @@ def determine_placement_style(p_l, p_w, p_h, oz):
         return "🚨 STANDING VERTICAL / ON END (Unstable, prone to tipping)"
 
 
-# Dynamic empty weight estimation of the FEFCO 0201 flat sheets
+# Dynamic empty weight estimation of the FEFCO0201 flat sheets
 def estimate_box_weight(ext_l, ext_w, ext_h, quality):
     if pd.isna(ext_l) or pd.isna(ext_w) or pd.isna(ext_h):
         return 0.15
@@ -199,12 +199,10 @@ for idx, row in df_inventory.iterrows():
     box_int_h = row['Height [mm]']
     ext_l = row['Ext. Length [mm]']
     ext_w = row['Ext.Width [mm]']
-    ext_h = row['Ext. Height [mm]']
     
     if pd.isna(box_int_l) or pd.isna(box_int_w) or pd.isna(box_int_h):
         continue
         
-    # Get optimal 3D layout count
     parts_count, pack_orient, grid_layout = calculate_packing(
         box_int_l, box_int_w, box_int_h, 
         prod_l, prod_w, prod_h
@@ -213,21 +211,17 @@ for idx, row in df_inventory.iterrows():
     if parts_count == 0:
         continue
         
-    # Calculate Weights
-    box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row['Quality'])
+    box_weight = estimate_box_weight(ext_l, ext_w, row['Ext. Height [mm]'], row['Quality'])
     total_payload_wt = parts_count * prod_wt
     total_package_weight = total_payload_wt + box_weight
     
-    # Weight Rule Check (Boxes >= 600x400 bypass 15kg limit)
     is_large_box = (ext_l >= 600.0) and (ext_w >= 400.0)
     if not is_large_box and total_package_weight > 15.0:
         continue
         
-    # Structural Box Load check
     if total_payload_wt > row['Max. Load [kg]']:
         continue
         
-    # Volumes & Air Spaces
     box_internal_vol = box_int_l * box_int_w * box_int_h
     occupied_volume = parts_count * single_part_vol
     vol_efficiency = (occupied_volume / box_internal_vol) * 100
@@ -342,7 +336,7 @@ if results:
         with col_text:
             st.markdown("<div class='guide-box'><h4><b>🛠️ 3-Step Simple Packing Guide</b></h4><hr>", unsafe_allow_html=True)
             
-            # Step 1: Orientation
+            # Step 1: Orientation with Placement Style description
             st.markdown(f"""
             <b>Step 1: Orient the Part</b><br>
             Place each individual part according to this orientation:<br>
@@ -383,20 +377,28 @@ if results:
                 
             st.markdown(f"<p style='color:#1864ab; margin-top:10px;'><b>⚖️ Operational Weight:</b> Safe at {best_box['Total Weight (kg)']} kg.</p></div>", unsafe_allow_html=True)
             
-            # Display uploaded part photo dynamically inside the packing guide panel
-            if upload_method == "Multi-Angle 2D Photos" and uploaded_top is not None:
+            # --- RENDER DYNAMIC 2D IMAGES BASED ON CHOSEN ORIENTATION STYLE ---
+            if upload_method == "Multi-Angle 2D Photos":
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.markdown("##### 📸 Active Orientation Photo View:")
                 
+                # Logic: Choose which view of the bracket to show the operator
                 dims = sorted([prod_l, prod_w, prod_h])
                 if int(oz) == int(dims[0]) and uploaded_top is not None:
+                    # Flat orientation -> Show TOP view
                     st.image(Image.open(uploaded_top), caption="Laying Flat (Top View)", use_column_width=True)
                 elif int(oz) == int(dims[1]) and uploaded_front is not None:
+                    # Side orientation -> Show FRONT view
                     st.image(Image.open(uploaded_front), caption="Standing on Edge (Front View)", use_column_width=True)
                 elif int(oz) == int(dims[2]) and uploaded_side is not None:
+                    # Vertical orientation -> Show SIDE view
                     st.image(Image.open(uploaded_side), caption="Standing Vertical (Side View)", use_column_width=True)
                 else:
-                    st.image(Image.open(uploaded_top), caption="Uploaded Top View Reference", use_column_width=True)
+                    # Fallback to Top View if uploaded
+                    if uploaded_top is not None:
+                        st.image(Image.open(uploaded_top), caption="Uploaded Top View Reference", use_column_width=True)
+                    else:
+                        st.info("💡 Upload photos in the sidebar to view active orientations here!")
             
         with col_flat:
             # Generate Matplotlib Blueprint of the floor layout
@@ -404,7 +406,7 @@ if results:
             box_l = best_box["Int. Length [mm]"]
             box_w = best_box["Int. Width [mm]"]
             ext_l = best_box["Ext. Length [mm]"]
-            ext_w = best_box["Ext. Width [mm]"]
+            ext_w = best_box["Ext.Width [mm]"]
             
             # Draw box border
             ax.add_patch(patches.Rectangle((0, 0), box_l, box_w, fill=False, edgecolor='#212529', linewidth=2.5, label='Box Wall'))
@@ -447,21 +449,20 @@ if results:
                 # --- ACTIVE 3D CAD MODEL VIEWER (Supports .stl and .step/.stp!) ---
                 st.markdown("##### 🧊 Interactive 3D CAD Mesh Viewer:")
                 
-                # If file is a STEP file, dynamically tessellate and mesh it on-the-fly using trimesh
+                # Convert STEP to STL on-the-fly using trimesh
                 filename = uploaded_stl.name.lower()
                 try:
                     if filename.endswith('.step') or filename.endswith('.stp'):
-                        # Read bytes into temporary memory and load using trimesh CAD loaders
+                        # Read bytes into trimesh
                         mesh_cad = trimesh.load(uploaded_stl, file_type='step')
-                        # Export CAD as an STL byte mesh
                         stl_bytes = mesh_cad.export(file_type='stl')
                         b64_stl = base64.b64encode(stl_bytes).decode('utf-8')
                     else:
-                        # Standard STL uploader
+                        # Standard STL file
                         stl_data = uploaded_stl.read()
                         b64_stl = base64.b64encode(stl_data).decode('utf-8')
                     
-                    # Standard Python string replacement (NO f prefix!) to bypass all syntax brace errors completely
+                    # Standard Python string replacement (NO f prefix!) to avoid f-string brace errors
                     raw_html = """
                     <html>
                     <head>
@@ -537,7 +538,7 @@ if results:
                     st.components.v1.html(html_template, height=270)
                 except Exception as e3d:
                     st.error(f"⚠️ 3D CAD Parsing Error: {e3d}")
-                    st.info("Ensure the CAD file has correct boundary geometries.")
+                    st.info("Ensure the CAD file has correct boundary geometries and cascadio is installed.")
             else:
                 # Standard 3D Stacking Blueprint if no STL is uploaded
                 fig3d = plt.figure(figsize=(4, 3.5))
