@@ -179,11 +179,11 @@ for idx, row in df_inventory.iterrows():
     box_int_h = row['Height [mm]']
     ext_l = row['Ext. Length [mm]']
     ext_w = row['Ext.Width [mm]']
-    ext_h = row['Ext. Height [mm]']
     
     if pd.isna(box_int_l) or pd.isna(box_int_w) or pd.isna(box_int_h):
         continue
         
+    # Get optimal 3D layout count
     parts_count, pack_orient, grid_layout = calculate_packing(
         box_int_l, box_int_w, box_int_h, 
         prod_l, prod_w, prod_h
@@ -192,7 +192,7 @@ for idx, row in df_inventory.iterrows():
     if parts_count == 0:
         continue
         
-    box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row['Quality'])
+    box_weight = estimate_box_weight(ext_l, ext_w, row['Ext. Height [mm]'], row['Quality'])
     total_payload_wt = parts_count * prod_wt
     total_package_weight = total_payload_wt + box_weight
     
@@ -432,16 +432,16 @@ if results:
                 
                 # Stack color gradient (top highlighted, lower lighter)
                 color = '#a5d8ff' if layer < nz - 1 else '#74c0fc'
-                poly = Poly3DCollection(faces, facecolors=color, edgecolors='#1971c2', linewidths=1.2, alpha=0.85)
+                poly = Poly3DCollection(faces, facecolors=color, edgecolors='#1971c2', linewidths=1.5, alpha=0.8)
                 ax3d.add_collection3d(poly)
                 
-                # Floor Labels "Layer 1", "Layer 2", "Layer 3" centered
-                ax3d.text(l_scale/2, w_scale/2, z_start + h_scale/2, f"Layer {layer + 1}", color='#0f4c81', fontweight='bold', ha='center', va='center', fontsize=9)
+                # Placing a big bold red "1", "2", "3" right on the front-facing facet
+                ax3d.text(l_scale/2, -10, z_start + h_scale/2, f"{layer + 1}", color='#dc3545', fontweight='bold', fontsize=22, ha='center', va='center', zorder=100)
                 
             ax3d.set_xlim(-10, l_scale + 10)
-            ax3d.set_ylim(-10, w_scale + 10)
+            ax3d.set_ylim(-20, w_scale + 10)
             ax3d.set_zlim(0, nz * (h_scale + 5) + 10)
-            ax3d.view_init(elev=25, azim=-45)
+            ax3d.view_init(elev=22, azim=-65)
             ax3d.axis('off')
             
             plt.title("Vertical Stacking Blueprint", fontsize=11, fontweight='bold', color='#212529', pad=10)
