@@ -115,13 +115,11 @@ sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Volumetric Effici
 # --- RECONMENDATION SYSTEM MATHEMATICS ---
 def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h):
     if strict_flat:
-        # Only allow flat orientations where 40 mm is locked as the vertical height
         orientations = [
             (p_l, p_w, p_h),
             (p_w, p_l, p_h)
         ]
     else:
-        # Full 3D rotation (allowing parts to stand vertically on ears)
         orientations = [
             (p_l, p_w, p_h), (p_l, p_h, p_w),
             (p_w, p_l, p_h), (p_w, p_h, p_l),
@@ -184,6 +182,7 @@ for idx, row in df_inventory.iterrows():
     if pd.isna(box_int_l) or pd.isna(box_int_w) or pd.isna(box_int_h):
         continue
         
+    # Get optimal 3D layout count
     parts_count, pack_orient, grid_layout = calculate_packing(
         box_int_l, box_int_w, box_int_h, 
         prod_l, prod_w, prod_h
@@ -215,6 +214,8 @@ for idx, row in df_inventory.iterrows():
         "Internal Dimensions": f"{int(box_int_l)}x{int(box_int_w)}x{int(box_int_h)} mm",
         "Int. Length [mm]": box_int_l,
         "Int. Width [mm]": box_int_w,
+        "Ext. Length [mm]": ext_l,
+        "Ext. Width [mm]": ext_w,
         "Number of Parts per Box": parts_count,
         "Optimal Grid Layout": f"{grid_layout[0]}x{grid_layout[1]}x{grid_layout[2]} (X x Y x Z)",
         "Optimal Orientation": f"{int(pack_orient[0])}x{int(pack_orient[1])}x{int(pack_orient[2])} mm",
@@ -276,7 +277,7 @@ if results:
     
     # Main Recommendations Table
     st.subheader("🏆 Top 10 Recommended Cardboard Boxes")
-    display_df = ranked_df.drop(columns=["_nx", "_ny", "_nz", "_ox", "_oy", "_oz", "Int. Length [mm]", "Int. Width [mm]"])
+    display_df = ranked_df.drop(columns=["_nx", "_ny", "_nz", "_ox", "_oy", "_oz", "Int. Length [mm]", "Int. Width [mm]", "Ext. Length [mm]", "Ext. Width [mm]"])
     st.dataframe(
         display_df,
         column_config={
@@ -317,7 +318,8 @@ if results:
             # Step 1: Orientation with Placement Style description
             st.markdown(f"""
             <b>Step 1: Orient the Part</b><br>
-            Place each individual part flat on its wide base (ears up, exactly as pictured in the photo):
+            Place each individual part according to this orientation:<br>
+            📌 <i>Orientation Style: <b>{placement_style}</b></i>
             <ul>
                 <li>📐 <b>Lengthwise (Left-to-Right):</b> {ox} mm</li>
                 <li>📐 <b>Widthwise (Front-to-Back):</b> {oy} mm</li>
@@ -359,6 +361,8 @@ if results:
             fig, ax = plt.subplots(figsize=(6, 4))
             box_l = best_box["Int. Length [mm]"]
             box_w = best_box["Int. Width [mm]"]
+            ext_l = best_box["Ext. Length [mm]"]
+            ext_w = best_box["Ext. Width [mm]"]
             
             # Draw box border
             ax.add_patch(patches.Rectangle((0, 0), box_l, box_w, fill=False, edgecolor='#212529', linewidth=2.5, label='Box Wall'))
@@ -377,8 +381,20 @@ if results:
                     ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#a5d8ff', edgecolor='#1971c2', linewidth=1.2))
                     ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1}, {r+1}", ha='center', va='center', fontsize=8, color='#0f4c81', fontweight='bold')
             
-            ax.set_xlim(-15, box_l + 15)
-            ax.set_ylim(-15, box_w + 15)
+            # --- CUSTOM RED DIMENSION INDICATOR ARROWS ---
+            # Horizontal dimension below the box
+            ax.annotate('', xy=(0, -25), xytext=(box_l, -25),
+                        arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
+            ax.text(box_l/2, -45, f"{int(ext_l)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center')
+            
+            # Vertical dimension on the right side
+            ax.annotate('', xy=(box_l + 25, 0), xytext=(box_l + 25, box_w),
+                        arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
+            ax.text(box_l + 45, box_w/2, f"{int(ext_w)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center', va='center', rotation=-90)
+            
+            # Adjust plot limits dynamically to ensure indicators are completely visible
+            ax.set_xlim(-40, box_l + 80)
+            ax.set_ylim(-60, box_w + 30)
             ax.set_aspect('equal')
             ax.axis('off')
             st.pyplot(fig)
