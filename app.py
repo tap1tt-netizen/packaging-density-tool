@@ -475,8 +475,7 @@ if results:
                             const scene = new THREE.Scene();
                             scene.background = new THREE.Color(0xf8f9fa);
                             
-                            const camera = new THREE.PerspectiveCamera(45, container.clientWidth / 260, 1, 1000);
-                            camera.position.set(0, 150, 150);
+                            const camera = new THREE.PerspectiveCamera(45, container.clientWidth / 260, 0.1, 1000);
                             
                             const renderer = new THREE.WebGLRenderer({ antialias: true });
                             renderer.setSize(container.clientWidth, 260);
@@ -485,11 +484,14 @@ if results:
                             const controls = new THREE.OrbitControls(camera, renderer.domElement);
                             controls.enableDamping = true;
                             
-                            const ambientLight = new THREE.AmbientLight(0x666666);
+                            const ambientLight = new THREE.AmbientLight(0x888888);
                             scene.add(ambientLight);
-                            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-                            dirLight.position.set(200, 200, 200);
-                            scene.add(dirLight);
+                            const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+                            dirLight1.position.set(1, 1, 1).normalize();
+                            scene.add(dirLight1);
+                            const dirLight2 = new THREE.DirectionalLight(0x555555, 0.5);
+                            dirLight2.position.set(-1, -1, -1).normalize();
+                            scene.add(dirLight2);
                             
                             const stlBase64 = "REPLACE_STL_BASE64";
                             const binString = atob(stlBase64);
@@ -502,17 +504,36 @@ if results:
                             const loader = new THREE.STLLoader();
                             const geometry = loader.parse(bytes.buffer);
                             
-                            const material = new THREE.MeshPhongMaterial({ color: 0x74c0fc, specular: 0x111111, shininess: 200 });
+                            const material = new THREE.MeshPhongMaterial({ 
+                                color: 0x74c0fc, 
+                                specular: 0x111111, 
+                                shininess: 200,
+                                side: THREE.DoubleSide
+                            });
                             const mesh = new THREE.Mesh(geometry, material);
                             
                             geometry.computeBoundingBox();
+                            const boundingBox = geometry.boundingBox;
                             const center = new THREE.Vector3();
-                            geometry.boundingBox.getCenter(center);
+                            boundingBox.getCenter(center);
                             mesh.position.sub(center);
                             scene.add(mesh);
                             
-                            const gridHelper = new THREE.GridHelper(200, 20);
-                            gridHelper.position.y = -30;
+                            // DYNAMIC CAMERA AUTO-FIT LOGIC (This centers the part perfectly on screen!)
+                            const size = new THREE.Vector3();
+                            boundingBox.getSize(size);
+                            const maxDim = Math.max(size.x, size.y, size.z);
+                            const fov = camera.fov * (Math.PI / 180);
+                            let cameraZ = Math.abs(maxDim / 2 * Math.tan(fov * 2));
+                            cameraZ *= 2.0; // Zoom factor padding
+                            
+                            camera.position.set(maxDim, maxDim, cameraZ);
+                            camera.lookAt(new THREE.Vector3(0, 0, 0));
+                            controls.target.set(0, 0, 0);
+                            controls.update();
+                            
+                            const gridHelper = new THREE.GridHelper(maxDim * 2, 20);
+                            gridHelper.position.y = - (size.y / 2);
                             scene.add(gridHelper);
                             
                             function animate() {
