@@ -4,6 +4,7 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 # Set up page layout and appearance
 st.set_page_config(
@@ -178,11 +179,11 @@ for idx, row in df_inventory.iterrows():
     box_int_h = row['Height [mm]']
     ext_l = row['Ext. Length [mm]']
     ext_w = row['Ext.Width [mm]']
+    ext_h = row['Ext. Height [mm]']
     
     if pd.isna(box_int_l) or pd.isna(box_int_w) or pd.isna(box_int_h):
         continue
         
-    # Get optimal 3D layout count
     parts_count, pack_orient, grid_layout = calculate_packing(
         box_int_l, box_int_w, box_int_h, 
         prod_l, prod_w, prod_h
@@ -191,7 +192,7 @@ for idx, row in df_inventory.iterrows():
     if parts_count == 0:
         continue
         
-    box_weight = estimate_box_weight(ext_l, ext_w, row['Ext. Height [mm]'], row['Quality'])
+    box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row['Quality'])
     total_payload_wt = parts_count * prod_wt
     total_package_weight = total_payload_wt + box_weight
     
@@ -214,6 +215,7 @@ for idx, row in df_inventory.iterrows():
         "Internal Dimensions": f"{int(box_int_l)}x{int(box_int_w)}x{int(box_int_h)} mm",
         "Int. Length [mm]": box_int_l,
         "Int. Width [mm]": box_int_w,
+        "Int. Height [mm]": box_int_h,
         "Ext. Length [mm]": ext_l,
         "Ext. Width [mm]": ext_w,
         "Number of Parts per Box": parts_count,
@@ -277,7 +279,7 @@ if results:
     
     # Main Recommendations Table
     st.subheader("🏆 Top 10 Recommended Cardboard Boxes")
-    display_df = ranked_df.drop(columns=["_nx", "_ny", "_nz", "_ox", "_oy", "_oz", "Int. Length [mm]", "Int. Width [mm]", "Ext. Length [mm]", "Ext. Width [mm]"])
+    display_df = ranked_df.drop(columns=["_nx", "_ny", "_nz", "_ox", "_oy", "_oz", "Int. Length [mm]", "Int. Width [mm]", "Int. Height [mm]", "Ext. Length [mm]", "Ext. Width [mm]"])
     st.dataframe(
         display_df,
         column_config={
@@ -299,7 +301,7 @@ if results:
     # --- DYNAMIC PACKING GUIDE & MATPLOTLIB BLUEPRINT EXPANDER ---
     st.markdown("<br>", unsafe_allow_html=True)
     with st.expander("📋 Click to view Step-by-Step Visual Blueprint Loading Map", expanded=True):
-        col_text, col_plot = st.columns([2, 3])
+        col_text, col_flat, col_stack = st.columns([2, 3, 2])
         
         # Pull raw packing metrics
         nx = int(best_box["_nx"])
@@ -319,7 +321,7 @@ if results:
             st.markdown(f"""
             <b>Step 1: Orient the Part</b><br>
             Place each individual part according to this orientation:<br>
-            📌 <i>Orientation Style: <b>{placement_style}</b></i>
+            <i>{placement_style}</i>
             <ul>
                 <li>📐 <b>Lengthwise (Left-to-Right):</b> {ox} mm</li>
                 <li>📐 <b>Widthwise (Front-to-Back):</b> {oy} mm</li>
@@ -356,7 +358,7 @@ if results:
                 
             st.markdown(f"<p style='color:#1864ab; margin-top:10px;'><b>⚖️ Operational Weight:</b> Safe at {best_box['Total Weight (kg)']} kg.</p></div>", unsafe_allow_html=True)
             
-        with col_plot:
+        with col_flat:
             # Generate Matplotlib Blueprint of the floor layout
             fig, ax = plt.subplots(figsize=(6, 4))
             box_l = best_box["Int. Length [mm]"]
@@ -381,23 +383,69 @@ if results:
                     ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#a5d8ff', edgecolor='#1971c2', linewidth=1.2))
                     ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1}, {r+1}", ha='center', va='center', fontsize=8, color='#0f4c81', fontweight='bold')
             
-            # --- CUSTOM RED DIMENSION INDICATOR ARROWS ---
-            # Horizontal dimension below the box
+            # Custom Red Dimension Indicator Arrows
             ax.annotate('', xy=(0, -25), xytext=(box_l, -25),
                         arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
             ax.text(box_l/2, -45, f"{int(ext_l)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center')
             
-            # Vertical dimension on the right side
             ax.annotate('', xy=(box_l + 25, 0), xytext=(box_l + 25, box_w),
                         arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
             ax.text(box_l + 45, box_w/2, f"{int(ext_w)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center', va='center', rotation=-90)
             
-            # Adjust plot limits dynamically to ensure indicators are completely visible
+            # Dynamic layer header directly on top of the layout diagram
+            ax.text(box_l/2, box_w + 15, f"Layers: {nz} Vertical", color='#dc3545', fontsize=14, fontweight='bold', ha='center')
+            
             ax.set_xlim(-40, box_l + 80)
-            ax.set_ylim(-60, box_w + 30)
+            ax.set_ylim(-60, box_w + 35)
             ax.set_aspect('equal')
             ax.axis('off')
             st.pyplot(fig)
             plt.close(fig)
+            
+        with col_stack:
+            # Generate 3D Isometric Stacking Model
+            fig3d = plt.figure(figsize=(4, 3.5))
+            ax3d = fig3d.add_subplot(111, projection='3d')
+            
+            # Visual dimension scaling for nice drawing proportions
+            w_scale = 100
+            l_scale = w_scale * (box_l / box_w)
+            h_scale = 30 # height of one tier block
+            
+            for layer in range(nz):
+                z_start = layer * (h_scale + 5) # 5 units gap representing shelf divider partition
+                
+                # vertices of the layer block
+                v = np.array([
+                    [0, 0, z_start], [l_scale, 0, z_start], [l_scale, w_scale, z_start], [0, w_scale, z_start],
+                    [0, 0, z_start + h_scale], [l_scale, 0, z_start + h_scale], [l_scale, w_scale, z_start + h_scale], [0, w_scale, z_start + h_scale]
+                ])
+                
+                faces = [
+                    [v[0], v[1], v[5], v[4]], # Front
+                    [v[1], v[2], v[6], v[5]], # Right
+                    [v[2], v[3], v[7], v[6]], # Back
+                    [v[3], v[0], v[4], v[7]], # Left
+                    [v[4], v[5], v[6], v[7]], # Top
+                    [v[0], v[1], v[2], v[3]]  # Bottom
+                ]
+                
+                # Stack color gradient (top highlighted, lower lighter)
+                color = '#a5d8ff' if layer < nz - 1 else '#74c0fc'
+                poly = Poly3DCollection(faces, facecolors=color, edgecolors='#1971c2', linewidths=1.2, alpha=0.85)
+                ax3d.add_collection3d(poly)
+                
+                # Floor Labels "Layer 1", "Layer 2", "Layer 3" centered
+                ax3d.text(l_scale/2, w_scale/2, z_start + h_scale/2, f"Layer {layer + 1}", color='#0f4c81', fontweight='bold', ha='center', va='center', fontsize=9)
+                
+            ax3d.set_xlim(-10, l_scale + 10)
+            ax3d.set_ylim(-10, w_scale + 10)
+            ax3d.set_zlim(0, nz * (h_scale + 5) + 10)
+            ax3d.view_init(elev=25, azim=-45)
+            ax3d.axis('off')
+            
+            plt.title("Vertical Stacking Blueprint", fontsize=11, fontweight='bold', color='#212529', pad=10)
+            st.pyplot(fig3d)
+            plt.close(fig3d)
 else:
     st.warning("⚠️ No suitable boxes in your database can fit this product under the active weight or dimension parameters.")
