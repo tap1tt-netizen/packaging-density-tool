@@ -179,9 +179,10 @@ prod_h = st.sidebar.number_input("Part Height (mm)", min_value=1.0, value=float(
 # Product Weight (Pre-filled with calculated weight if CAD file is uploaded)
 st.sidebar.markdown("#### Part Weight (kg)")
 prod_wt = st.sidebar.number_input("Weight per Part (kg)", min_value=0.01, value=float(calculated_weight_kg), step=0.05)
-st.sidebar.markdown("---")
 
+st.sidebar.markdown("---")
 st.sidebar.header("📏 Divider & Clearance Spacing")
+
 # Margins and Clearances
 clear_side = st.sidebar.slider("Sides Clearance buffer (mm)", min_value=0, max_value=20, value=2, help="Clearance at the wall edges")
 clear_height = st.sidebar.slider("Height Clearance buffer (mm)", min_value=0, max_value=20, value=4, help="Clearance at the top height edge")
@@ -194,6 +195,7 @@ orientation_rule = st.sidebar.selectbox(
     ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"],
     help="Control whether the system forces a specific loading style or automatically finds the absolute maximum layout."
 )
+
 sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Volumetric Efficiency (%)", "Number of Parts per Box", "Box Price (€)"])
 
 # Block execution if a CAD file is uploaded but the material is not yet selected
@@ -205,6 +207,7 @@ if not material_selected:
 def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule):
     dims = sorted([p_l, p_w, p_h])
     h_dim, w_dim, l_dim = dims[0], dims[1], dims[2]
+
     if rule == "Force Flat Packing Only":
         orientations = [(l_dim, w_dim, h_dim), (w_dim, l_dim, h_dim)]
     elif rule == "Force Standing on Edge":
@@ -346,7 +349,8 @@ if results:
     st.subheader("💡 Best Matched Packing Insights")
     best_box = ranked_df.iloc[0]
     
-    col1, col2, col3, col4, col5 = st.columns(5)
+    # --- UPGRADED 6-COLUMN KPI DASHBOARD GRID (Fixes Issue #1) ---
+    col1, col2, col3, col4, col5, col6 = st.columns([1.5, 1.3, 1.3, 1.3, 1.3, 2.3])
     with col1:
         st.markdown(f"""
             <div class='metric-box'>
@@ -365,6 +369,26 @@ if results:
         st.markdown(f"<div class='metric-box'><b>⚖️ Total Weight</b><br><span style='font-size:24px; font-weight:bold; color:#17a2b8;'>{best_box['Total Weight (kg)']} kg</span></div>", unsafe_allow_html=True)
     with col5:
         st.markdown(f"<div class='metric-box'><b>💰 Box Price</b><br><span style='font-size:24px; font-weight:bold; color:#e83e8c;'>€ {best_box['Box Price (€)']:.2f}</span></div>", unsafe_allow_html=True)
+    
+    # Render Operational Weight Alert Badge in the 6th Column (Perfect Top-Right Empty Space Placement!)
+    with col6:
+        total_package_weight = best_box["Total Weight (kg)"]
+        if total_package_weight > 15.0:
+            st.markdown(f"""
+                <div style='background-color:#fff0f0; border-left:5px solid #e03131; padding:12px; border-radius:10px; min-height:110px;'>
+                    <b style='color:#e03131; font-size:15px;'>🚨 Weight Warning</b><br>
+                    <span style='font-size:13px; color:#c92a2a; font-weight:bold;'>{total_package_weight} kg (Exceeds 15kg!)</span><br>
+                    <span style='font-size:10px; color:#495057;'>Forklift Pallet Handling Required!</span>
+                </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+                <div style='background-color:#ebfbee; border-left:5px solid #2b8a3e; padding:12px; border-radius:10px; min-height:110px;'>
+                    <b style='color:#2b8a3e; font-size:15px;'>🟢 Safe Weight</b><br>
+                    <span style='font-size:13px; color:#2b8a3e; font-weight:bold;'>Safe at {total_package_weight} kg</span><br>
+                    <span style='font-size:10px; color:#495057;'>Safe for Manual Hand Packing</span>
+                </div>
+            """, unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -389,15 +413,14 @@ if results:
         use_container_width=True
     )
     
-    # --- DYNAMIC PACKING GUIDE & BLUEPRINTS EXPANDER ---
+    # --- DYNAMIC PACKING GUIDE & MATPLOTLIB BLUEPRINT EXPANDER ---
     st.markdown("<br>", unsafe_allow_html=True)
     st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
     
     # --- DYNAMIC SELECTBOX MEMORY (SESSION STATE) ---
     available_boxes = list(ranked_df["Box ID / Specification"].values)
     
-    # --- SMART ACTIVE RESET DETECTOR (Fixes Issue #3) ---
-    # Automatically resets selection back to Index 0 (Top #1) if the box options change due to orientation/file updates!
+    # --- SMART ACTIVE RESET DETECTOR ---
     if "last_available_boxes" not in st.session_state or st.session_state["last_available_boxes"] != available_boxes:
         st.session_state["selected_box"] = available_boxes[0]
         st.session_state["last_available_boxes"] = available_boxes
@@ -438,7 +461,7 @@ if results:
             </div>
         """, unsafe_allow_html=True)
 
-    # Render blueprints container
+    # Render blueprints container (Preserved your Original Layout structure)
     with st.container():
         col_text, col_flat, col_stack = st.columns([2.5, 3, 2.5])
         
@@ -481,22 +504,12 @@ if results:
                 <br>Just seal the box and ship!
                 """, unsafe_allow_html=True)
                 
-            # --- NEW HIGH-VISIBILITY SAFETY WEIGHT ALERTS ---
-            total_package_weight = viz_box["Total Weight (kg)"]
-            if total_package_weight > 15.0:
-                st.markdown(f"""
-                    <div style='background-color:#fff0f0; border-left:5px solid #e03131; padding:12px; border-radius:10px; margin-top:15px;'>
-                        <b style='color:#e03131; font-size:16px;'>🚨 Operational Weight: {total_package_weight} kg</b><br>
-                        <span style='font-size:12px; color:#c92a2a;'><b>Exceeds 15kg Manual Handling Limit!</b> Forklift Pallet Handling Required!</span>
-                    </div>
-                """, unsafe_allow_html=True)
+            # Render selected box weight indicator cleanly below instructions
+            sel_package_weight = viz_box["Total Weight (kg)"]
+            if sel_package_weight > 15.0:
+                st.markdown(f"<p style='color:#e03131; font-weight:bold; margin-top:10px;'>🚨 Operational Weight: Safe at {sel_package_weight} kg (Exceeds 15kg manual limit!)</p>", unsafe_allow_html=True)
             else:
-                st.markdown(f"""
-                    <div style='background-color:#ebfbee; border-left:5px solid #2b8a3e; padding:12px; border-radius:10px; margin-top:15px;'>
-                        <b style='color:#2b8a3e; font-size:16px;'>🟢 Operational Weight: Safe at {total_package_weight} kg</b><br>
-                        <span style='font-size:12px; color:#212529;'>Safe for Manual Hand Packing</span>
-                    </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f"<p style='color:#2b8a3e; font-weight:bold; margin-top:10px;'>🟢 Operational Weight: Safe at {sel_package_weight} kg</p>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
             
         with col_flat:
@@ -563,7 +576,7 @@ if results:
                 v = np.array([
                     [0, 0, z_start], [l_scale, 0, z_start], [l_scale, w_scale, z_start], [0, w_scale, z_start],
                     [0, 0, z_start + h_scale], [l_scale, 0, z_start + h_scale], [l_scale, w_scale, z_start + h_scale], [0, w_scale, z_start + h_scale]
-                  ])
+                ])
                 faces = [
                     [v[0], v[1], v[5], v[4]], [v[1], v[2], v[6], v[5]], [v[2], v[3], v[7], v[6]],
                     [v[3], v[0], v[4], v[7]], [v[4], v[5], v[6], v[7]], [v[0], v[1], v[2], v[3]]
@@ -758,7 +771,7 @@ if results:
                                 f"Part @ Col {c+1}, Row {r+1}, Layer {layer+1}"
                             )
             
-            # Draw Transparent Outer Box boundaries (FEFCO Box Walls)
+            # Draw Outer Box boundaries
             box_v = np.array([
                 [0, 0, 0], [box_l, 0, 0], [box_l, box_w, 0], [0, box_w, 0],
                 [0, 0, viz_box["Int. Height [mm]"]], [box_l, 0, viz_box["Int. Height [mm]"]],
