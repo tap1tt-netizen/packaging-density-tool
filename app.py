@@ -352,16 +352,41 @@ if results:
     
     # --- DYNAMIC PACKING GUIDE & MATPLOTLIB BLUEPRINT EXPANDER ---
     st.markdown("<br>", unsafe_allow_html=True)
-    
-    # DYNAMIC LAYOUT SELECTOR (Allows operators to view blueprints of any of the Top 10 boxes!)
     st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
+    
+    # --- DYNAMIC SELECTBOX MEMORY (SESSION STATE) ---
+    # 1. Gather all current available box choices in Top 10
+    available_boxes = list(ranked_df["Box ID / Specification"].values)
+    
+    # 2. If memory is empty, set it to the top recommendation
+    if "selected_box" not in st.session_state:
+        st.session_state["selected_box"] = available_boxes[0]
+        
+    # 3. If previous selection is still in the new table, find its index. Else default to 0.
+    if st.session_state["selected_box"] in available_boxes:
+        default_index = available_boxes.index(st.session_state["selected_box"])
+    else:
+        default_index = 0
+        st.session_state["selected_box"] = available_boxes[0]
+
+    # Callback function to update session state upon selectbox change
+    def on_box_change():
+        st.session_state["selected_box"] = st.session_state["temp_box_selector"]
+
+    # 4. Create the selectbox linked to session state
     selected_box_spec = st.selectbox(
         "Select a Cardboard Box from the Top 10 to generate its loading blueprints:",
-        ranked_df["Box ID / Specification"].values
+        options=available_boxes,
+        index=default_index,
+        key="temp_box_selector",
+        on_change=on_box_change
     )
     
+    # Sync core variable
+    st.session_state["selected_box"] = selected_box_spec
+    
     # Filter selected box metrics
-    viz_box = ranked_df[ranked_df["Box ID / Specification"] == selected_box_spec].iloc[0]
+    viz_box = ranked_df[ranked_df["Box ID / Specification"] == st.session_state["selected_box"]].iloc[0]
     
     # Pull selected box packing metrics
     nx = int(viz_box["_nx"])
