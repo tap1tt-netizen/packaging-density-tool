@@ -355,25 +355,20 @@ if results:
     st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
     
     # --- DYNAMIC SELECTBOX MEMORY (SESSION STATE) ---
-    # 1. Gather all current available box choices in Top 10
     available_boxes = list(ranked_df["Box ID / Specification"].values)
     
-    # 2. If memory is empty, set it to the top recommendation
     if "selected_box" not in st.session_state:
         st.session_state["selected_box"] = available_boxes[0]
         
-    # 3. If previous selection is still in the new table, find its index. Else default to 0.
     if st.session_state["selected_box"] in available_boxes:
         default_index = available_boxes.index(st.session_state["selected_box"])
     else:
         default_index = 0
         st.session_state["selected_box"] = available_boxes[0]
 
-    # Callback function to update session state upon selectbox change
     def on_box_change():
         st.session_state["selected_box"] = st.session_state["temp_box_selector"]
 
-    # 4. Create the selectbox linked to session state
     selected_box_spec = st.selectbox(
         "Select a Cardboard Box from the Top 10 to generate its loading blueprints:",
         options=available_boxes,
@@ -382,13 +377,9 @@ if results:
         on_change=on_box_change
     )
     
-    # Sync core variable
     st.session_state["selected_box"] = selected_box_spec
-    
-    # Filter selected box metrics
     viz_box = ranked_df[ranked_df["Box ID / Specification"] == st.session_state["selected_box"]].iloc[0]
     
-    # Pull selected box packing metrics
     nx = int(viz_box["_nx"])
     ny = int(viz_box["_ny"])
     nz = int(viz_box["_nz"])
@@ -396,10 +387,8 @@ if results:
     oy = int(viz_box["_oy"])
     oz = int(viz_box["_oz"])
     
-    # --- SMART ORIENTATION ALERT BOX ---
     placement_style = determine_placement_style(prod_l, prod_w, prod_h, oz)
     
-    # Check if a standing orientation is limited to 1 layer and warn the user
     is_standing = oz > min(prod_l, prod_w, prod_h)
     if is_standing and nz == 1:
         req_height_2_layers = (oz * 2) + sep_z + clear_height
@@ -418,7 +407,6 @@ if results:
         with col_text:
             st.markdown("<div class='guide-box'><h4><b>🛠️ 3-Step Packing Instruction</b></h4><hr>", unsafe_allow_html=True)
             
-            # Step 1: Orientation
             st.markdown(f"""
             <b>Step 1: Orient the Part</b><br>
             Place each individual part according to this orientation:<br>
@@ -430,7 +418,6 @@ if results:
             </ul>
             """, unsafe_allow_html=True)
             
-            # Step 2: Grid Layout
             st.markdown(f"""
             <b>Step 2: Arrange the Floor Grid</b><br>
             Lay down a grid of <b>{nx} columns</b> and <b>{ny} rows</b> of parts on the floor of the box. 
@@ -440,7 +427,6 @@ if results:
             </ul>
             """, unsafe_allow_html=True)
             
-            # Step 3: Dynamic stacking guide
             if nz > 1:
                 st.markdown(f"""
                 <b>Step 3: Stacking Vertical Layers</b><br>
@@ -459,7 +445,6 @@ if results:
                 
             st.markdown(f"<p style='color:#1864ab; margin-top:10px;'><b>⚖️ Operational Weight:</b> Safe at {viz_box['Total Weight (kg)']} kg.</p></div>", unsafe_allow_html=True)
             
-            # Display uploaded part photo dynamically inside the packing guide panel
             if upload_method == "Multi-Angle 2D Photos" and uploaded_top is not None:
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.markdown("##### 📸 Active Orientation Photo View:")
@@ -475,23 +460,19 @@ if results:
                     st.image(Image.open(uploaded_top), caption="Uploaded Top View Reference", use_column_width=True)
             
         with col_flat:
-            # Generate Matplotlib Blueprint of the floor layout
             fig, ax = plt.subplots(figsize=(6, 4))
             box_l = viz_box["Int. Length [mm]"]
             box_w = viz_box["Int. Width [mm]"]
             ext_l = viz_box["Ext. Length [mm]"]
             ext_w = viz_box["Ext. Width [mm]"]
             
-            # Draw box border
             ax.add_patch(patches.Rectangle((0, 0), box_l, box_w, fill=False, edgecolor='#212529', linewidth=2.5, label='Box Wall'))
             
-            # Draw clearance hatch regions
             ax.add_patch(patches.Rectangle((0, 0), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
             ax.add_patch(patches.Rectangle((0, box_w - clear_side), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
             ax.add_patch(patches.Rectangle((0, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
             ax.add_patch(patches.Rectangle((box_l - clear_side, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
             
-            # --- PERFECT CENTERING BLUEPRINT MATH ---
             total_grid_w = nx * ox + (nx - 1) * sep_xy
             total_grid_h = ny * oy + (ny - 1) * sep_xy
             leftover_x = (box_l - 2 * clear_side) - total_grid_w
@@ -500,7 +481,6 @@ if results:
             start_x_offset = clear_side + (leftover_x / 2)
             start_y_offset = clear_side + (leftover_y / 2)
             
-            # Draw centered parts
             for r in range(ny):
                 y_pos = start_y_offset + r * (oy + sep_xy)
                 for c in range(nx):
@@ -508,7 +488,6 @@ if results:
                     ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#a5d8ff', edgecolor='#1971c2', linewidth=1.2))
                     ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1}, {r+1}", ha='center', va='center', fontsize=8, color='#0f4c81', fontweight='bold')
             
-            # Custom Red Dimension Indicator Arrows
             ax.annotate('', xy=(0, -25), xytext=(box_l, -25),
                         arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
             ax.text(box_l/2, -45, f"{int(ext_l)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center')
@@ -517,7 +496,6 @@ if results:
                         arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
             ax.text(box_l + 45, box_w/2, f"{int(ext_w)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center', va='center', rotation=-90)
             
-            # Dynamic layer header directly on top of the layout diagram
             ax.text(box_l/2, box_w + 15, f"Layers: {nz} Vertical", color='#dc3545', fontsize=14, fontweight='bold', ha='center')
             
             ax.set_xlim(-40, box_l + 80)
@@ -528,7 +506,7 @@ if results:
             plt.close(fig)
             
         with col_stack:
-            # --- RESTORED ISOMETRIC VIEW DRAWING CODE WITH PERFECT NUMBERS ON FACES ---
+            # --- UPDATED 3D ISOMETRIC VIEW WITH PERFECT LABELS ON THE LEFT ---
             fig3d = plt.figure(figsize=(4, 3.5))
             ax3d = fig3d.add_subplot(111, projection='3d')
             w_scale = 100
@@ -549,10 +527,11 @@ if results:
                 poly = Poly3DCollection(faces, facecolors=color, edgecolors='#1971c2', linewidths=1.5, alpha=0.8)
                 ax3d.add_collection3d(poly)
                 
-                # Big, bold layer number centered right on the front-facing panel
-                ax3d.text(l_scale/2, -15, z_start + h_scale/2, f"{layer + 1}", color='#dc3545', fontweight='bold', fontsize=22, ha='center', va='center', zorder=100)
+                # Dynamic layer side labels with clean pointer lines on the left side (no overlapping!)
+                ax3d.text(-35, 20, z_start + h_scale/2, f"L{layer + 1}", color='#dc3545', fontweight='bold', fontsize=12, ha='right', va='center', zorder=100)
+                ax3d.plot([-30, 0], [10, 0], [z_start + h_scale/2, z_start + h_scale/2], color='#dc3545', linestyle=':', linewidth=1)
                 
-            ax3d.set_xlim(-10, l_scale + 10)
+            ax3d.set_xlim(-50, l_scale + 10)
             ax3d.set_ylim(-20, w_scale + 10)
             ax3d.set_zlim(0, nz * (h_scale + 5) + 10)
             ax3d.view_init(elev=22, azim=-65)
