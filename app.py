@@ -274,7 +274,6 @@ for idx, row in df_inventory.iterrows():
     if pd.isna(box_int_l) or pd.isna(box_int_w) or pd.isna(box_int_h):
         continue
         
-    # Get optimal 3D layout count based on orientation rule
     parts_count, pack_orient, grid_layout = calculate_packing(
         box_int_l, box_int_w, box_int_h, 
         prod_l, prod_w, prod_h,
@@ -393,14 +392,15 @@ if results:
         use_container_width=True
     )
     
-    # --- DYNAMIC PACKING GUIDE & BLUEPRINTS GRID ---
+    # --- DYNAMIC PACKING GUIDE & MATPLOTLIB BLUEPRINT EXPANDER ---
     st.markdown("<br>", unsafe_allow_html=True)
     st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
     
     # --- DYNAMIC SELECTBOX MEMORY (SESSION STATE) ---
     available_boxes = list(ranked_df["Box ID / Specification"].values)
     
-    # --- SMART ACTIVE RESET DETECTOR ---
+    # --- SMART ACTIVE RESET DETECTOR (Fixes Issue #3) ---
+    # Automatically resets selection back to Index 0 (Top #1) if the box options change due to orientation/file updates!
     if "last_available_boxes" not in st.session_state or st.session_state["last_available_boxes"] != available_boxes:
         st.session_state["selected_box"] = available_boxes[0]
         st.session_state["last_available_boxes"] = available_boxes
@@ -444,10 +444,9 @@ if results:
             </div>
         """, unsafe_allow_html=True)
 
-    # Render blueprints container (UPGRADED COMPACT SINGLE-SCREEN GRID)
+    # Render blueprints container
     with st.container():
-        # ROW 1: Static Instructions + 2D Floor Plan + Rotatable 3D Box Packing Layout!
-        col_text, col_flat, col_packing_3d = st.columns([2.5, 3.25, 3.25])
+        col_text, col_flat, col_stack = st.columns([2.5, 3, 2.5])
         
         with col_text:
             st.markdown("<div class='guide-box'><h4><b>🛠️ 3-Step Packing Instruction</b></h4><hr>", unsafe_allow_html=True)
@@ -487,24 +486,8 @@ if results:
                 Since all <b>{int(viz_box['Number of Parts per Box'])} parts</b> fit in <b>1 single floor layer</b>, you do not need any flat shelf dividers or vertical stacking. 
                 <br>Just seal the box and ship!
                 """, unsafe_allow_html=True)
-            
-            # --- HIGH-VISIBILITY SAFETY WEIGHT ALERTS (Fixes Issue #1) ---
-            total_package_weight = viz_box["Total Weight (kg)"]
-            if total_package_weight > 15.0:
-                st.markdown(f"""
-                    <div style='background-color:#fff0f0; border-left:5px solid #e03131; padding:10px; border-radius:5px; margin-top:15px;'>
-                        <b style='color:#e03131;'>🚨 Operational Weight: {total_package_weight} kg</b><br>
-                        <span style='font-size:11px; color:#c92a2a;'><b>Exceeds 15kg Manual Handling Limit!</b> Forklift Pallet Handling Required!</span>
-                    </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                    <div style='background-color:#ebfbee; border-left:5px solid #2b8a3e; padding:10px; border-radius:5px; margin-top:15px;'>
-                        <b style='color:#2b8a3e;'>🟢 Operational Weight: Safe at {total_package_weight} kg</b><br>
-                        <span style='font-size:11px; color:#212529;'>Safe for Manual Hand Packing</span>
-                    </div>
-                """, unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
+                
+            st.markdown(f"<p style='color:#1864ab; margin-top:10px;'><b>⚖️ Operational Weight:</b> Safe at {viz_box['Total Weight (kg)']} kg.</p></div>", unsafe_allow_html=True)
             
         with col_flat:
             fig, ax = plt.subplots(figsize=(6, 4))
@@ -552,173 +535,17 @@ if results:
             st.pyplot(fig)
             plt.close(fig)
             
-        with col_packing_3d:
-            # --- ROTATABLE 3D BOX PACKING (Moved to Row 1 for better visibility!) ---
-            try:
-                fig_pack = go.Figure()
-                
-                def add_wireframe_compartment(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz):
-                    cv = np.array([
-                        [x_pos, y_pos, z_pos], [x_pos + dx, y_pos, z_pos],
-                        [x_pos + dx, y_pos + dy, z_pos], [x_pos, y_pos + dy, z_pos],
-                        [x_pos, y_pos, z_pos + dz], [x_pos + dx, y_pos, z_pos + dz],
-                        [x_pos + dx, y_pos + dy, z_pos + dz], [x_pos, y_pos + dy, z_pos + dz]
-                    ])
-                    edges_c = [
-                        (0, 1), (1, 2), (2, 3), (3, 0),
-                        (4, 5), (5, 6), (6, 7), (7, 4),
-                        (0, 4), (1, 5), (2, 6), (3, 7)
-                    ]
-                    for edge in edges_c:
-                        fig_scene.add_trace(go.Scatter3d(
-                            x=[cv[edge[0]][0], cv[edge[1]][0]],
-                            y=[cv[edge[0]][1], cv[edge[1]][1]],
-                            z=[cv[edge[0]][2], cv[edge[1]][2]],
-                            mode='lines',
-                            line=dict(color='rgba(150, 150, 150, 0.4)', width=2),
-                            showlegend=False,
-                            hoverinfo='skip'
-                        ))
-
-                def add_plotly_mesh_part(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz, raw_v, raw_f, text_str):
-                    min_v = np.min(raw_v, axis=0)
-                    max_v = np.max(raw_v, axis=0)
-                    raw_extent = max_v - min_v
-                    
-                    best_perm = None
-                    min_error = float('inf')
-                    for perm in itertools.permutations([0, 1, 2]):
-                        perm_extent = raw_extent[list(perm)]
-                        ratios = np.array([dx, dy, dz]) / perm_extent
-                        error = np.std(ratios)
-                        if error < min_error:
-                            min_error = error
-                            best_perm = perm
-                    
-                    v_aligned = (raw_v - min_v)[:, list(best_perm)]
-                    
-                    aligned_extent = raw_extent[list(best_perm)]
-                    scale_factor = np.min(np.array([dx, dy, dz]) / aligned_extent)
-                    v_scaled = v_aligned * scale_factor
-                    
-                    scaled_extent = aligned_extent * scale_factor
-                    gap_x = dx - scaled_extent[0]
-                    gap_y = dy - scaled_extent[1]
-                    gap_z = dz - scaled_extent[2]
-                    
-                    v_final = v_scaled + np.array([x_pos + gap_x/2, y_pos + gap_y/2, z_pos + gap_z/2])
-                    
-                    fig_scene.add_trace(go.Mesh3d(
-                        x=v_final[:, 0], y=v_final[:, 1], z=v_final[:, 2],
-                        i=raw_f[:, 0], j=raw_f[:, 1], k=raw_f[:, 2],
-                        color='#74c0fc', opacity=1.0,
-                        flatshading=False,
-                        lighting=dict(
-                            ambient=0.5,
-                            diffuse=0.9,
-                            specular=1.2,
-                            roughness=0.15,
-                            fresnel=0.5
-                        ),
-                        name=text_str,
-                        hoverinfo="text",
-                        text=text_str,
-                        showlegend=False
-                    ))
-
-                # Determine target cells to display the detailed CAD part
-                selected_cells = []
-                if total_parts <= 4:
-                    for l in range(nz):
-                        for r in range(ny):
-                            for c in range(nx):
-                                selected_cells.append((c, r, l))
-                else:
-                    selected_cells.append((0, 0, nz - 1))
-                    if nx > 2 and ny > 2:
-                        selected_cells.append((nx // 2, ny // 2, nz - 1))
-                    selected_cells.append((nx - 1, ny - 1, nz - 1))
-
-                # Draw compartments & selectively insert parts
-                for layer in range(nz):
-                    z_pos = layer * (oz + sep_z)
-                    for r in range(ny):
-                        y_pos = start_y_offset + r * (oy + sep_xy)
-                        for c in range(nx):
-                            x_pos = start_x_offset + c * (ox + sep_xy)
-                            
-                            add_wireframe_compartment(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz)
-                            
-                            if (c, r, layer) in selected_cells and mesh_cad is not None:
-                                add_plotly_mesh_part(
-                                    fig_pack, x_pos, y_pos, z_pos, ox, oy, oz, 
-                                    mesh_cad.vertices, mesh_cad.faces, 
-                                    f"Part @ Col {c+1}, Row {r+1}, Layer {layer+1}"
-                                )
-                
-                # Draw outer wireframe box limits
-                box_v = np.array([
-                    [0, 0, 0], [box_l, 0, 0], [box_l, box_w, 0], [0, box_w, 0],
-                    [0, 0, viz_box["Int. Height [mm]"]], [box_l, 0, viz_box["Int. Height [mm]"]],
-                    [box_l, box_w, viz_box["Int. Height [mm]"]], [0, box_w, viz_box["Int. Height [mm]"]]
-                ])
-                edges = [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7)]
-                for edge in edges:
-                    fig_pack.add_trace(go.Scatter3d(
-                        x=[box_v[edge[0]][0], box_v[edge[1]][0]],
-                        y=[box_v[edge[0]][1], box_v[edge[1]][1]],
-                        z=[box_v[edge[0]][2], box_v[edge[1]][2]],
-                        mode='lines', line=dict(color='#212529', width=4), showlegend=False, hoverinfo='skip'
-                    ))
-                    
-                fig_pack.update_layout(
-                    scene=dict(xaxis_title="L (mm)", yaxis_title="W (mm)", zaxis_title="H (mm)", aspectmode='data'),
-                    margin=dict(l=0, r=0, b=0, t=0),
-                    height=300
-                )
-                st.plotly_chart(fig_pack, use_container_width=True)
-            except Exception as e_pack_plotly:
-                st.warning(f"Error rendering interactive 3D box packing model: {e_pack_plotly}")
-
-        # ROW 2: Rotatable 3D CAD Part Model + Vertical Stacking Matplotlib Blueprint
-        st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
-        col_cad, col_stack = st.columns([5, 5])
-        
-        with col_cad:
-            st.markdown("##### 🔄 Rotatable 3D CAD Part Model")
-            if mesh_cad is not None:
-                try:
-                    v_coords = mesh_cad.vertices
-                    f_indices = mesh_cad.faces
-                    fig_cad = go.Figure(data=[
-                        go.Mesh3d(
-                            x=v_coords[:, 0], y=v_coords[:, 1], z=v_coords[:, 2],
-                            i=f_indices[:, 0], j=f_indices[:, 1], k=f_indices[:, 2],
-                            color='#d1d5db', opacity=1.0, flatshading=False,
-                            lighting=dict(ambient=0.5, diffuse=0.9, roughness=0.15, specular=1.6, fresnel=0.6),
-                            lightposition=dict(x=1000, y=1000, z=1500),
-                            name="3D CAD Part"
-                        )
-                    ])
-                    fig_cad.update_layout(
-                        scene=dict(aspectmode='data', xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)),
-                        margin=dict(l=0, r=0, b=0, t=0),
-                        height=280
-                    )
-                    st.plotly_chart(fig_cad, use_container_width=True)
-                except Exception as e_plotly:
-                    st.info("Upload your 3D CAD (.STL/.STEP) file to activate the rotatable 3D digital twin viewer!")
-            else:
-                st.info("💡 Please upload a 3D CAD (.STL/.STEP) file in the sidebar to activate this rotatable digital twin viewer!")
-
         with col_stack:
-            # --- STATIC VERTICAL STACKING BLUEPRINT (Matplotlib) ---
-            st.markdown("##### 📊 Vertical Stacking Blueprint")
-            fig3d = plt.figure(figsize=(5, 3))
+            fig3d = plt.figure(figsize=(4, 3.5))
             ax3d = fig3d.add_subplot(111, projection='3d')
+            w_scale = 100
+            l_scale = w_scale * (box_l / box_w)
+            h_scale = 30
             
+            # --- PERFECT AXIS VERTICAL ASPECT RETENTION ---
             z_aspect = max(30, nz * 15)
             ax3d.set_box_aspect((l_scale, w_scale, z_aspect))
+            
             lbl_font = 9 if nz > 6 else 12
             
             for layer in range(nz):
@@ -743,7 +570,220 @@ if results:
             ax3d.set_zlim(0, nz * (h_scale + 5) + 10)
             ax3d.view_init(elev=22, azim=-65)
             ax3d.axis('off')
+            
+            plt.title("Vertical Stacking Blueprint", fontsize=11, fontweight='bold', color='#212529', pad=10)
             st.pyplot(fig3d)
             plt.close(fig3d)
+
+    # --- DYNAMIC INTERACTIVE 3D DIGITAL TWIN VIEWPORT ---
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.subheader("🔄 Interactive 3D Digital Twin Viewport (Rotatable)")
+    
+    col_cad, col_packing_3d = st.columns(2)
+    
+    with col_cad:
+        st.markdown("##### 🔍 Rotatable 3D CAD Part Model")
+        if mesh_cad is not None:
+            try:
+                # Extract faces and vertices from loaded CAD file
+                v_coords = mesh_cad.vertices
+                f_indices = mesh_cad.faces
+                
+                x_v, y_v, z_v = v_coords[:, 0], v_coords[:, 1], v_coords[:, 2]
+                i_f, j_f, k_f = f_indices[:, 0], f_indices[:, 1], f_indices[:, 2]
+                
+                # Draw the fully interactive 3D model using Plotly Mesh3d
+                fig_cad = go.Figure(data=[
+                    go.Mesh3d(
+                        x=x_v, y=y_v, z=z_v,
+                        i=i_f, j=j_f, k=k_f,
+                        color='#d1d5db',
+                        opacity=1.0,
+                        flatshading=False,
+                        lighting=dict(
+                            ambient=0.5,
+                            diffuse=0.9,
+                            roughness=0.15,
+                            specular=1.6,
+                            fresnel=0.6
+                        ),
+                        lightposition=dict(
+                            x=1000,
+                            y=1000,
+                            z=1500
+                        ),
+                        name="3D CAD Part"
+                    )
+                ])
+                fig_cad.update_layout(
+                    scene=dict(
+                        aspectmode='data',
+                        xaxis=dict(visible=False),
+                        yaxis=dict(visible=False),
+                        zaxis=dict(visible=False)
+                    ),
+                    margin=dict(l=0, r=0, b=0, t=0),
+                    height=380
+                )
+                st.plotly_chart(fig_cad, use_container_width=True)
+            except Exception as e_plotly:
+                st.info("Upload your 3D CAD (.STL/.STEP) file to activate the rotatable 3D digital twin viewer!")
+        else:
+            st.info("💡 Please upload a 3D CAD (.STL/.STEP) file in the sidebar to activate this rotatable digital twin viewer!")
+
+    with col_packing_3d:
+        st.markdown("##### 📦 Rotatable 3D Box Packing Layout")
+        try:
+            # Construct a fully interactive 3D wireframe box with real packed parts inside!
+            fig_pack = go.Figure()
+            
+            # Helper to add a 3D wireframe outline for a compartment slot
+            def add_wireframe_compartment(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz):
+                cv = np.array([
+                    [x_pos, y_pos, z_pos], [x_pos + dx, y_pos, z_pos],
+                    [x_pos + dx, y_pos + dy, z_pos], [x_pos, y_pos + dy, z_pos],
+                    [x_pos, y_pos, z_pos + dz], [x_pos + dx, y_pos, z_pos + dz],
+                    [x_pos + dx, y_pos + dy, z_pos + dz], [x_pos, y_pos + dy, z_pos + dz]
+                ])
+                edges_c = [
+                    (0, 1), (1, 2), (2, 3), (3, 0),
+                    (4, 5), (5, 6), (6, 7), (7, 4),
+                    (0, 4), (1, 5), (2, 6), (3, 7)
+                ]
+                for edge in edges_c:
+                    fig_scene.add_trace(go.Scatter3d(
+                        x=[cv[edge[0]][0], cv[edge[1]][0]],
+                        y=[cv[edge[0]][1], cv[edge[1]][1]],
+                        z=[cv[edge[0]][2], cv[edge[1]][2]],
+                        mode='lines',
+                        line=dict(color='rgba(150, 150, 150, 0.4)', width=2),
+                        showlegend=False,
+                        hoverinfo='skip'
+                    ))
+
+            # Helper to add actual CAD model mesh into a specific compartment
+            def add_plotly_mesh_part(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz, raw_v, raw_f, text_str):
+                min_v = np.min(raw_v, axis=0)
+                max_v = np.max(raw_v, axis=0)
+                raw_extent = max_v - min_v
+                
+                best_perm = None
+                min_error = float('inf')
+                for perm in itertools.permutations([0, 1, 2]):
+                    perm_extent = raw_extent[list(perm)]
+                    ratios = np.array([dx, dy, dz]) / perm_extent
+                    error = np.std(ratios)
+                    if error < min_error:
+                        min_error = error
+                        best_perm = perm
+                
+                v_aligned = (raw_v - min_v)[:, list(best_perm)]
+                
+                aligned_extent = raw_extent[list(best_perm)]
+                scale_factor = np.min(np.array([dx, dy, dz]) / aligned_extent)
+                v_scaled = v_aligned * scale_factor
+                
+                scaled_extent = aligned_extent * scale_factor
+                gap_x = dx - scaled_extent[0]
+                gap_y = dy - scaled_extent[1]
+                gap_z = dz - scaled_extent[2]
+                
+                v_final = v_scaled + np.array([x_pos + gap_x/2, y_pos + gap_y/2, z_pos + gap_z/2])
+                
+                fig_scene.add_trace(go.Mesh3d(
+                    x=v_final[:, 0], y=v_final[:, 1], z=v_final[:, 2],
+                    i=raw_f[:, 0], j=raw_f[:, 1], k=raw_f[:, 2],
+                    color='#74c0fc', opacity=1.0,
+                    flatshading=False,
+                    lighting=dict(
+                        ambient=0.5,
+                        diffuse=0.9,
+                        specular=1.2,
+                        roughness=0.15,
+                        fresnel=0.5
+                    ),
+                    name=text_str,
+                    hoverinfo="text",
+                    text=text_str,
+                    showlegend=False
+                ))
+
+            # Centering mathematics matching the 2D Blueprint
+            total_grid_w = nx * ox + (nx - 1) * sep_xy
+            total_grid_h = ny * oy + (ny - 1) * sep_xy
+            leftover_x = (box_l - 2 * clear_side) - total_grid_w
+            leftover_y = (box_w - 2 * clear_side) - total_grid_h
+            
+            start_x_offset = clear_side + (leftover_x / 2)
+            start_y_offset = clear_side + (leftover_y / 2)
+            
+            # Determine target cells to display the detailed CAD part
+            total_parts = nx * ny * nz
+            selected_cells = []
+            if total_parts <= 4:
+                for l in range(nz):
+                    for r in range(ny):
+                        for c in range(nx):
+                            selected_cells.append((c, r, l))
+            else:
+                selected_cells.append((0, 0, nz - 1))
+                if nx > 2 and ny > 2:
+                    selected_cells.append((nx // 2, ny // 2, nz - 1))
+                selected_cells.append((nx - 1, ny - 1, nz - 1))
+
+            # Draw compartments & selectively insert parts
+            for layer in range(nz):
+                z_pos = layer * (oz + sep_z)
+                for r in range(ny):
+                    y_pos = start_y_offset + r * (oy + sep_xy)
+                    for c in range(nx):
+                        x_pos = start_x_offset + c * (ox + sep_xy)
+                        
+                        add_wireframe_compartment(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz)
+                        
+                        if (c, r, layer) in selected_cells and mesh_cad is not None:
+                            add_plotly_mesh_part(
+                                fig_pack, x_pos, y_pos, z_pos, ox, oy, oz, 
+                                mesh_cad.vertices, mesh_cad.faces, 
+                                f"Part @ Col {c+1}, Row {r+1}, Layer {layer+1}"
+                            )
+            
+            # Draw Outer Box boundaries
+            box_v = np.array([
+                [0, 0, 0], [box_l, 0, 0], [box_l, box_w, 0], [0, box_w, 0],
+                [0, 0, viz_box["Int. Height [mm]"]], [box_l, 0, viz_box["Int. Height [mm]"]],
+                [box_l, box_w, viz_box["Int. Height [mm]"]], [0, box_w, viz_box["Int. Height [mm]"]]
+            ])
+            
+            edges = [
+                (0, 1), (1, 2), (2, 3), (3, 0),
+                (4, 5), (5, 6), (6, 7), (7, 4),
+                (0, 4), (1, 5), (2, 6), (3, 7)
+            ]
+            
+            for edge in edges:
+                fig_pack.add_trace(go.Scatter3d(
+                    x=[box_v[edge[0]][0], box_v[edge[1]][0]],
+                    y=[box_v[edge[0]][1], box_v[edge[1]][1]],
+                    z=[box_v[edge[0]][2], box_v[edge[1]][2]],
+                    mode='lines',
+                    line=dict(color='#212529', width=4),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+                
+            fig_pack.update_layout(
+                scene=dict(
+                    xaxis_title="Length (mm)",
+                    yaxis_title="Width (mm)",
+                    zaxis_title="Height (mm)",
+                    aspectmode='data'
+                ),
+                margin=dict(l=0, r=0, b=0, t=0),
+                height=380
+            )
+            st.plotly_chart(fig_pack, use_container_width=True)
+        except Exception as e_pack_plotly:
+            st.warning(f"Error rendering interactive 3D box packing model: {e_pack_plotly}")
 else:
     st.warning("⚠️ No suitable boxes in your database can fit this product under the active weight or dimension parameters.")
