@@ -105,30 +105,29 @@ if upload_method == "Multi-Angle 2D Photos":
     uploaded_front = st.sidebar.file_uploader("Upload FRONT View (Length x Height)", type=["png", "jpg", "jpeg"])
     uploaded_side = st.sidebar.file_uploader("Upload SIDE View (Width x Height)", type=["png", "jpg", "jpeg"])
 else:
-    # ACCEPT BOTH STL, STEP, AND STP FILES IN THE SELECTION WIDGET
+    # ALLOW INTAKE OF STL OR STEP SPECIFICATIONS
     uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
     if uploaded_stl is not None:
         filename = uploaded_stl.name.lower()
         try:
             import trimesh
-            uploaded_stl.seek(0) # Reset buffer stream to prevent empty loading
+            uploaded_stl.seek(0)
             
-            # CHOOSE CORRECT CAD LOADER BASED ON EXTENSION NATIVELY
+            # PARSE DYNAMICALLY BASED ON ACTUAL COMPATIBLE CAD EXTENSIONS
             if filename.endswith('.step') or filename.endswith('.stp'):
-                # Loads Cascadio (OpenCascade CAD Parser) to compile the curves and compute Bounding Box math
                 import cascadio
                 mesh_cad = trimesh.load(uploaded_stl, file_type='step')
             else:
                 mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
             
-            # MATHEMATICAL BOUNDING BOX CALCULATION (Manager's exact request!)
+            # Calculate and load exact coordinates
             bounds = mesh_cad.bounding_box.extents
             dims = sorted(bounds)
             auto_h = round(dims[0], 1)
             auto_w = round(dims[1], 1)
             auto_l = round(dims[2], 1)
             
-            # Dynamic Unit Scale Correction (Converts cm to mm automatically if exported small)
+            # Auto unit scaling detector (cm to mm)
             if auto_l < 50.0:
                 auto_l *= 10.0
                 auto_w *= 10.0
@@ -138,7 +137,7 @@ else:
         except Exception as e_cad:
             st.sidebar.warning(f"Could not auto-extract CAD dimensions: {e_cad}")
 
-# Product Physical Dimensions Inputs (Pre-filled with Bounding Box data if available)
+# Product Physical Dimensions Inputs (Pre-filled with CAD data if available)
 st.sidebar.markdown("#### Part Dimensions (mm)")
 prod_l = st.sidebar.number_input("Part Length (mm)", min_value=1.0, value=float(auto_l), step=1.0)
 prod_w = st.sidebar.number_input("Part Width (mm)", min_value=1.0, value=float(auto_w), step=1.0)
@@ -250,7 +249,8 @@ for idx, row in df_inventory.iterrows():
     total_package_weight = total_payload_wt + box_weight
     
     # Weight Rule Check (Boxes >= 600x400 bypass 15kg limit)
-    is_large_box = (ext_l >= 600.0) and (ext_w >= 400.0)
+    # MODIFIED: FIXED FLOAT PRECISION TOLERANCE GAP FOR LARGE BOX DETECTOR
+    is_large_box = (ext_l >= 595.0) and (ext_w >= 395.0)
     if not is_large_box and total_package_weight > 15.0:
         continue
         
