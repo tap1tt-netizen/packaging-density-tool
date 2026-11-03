@@ -551,11 +551,9 @@ if results:
             h_scale = 30
             
             # --- PERFECT AXIS VERTICAL ASPECT RETENTION ---
-            # Automatically stretch the 3D grid height based on the number of layers (nz) to prevent label overlap!
             z_aspect = max(30, nz * 15)
             ax3d.set_box_aspect((l_scale, w_scale, z_aspect))
             
-            # Reduce font size dynamically if there are many layers
             lbl_font = 9 if nz > 6 else 12
             
             for layer in range(nz):
@@ -572,7 +570,6 @@ if results:
                 poly = Poly3DCollection(faces, facecolors=color, edgecolors='#1971c2', linewidths=1.5, alpha=0.8)
                 ax3d.add_collection3d(poly)
                 
-                # Dynamic layer side labels with spacing that grows as layers scale up!
                 ax3d.text(-35, 20, z_start + h_scale/2, f"L{layer + 1}", color='#dc3545', fontweight='bold', fontsize=lbl_font, ha='right', va='center', zorder=100)
                 ax3d.plot([-30, 0], [10, 0], [z_start + h_scale/2, z_start + h_scale/2], color='#dc3545', linestyle=':', linewidth=1)
                 
@@ -603,31 +600,32 @@ if results:
                 x_v, y_v, z_v = v_coords[:, 0], v_coords[:, 1], v_coords[:, 2]
                 i_f, j_f, k_f = f_indices[:, 0], f_indices[:, 1], f_indices[:, 2]
                 
-                # Draw the fully interactive 3D model using Plotly Mesh3d (UPGRADED SMOOTH SURFACE QUALITY)
+                # Draw the fully interactive 3D model using Plotly Mesh3d
                 fig_cad = go.Figure(data=[
                     go.Mesh3d(
                         x=x_v, y=y_v, z=z_v,
                         i=i_f, j=j_f, k=k_f,
-                        color='#d1d5db', # Polished clean silver-grey
+                        color='#d1d5db',
                         opacity=1.0,
-                        flatshading=False, # <-- ENABLE GOURAUD SMOOTH SURFACE RENDERING
+                        flatshading=False,
                         lighting=dict(
-                            ambient=0.5,     # Fills deep shadows beautifully
-                            diffuse=0.9,     # Gives smooth matte-metallic reflections
-                            roughness=0.15,  # Slightly polished sheen
-                            specular=1.6,    # High specular highlight curves
-                            fresnel=0.6      # Adds professional edge lighting highlights
+                            ambient=0.5,
+                            diffuse=0.9,
+                            roughness=0.15,
+                            specular=1.6,
+                            fresnel=0.6
                         ),
                         lightposition=dict(
                             x=1000,
                             y=1000,
-                            z=1500           # overhead overhead angle
+                            z=1500
                         ),
                         name="3D CAD Part"
                     )
                 ])
                 fig_cad.update_layout(
                     scene=dict(
+                        aspectmode='data',  # <-- ENFORCE PERFECT 1:1 PHYSICAL PROPORTIONS (PREVENTS SQUISHING/BULGING!)
                         xaxis=dict(visible=False),
                         yaxis=dict(visible=False),
                         zaxis=dict(visible=False)
