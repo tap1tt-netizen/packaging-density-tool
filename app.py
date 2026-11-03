@@ -625,7 +625,7 @@ if results:
                 ])
                 fig_cad.update_layout(
                     scene=dict(
-                        aspectmode='data',  # <-- ENFORCE PERFECT 1:1 PHYSICAL PROPORTIONS (PREVENTS SQUISHING/BULGING!)
+                        aspectmode='data',
                         xaxis=dict(visible=False),
                         yaxis=dict(visible=False),
                         zaxis=dict(visible=False)
@@ -645,27 +645,53 @@ if results:
             # Construct a fully interactive 3D wireframe box with real packed parts inside!
             fig_pack = go.Figure()
             
-            # Helper to add a 3D part cuboid to the Plotly scene
-            def add_plotly_part(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz, count_str):
-                # Vertices of individual parts
-                v = np.array([
+            # Helper to add a 3D wireframe outline for a compartment slot
+            def add_wireframe_compartment(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz):
+                cv = np.array([
                     [x_pos, y_pos, z_pos], [x_pos + dx, y_pos, z_pos],
                     [x_pos + dx, y_pos + dy, z_pos], [x_pos, y_pos + dy, z_pos],
                     [x_pos, y_pos, z_pos + dz], [x_pos + dx, y_pos, z_pos + dz],
                     [x_pos + dx, y_pos + dy, z_pos + dz], [x_pos, y_pos + dy, z_pos + dz]
                 ])
-                # Triangular faces
-                f = np.array([
-                    [0, 1, 2], [0, 2, 3], [4, 5, 6], [4, 6, 7],
-                    [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5],
-                    [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]
-                ])
+                edges_c = [
+                    (0, 1), (1, 2), (2, 3), (3, 0),
+                    (4, 5), (5, 6), (6, 7), (7, 4),
+                    (0, 4), (1, 5), (2, 6), (3, 7)
+                ]
+                for edge in edges_c:
+                    fig_scene.add_trace(go.Scatter3d(
+                        x=[cv[edge[0]][0], cv[edge[1]][0]],
+                        y=[cv[edge[0]][1], cv[edge[1]][1]],
+                        z=[cv[edge[0]][2], cv[edge[1]][2]],
+                        mode='lines',
+                        line=dict(color='rgba(150, 150, 150, 0.4)', width=2),
+                        showlegend=False,
+                        hoverinfo='skip'
+                    ))
+
+            # Helper to add actual CAD model mesh into a specific compartment (aligned and scaled!)
+            def add_plotly_mesh_part(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz, raw_v, raw_f, text_str):
+                # Calculate extent of raw mesh
+                min_v = np.min(raw_v, axis=0)
+                max_v = np.max(raw_v, axis=0)
+                raw_extent = max_v - min_v
+                
+                # Align and scale mesh to fit exactly inside the target (dx, dy, dz)
+                v_scaled = (raw_v - min_v) * np.array([dx / raw_extent[0], dy / raw_extent[1], dz / raw_extent[2]])
+                
+                # Move to compartment position (perfectly centered within its compartment slot)
+                v_final = v_scaled + np.array([x_pos, y_pos, z_pos])
+                
+                # Render using Gouraud-shaded mesh
                 fig_scene.add_trace(go.Mesh3d(
-                    x=v[:, 0], y=v[:, 1], z=v[:, 2],
-                    i=f[:, 0], j=f[:, 1], k=f[:, 2],
-                    color='#a5d8ff', opacity=0.7,
-                    flatshading=True, hoverinfo="text",
-                    text=f"Part Position: {count_str}",
+                    x=v_final[:, 0], y=v_final[:, 1], z=v_final[:, 2],
+                    i=raw_f[:, 0], j=raw_f[:, 1], k=raw_f[:, 2],
+                    color='#74c0fc', opacity=1.0,
+                    flatshading=False,
+                    lighting=dict(ambient=0.5, diffuse=0.9, specular=1.0, roughness=0.2),
+                    name=text_str,
+                    hoverinfo="text",
+                    text=text_str,
                     showlegend=False
                 ))
 
@@ -678,14 +704,40 @@ if results:
             start_x_offset = clear_side + (leftover_x / 2)
             start_y_offset = clear_side + (leftover_y / 2)
             
-            # Place individual parts as 3D block meshes inside the box
+            # Determine target cells to display the detailed CAD part
+            total_parts = nx * ny * nz
+            selected_cells = []
+            if total_parts <= 4:
+                # Draw in all slots if quantity is small
+                for l in range(nz):
+                    for r in range(ny):
+                        for c in range(nx):
+                            selected_cells.append((c, r, l))
+            else:
+                # Draw in exactly 3 distinct spots on the top layer so they are visible and non-overlapping
+                selected_cells.append((0, 0, nz - 1))
+                if nx > 2 and ny > 2:
+                    selected_cells.append((nx // 2, ny // 2, nz - 1))
+                selected_cells.append((nx - 1, ny - 1, nz - 1))
+
+            # Draw compartments & selectively insert parts
             for layer in range(nz):
                 z_pos = layer * (oz + sep_z)
                 for r in range(ny):
                     y_pos = start_y_offset + r * (oy + sep_xy)
                     for c in range(nx):
                         x_pos = start_x_offset + c * (ox + sep_xy)
-                        add_plotly_part(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz, f"Col {c+1}, Row {r+1}, Layer {layer+1}")
+                        
+                        # Always draw the empty compartment slot outline
+                        add_wireframe_compartment(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz)
+                        
+                        # Only insert the detailed CAD part mesh in selected cells
+                        if (c, r, layer) in selected_cells and mesh_cad is not None:
+                            add_plotly_mesh_part(
+                                fig_pack, x_pos, y_pos, z_pos, ox, oy, oz, 
+                                mesh_cad.vertices, mesh_cad.faces, 
+                                f"Part @ Col {c+1}, Row {r+1}, Layer {layer+1}"
+                            )
             
             # Draw Transparent Outer Box boundaries (FEFCO Box Walls)
             box_v = np.array([
