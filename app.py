@@ -7,6 +7,7 @@ import matplotlib.patches as patches
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from PIL import Image
 import base64
+import plotly.graph_objects as go
 
 # Set up page layout and appearance
 st.set_page_config(
@@ -101,10 +102,11 @@ uploaded_top = None
 uploaded_front = None
 uploaded_side = None
 uploaded_stl = None
+mesh_cad = None  # Global reference to loaded 3D mesh
 
-# Default part dimensions
+# Default part dimensions and weight
 auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
-calculated_weight_kg = 0.25  # Fallback default weight
+calculated_weight_kg = 0.25
 
 # Standard Engineering Material Densities (g/cm^3)
 MATERIAL_DENSITIES = {
@@ -159,7 +161,7 @@ else:
             
             # Dynamic Material Density Selector
             st.sidebar.markdown("#### 🪵 Material Weight Extractor")
-            selected_material = st.sidebar.selectbox("Select Part Material:", list(MATERIAL_DENSITIES.keys()))
+            selected_material = st.sidebar.selectbox("Select Part Material:", list(MATERIAL_DENSITIES.keys()), index=6) # Default to Stainless Steel
             density = MATERIAL_DENSITIES[selected_material]
             
             # Calculate weight: Vol (mm^3) * Density (g/cm^3) * 1e-6 (kg/g_mm3)
@@ -182,13 +184,13 @@ prod_wt = st.sidebar.number_input("Weight per Part (kg)", min_value=0.01, value=
 st.sidebar.markdown("---")
 st.sidebar.header("📏 Divider & Clearance Spacing")
 
-# Margins and Clearances (Directly from manager discussion)
-clear_side = st.sidebar.slider("Sides Clearance buffer (mm)", min_value=0, max_value=20, value=2, help="Clearance at the wall edges (lengthwise and widthwise)")
+# Margins and Clearances
+clear_side = st.sidebar.slider("Sides Clearance buffer (mm)", min_value=0, max_value=20, value=2, help="Clearance at the wall edges")
 clear_height = st.sidebar.slider("Height Clearance buffer (mm)", min_value=0, max_value=20, value=4, help="Clearance at the top height edge")
 sep_xy = st.sidebar.slider("Separator X/Y Thickness (mm)", min_value=0, max_value=10, value=2, help="Thickness of the horizontal dividers")
 sep_z = st.sidebar.slider("Separator Z Thickness (mm)", min_value=0, max_value=10, value=4, help="Thickness of the vertical shelf dividers")
 
-# Dropdown for Packing Orientation Rules (Allows users to FORCE orientations)
+# Dropdown for Packing Orientation Rules
 orientation_rule = st.sidebar.selectbox(
     "Select Orientation Rule:",
     ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"],
@@ -199,21 +201,16 @@ sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Volumetric Effici
 
 # --- RECOMMENDATION SYSTEM MATHEMATICS ---
 def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule):
-    # Sort dimensions to reliably identify Flat, Edge, and Vertical
-    dims = sorted([p_l, p_w, p_h]) # [smallest (Height), middle (Width), largest (Length)]
+    dims = sorted([p_l, p_w, p_h])
     h_dim, w_dim, l_dim = dims[0], dims[1], dims[2]
 
     if rule == "Force Flat Packing Only":
-        # Height must point up (pz = smallest dimension)
         orientations = [(l_dim, w_dim, h_dim), (w_dim, l_dim, h_dim)]
     elif rule == "Force Standing on Edge":
-        # Width must point up (pz = middle dimension)
         orientations = [(l_dim, h_dim, w_dim), (h_dim, l_dim, w_dim)]
     elif rule == "Force Standing Vertical":
-        # Length must point up (pz = largest dimension)
         orientations = [(w_dim, h_dim, l_dim), (h_dim, w_dim, l_dim)]
     else:
-        # Automatic: Check all 6 possible orientations
         orientations = [
             (p_l, p_w, p_h), (p_l, p_h, p_w),
             (p_w, p_l, p_h), (p_w, p_h, p_l),
@@ -273,7 +270,6 @@ for idx, row in df_inventory.iterrows():
     if pd.isna(box_int_l) or pd.isna(box_int_w) or pd.isna(box_int_h):
         continue
         
-    # Get optimal 3D layout count based on orientation rule
     parts_count, pack_orient, grid_layout = calculate_packing(
         box_int_l, box_int_w, box_int_h, 
         prod_l, prod_w, prod_h,
@@ -487,20 +483,6 @@ if results:
                 
             st.markdown(f"<p style='color:#1864ab; margin-top:10px;'><b>⚖️ Operational Weight:</b> Safe at {viz_box['Total Weight (kg)']} kg.</p></div>", unsafe_allow_html=True)
             
-            if upload_method == "Multi-Angle 2D Photos" and uploaded_top is not None:
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.markdown("##### 📸 Active Orientation Photo View:")
-                
-                dims = sorted([prod_l, prod_w, prod_h])
-                if int(oz) == int(dims[0]) and uploaded_top is not None:
-                    st.image(Image.open(uploaded_top), caption="Laying Flat (Top View)", use_column_width=True)
-                elif int(oz) == int(dims[1]) and uploaded_front is not None:
-                    st.image(Image.open(uploaded_front), caption="Standing on Edge (Front View)", use_column_width=True)
-                elif int(oz) == int(dims[2]) and uploaded_side is not None:
-                    st.image(Image.open(uploaded_side), caption="Standing Vertical (Side View)", use_column_width=True)
-                else:
-                    st.image(Image.open(uploaded_top), caption="Uploaded Top View Reference", use_column_width=True)
-            
         with col_flat:
             fig, ax = plt.subplots(figsize=(6, 4))
             box_l = viz_box["Int. Length [mm]"]
@@ -554,6 +536,14 @@ if results:
             l_scale = w_scale * (box_l / box_w)
             h_scale = 30
             
+            # --- PERFECT AXIS VERTICAL ASPECT RETENTION ---
+            # Automatically stretch the 3D grid height based on the number of layers (nz) to prevent label overlap!
+            z_aspect = max(30, nz * 15)
+            ax3d.set_box_aspect((l_scale, w_scale, z_aspect))
+            
+            # Reduce font size dynamically if there are many layers
+            lbl_font = 9 if nz > 6 else 12
+            
             for layer in range(nz):
                 z_start = layer * (h_scale + 5)
                 v = np.array([
@@ -568,8 +558,8 @@ if results:
                 poly = Poly3DCollection(faces, facecolors=color, edgecolors='#1971c2', linewidths=1.5, alpha=0.8)
                 ax3d.add_collection3d(poly)
                 
-                # Dynamic layer side labels with clean pointer lines on the left side (no overlapping!)
-                ax3d.text(-35, 20, z_start + h_scale/2, f"L{layer + 1}", color='#dc3545', fontweight='bold', fontsize=12, ha='right', va='center', zorder=100)
+                # Dynamic layer side labels with spacing that grows as layers scale up!
+                ax3d.text(-35, 20, z_start + h_scale/2, f"L{layer + 1}", color='#dc3545', fontweight='bold', fontsize=lbl_font, ha='right', va='center', zorder=100)
                 ax3d.plot([-30, 0], [10, 0], [z_start + h_scale/2, z_start + h_scale/2], color='#dc3545', linestyle=':', linewidth=1)
                 
             ax3d.set_xlim(-50, l_scale + 10)
@@ -581,5 +571,136 @@ if results:
             plt.title("Vertical Stacking Blueprint", fontsize=11, fontweight='bold', color='#212529', pad=10)
             st.pyplot(fig3d)
             plt.close(fig3d)
+
+    # --- DYNAMIC INTERACTIVE 3D DIGITAL TWIN VIEWPORT (Fixes Issue #2) ---
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.subheader("🔄 Interactive 3D Digital Twin Viewport (Rotatable)")
+    
+    col_cad, col_packing_3d = st.columns(2)
+    
+    with col_cad:
+        st.markdown("##### 🔍 Rotatable 3D CAD Part Model")
+        if mesh_cad is not None:
+            try:
+                # Extract faces and vertices from loaded CAD file
+                v_coords = mesh_cad.vertices
+                f_indices = mesh_cad.faces
+                
+                x_v, y_v, z_v = v_coords[:, 0], v_coords[:, 1], v_coords[:, 2]
+                i_f, j_f, k_f = f_indices[:, 0], f_indices[:, 1], f_indices[:, 2]
+                
+                # Draw the fully interactive 3D model using Plotly Mesh3d
+                fig_cad = go.Figure(data=[
+                    go.Mesh3d(
+                        x=x_v, y=y_v, z=z_v,
+                        i=i_f, j=j_f, k=k_f,
+                        color='#74c0fc', opacity=0.9,
+                        flatshading=True,
+                        lighting=dict(ambient=0.4, diffuse=0.8, specular=0.2),
+                        name="3D CAD Part"
+                    )
+                ])
+                fig_cad.update_layout(
+                    scene=dict(
+                        xaxis=dict(visible=False),
+                        yaxis=dict(visible=False),
+                        zaxis=dict(visible=False)
+                    ),
+                    margin=dict(l=0, r=0, b=0, t=0),
+                    height=380
+                )
+                st.plotly_chart(fig_cad, use_container_width=True)
+            except Exception as e_plotly:
+                st.info("Upload your 3D CAD (.STL/.STEP) file to activate the rotatable 3D digital twin viewer!")
+        else:
+            st.info("💡 Please upload a 3D CAD (.STL/.STEP) file in the sidebar to activate this rotatable digital twin viewer!")
+
+    with col_packing_3d:
+        st.markdown("##### 📦 Rotatable 3D Box Packing Layout")
+        try:
+            # Construct a fully interactive 3D wireframe box with real packed parts inside!
+            fig_pack = go.Figure()
+            
+            # Helper to add a 3D part cuboid to the Plotly scene
+            def add_plotly_part(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz, count_str):
+                # Vertices of individual parts
+                v = np.array([
+                    [x_pos, y_pos, z_pos], [x_pos + dx, y_pos, z_pos],
+                    [x_pos + dx, y_pos + dy, z_pos], [x_pos, y_pos + dy, z_pos],
+                    [x_pos, y_pos, z_pos + dz], [x_pos + dx, y_pos, z_pos + dz],
+                    [x_pos + dx, y_pos + dy, z_pos + dz], [x_pos, y_pos + dy, z_pos + dz]
+                ])
+                # Triangular faces
+                f = np.array([
+                    [0, 1, 2], [0, 2, 3], [4, 5, 6], [4, 6, 7],
+                    [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5],
+                    [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]
+                ])
+                fig_scene.add_trace(go.Mesh3d(
+                    x=v[:, 0], y=v[:, 1], z=v[:, 2],
+                    i=f[:, 0], j=f[:, 1], k=f[:, 2],
+                    color='#a5d8ff', opacity=0.7,
+                    flatshading=True, hoverinfo="text",
+                    text=f"Part Position: {count_str}",
+                    showlegend=False
+                ))
+
+            # Centering mathematics matching the 2D Matplotlib Blueprint
+            total_grid_w = nx * ox + (nx - 1) * sep_xy
+            total_grid_h = ny * oy + (ny - 1) * sep_xy
+            leftover_x = (box_l - 2 * clear_side) - total_grid_w
+            leftover_y = (box_w - 2 * clear_side) - total_grid_h
+            
+            start_x_offset = clear_side + (leftover_x / 2)
+            start_y_offset = clear_side + (leftover_y / 2)
+            
+            # Place individual parts as 3D block meshes inside the box
+            for layer in range(nz):
+                z_pos = layer * (oz + sep_z)
+                for r in range(ny):
+                    y_pos = start_y_offset + r * (oy + sep_xy)
+                    for c in range(nx):
+                        x_pos = start_x_offset + c * (ox + sep_xy)
+                        add_plotly_part(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz, f"Col {c+1}, Row {r+1}, Layer {layer+1}")
+            
+            # Draw Transparent Outer Box boundaries (FEFCO Box Walls)
+            box_v = np.array([
+                [0, 0, 0], [box_l, 0, 0], [box_l, box_w, 0], [0, box_w, 0],
+                [0, 0, viz_box["Int. Height [mm]"]], [box_l, 0, viz_box["Int. Height [mm]"]],
+                [box_l, box_w, viz_box["Int. Height [mm]"]], [0, box_w, viz_box["Int. Height [mm]"]]
+            ])
+            
+            # Box Edges structure
+            edges = [
+                (0, 1), (1, 2), (2, 3), (3, 0),  # Bottom face
+                (4, 5), (5, 6), (6, 7), (7, 4),  # Top face
+                (0, 4), (1, 5), (2, 6), (3, 7)   # Verticals
+            ]
+            
+            # Add wireframe box outline
+            for edge in edges:
+                fig_pack.add_trace(go.Scatter3d(
+                    x=[box_v[edge[0]][0], box_v[edge[1]][0]],
+                    y=[box_v[edge[0]][1], box_v[edge[1]][1]],
+                    z=[box_v[edge[0]][2], box_v[edge[1]][2]],
+                    mode='lines',
+                    line=dict(color='#212529', width=4),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+                
+            fig_pack.update_layout(
+                scene=dict(
+                    xaxis_title="Length (mm)",
+                    yaxis_title="Width (mm)",
+                    zaxis_title="Height (mm)",
+                    aspectmode='data'
+                ),
+                margin=dict(l=0, r=0, b=0, t=0),
+                height=380
+            )
+            st.plotly_chart(fig_pack, use_container_width=True)
+        except Exception as e_pack_plotly:
+            st.warning(f"Error rendering interactive 3D box packing model: {e_pack_plotly}")
 else:
     st.warning("⚠️ No suitable boxes in your database can fit this product under the active weight or dimension parameters.")
