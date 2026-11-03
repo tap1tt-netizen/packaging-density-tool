@@ -483,6 +483,20 @@ if results:
                 
             st.markdown(f"<p style='color:#1864ab; margin-top:10px;'><b>⚖️ Operational Weight:</b> Safe at {viz_box['Total Weight (kg)']} kg.</p></div>", unsafe_allow_html=True)
             
+            if upload_method == "Multi-Angle 2D Photos" and uploaded_top is not None:
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("##### 📸 Active Orientation Photo View:")
+                
+                dims = sorted([prod_l, prod_w, prod_h])
+                if int(oz) == int(dims[0]) and uploaded_top is not None:
+                    st.image(Image.open(uploaded_top), caption="Laying Flat (Top View)", use_column_width=True)
+                elif int(oz) == int(dims[1]) and uploaded_front is not None:
+                    st.image(Image.open(uploaded_front), caption="Standing on Edge (Front View)", use_column_width=True)
+                elif int(oz) == int(dims[2]) and uploaded_side is not None:
+                    st.image(Image.open(uploaded_side), caption="Standing Vertical (Side View)", use_column_width=True)
+                else:
+                    st.image(Image.open(uploaded_top), caption="Uploaded Top View Reference", use_column_width=True)
+            
         with col_flat:
             fig, ax = plt.subplots(figsize=(6, 4))
             box_l = viz_box["Int. Length [mm]"]
@@ -572,7 +586,7 @@ if results:
             st.pyplot(fig3d)
             plt.close(fig3d)
 
-    # --- DYNAMIC INTERACTIVE 3D DIGITAL TWIN VIEWPORT (Fixes Issue #2) ---
+    # --- DYNAMIC INTERACTIVE 3D DIGITAL TWIN VIEWPORT ---
     st.markdown("<hr>", unsafe_allow_html=True)
     st.subheader("🔄 Interactive 3D Digital Twin Viewport (Rotatable)")
     
@@ -589,14 +603,26 @@ if results:
                 x_v, y_v, z_v = v_coords[:, 0], v_coords[:, 1], v_coords[:, 2]
                 i_f, j_f, k_f = f_indices[:, 0], f_indices[:, 1], f_indices[:, 2]
                 
-                # Draw the fully interactive 3D model using Plotly Mesh3d
+                # Draw the fully interactive 3D model using Plotly Mesh3d (UPGRADED SMOOTH SURFACE QUALITY)
                 fig_cad = go.Figure(data=[
                     go.Mesh3d(
                         x=x_v, y=y_v, z=z_v,
                         i=i_f, j=j_f, k=k_f,
-                        color='#74c0fc', opacity=0.9,
-                        flatshading=True,
-                        lighting=dict(ambient=0.4, diffuse=0.8, specular=0.2),
+                        color='#d1d5db', # Polished clean silver-grey
+                        opacity=1.0,
+                        flatshading=False, # <-- ENABLE GOURAUD SMOOTH SURFACE RENDERING
+                        lighting=dict(
+                            ambient=0.5,     # Fills deep shadows beautifully
+                            diffuse=0.9,     # Gives smooth matte-metallic reflections
+                            roughness=0.15,  # Slightly polished sheen
+                            specular=1.6,    # High specular highlight curves
+                            fresnel=0.6      # Adds professional edge lighting highlights
+                        ),
+                        lightposition=dict(
+                            x=1000,
+                            y=1000,
+                            z=1500           # overhead overhead angle
+                        ),
                         name="3D CAD Part"
                     )
                 ])
