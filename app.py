@@ -31,10 +31,17 @@ st.markdown("""
         overflow: hidden;
     }
     .guide-box {
-        background-color: #e9ecef;
+        background-color: #f1f3f5;
         padding: 20px;
         border-radius: 10px;
         border: 1px solid #ced4da;
+    }
+    .warning-box {
+        background-color: #fff9db;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 5px solid #f59f00;
+        margin-bottom: 15px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -154,7 +161,7 @@ sep_xy = st.sidebar.slider("Separator X/Y Thickness (mm)", min_value=0, max_valu
 sep_z = st.sidebar.slider("Separator Z Thickness (mm)", min_value=0, max_value=10, value=4, help="Thickness of the vertical shelf dividers")
 
 # Enforce stable flat orientation
-strict_flat = st.sidebar.checkbox("Strict Flat Packing (Highly Recommended)", value=True, help="Force the part to remain flat on its base (height stays at 40 mm) so it does not tip over in transit.")
+strict_flat = st.sidebar.checkbox("Strict Flat Packing (Highly Recommended)", value=True, help="Force the part to remain flat on its base (height stays at its smallest dimension) so it does not tip over in transit.")
 sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Volumetric Efficiency (%)", "Number of Parts per Box", "Box Price (€)"])
 
 # --- RECOMMENDATION SYSTEM MATHEMATICS ---
@@ -190,7 +197,7 @@ def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, strict_fla
 
 # Helper to identify the physical placement style
 def determine_placement_style(p_l, p_w, p_h, oz):
-    dims = sorted([p_l, p_w, p_h]) # [36.3, 119.6, 119.6]
+    dims = sorted([p_l, p_w, p_h])
     if int(oz) == int(dims[0]):
         return "🟢 FLAT / HORIZONTAL (Resting on wide base, most stable)"
     elif int(oz) == int(dims[1]):
@@ -299,7 +306,6 @@ if results:
     # KPI Metric Cards
     st.subheader("💡 Best Matched Packing Insights")
     best_box = ranked_df.iloc[0]
-    clean_box_size = best_box['Box ID / Specification'].split(':')[-1].strip()
     
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
@@ -346,19 +352,43 @@ if results:
     
     # --- DYNAMIC PACKING GUIDE & MATPLOTLIB BLUEPRINT EXPANDER ---
     st.markdown("<br>", unsafe_allow_html=True)
-    with st.expander("📋 Click to view Step-by-Step Visual Blueprint Loading Map", expanded=True):
+    
+    # DYNAMIC LAYOUT SELECTOR (Allows operators to view blueprints of any of the Top 10 boxes!)
+    st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
+    selected_box_spec = st.selectbox(
+        "Select a Cardboard Box from the Top 10 to generate its loading blueprints:",
+        ranked_df["Box ID / Specification"].values
+    )
+    
+    # Filter selected box metrics
+    viz_box = ranked_df[ranked_df["Box ID / Specification"] == selected_box_spec].iloc[0]
+    
+    # Pull selected box packing metrics
+    nx = int(viz_box["_nx"])
+    ny = int(viz_box["_ny"])
+    nz = int(viz_box["_nz"])
+    ox = int(viz_box["_ox"])
+    oy = int(viz_box["_oy"])
+    oz = int(viz_box["_oz"])
+    
+    # --- SMART ORIENTATION ALERT BOX ---
+    placement_style = determine_placement_style(prod_l, prod_w, prod_h, oz)
+    
+    # Check if a standing orientation is limited to 1 layer and warn the user
+    is_standing = oz > min(prod_l, prod_w, prod_h)
+    if is_standing and nz == 1:
+        req_height_2_layers = (oz * 2) + sep_z + clear_height
+        st.markdown(f"""
+            <div class='warning-box'>
+                💡 <b>Alternative Orientation Tip:</b> You are packing the parts <b>standing on edge/vertical</b>. 
+                While this fits more parts on the floor grid, you can only pack <b>1 single layer</b> because this box height ({int(viz_box['Int. Height [mm]'])} mm) is too short. 
+                <br>👉 To stack <b>2 layers</b> in this standing orientation, you would need to ask procurement for a taller box with an internal height of at least <b>{int(req_height_2_layers)} mm</b>.
+            </div>
+        """, unsafe_allow_html=True)
+
+    # Render blueprints container
+    with st.container():
         col_text, col_flat, col_stack = st.columns([2.5, 3, 2.5])
-        
-        # Pull raw packing metrics
-        nx = int(best_box["_nx"])
-        ny = int(best_box["_ny"])
-        nz = int(best_box["_nz"])
-        ox = int(best_box["_ox"])
-        oy = int(best_box["_oy"])
-        oz = int(best_box["_oz"])
-        
-        # Calculate dynamic placement style
-        placement_style = determine_placement_style(prod_l, prod_w, prod_h, oz)
         
         with col_text:
             st.markdown("<div class='guide-box'><h4><b>🛠️ 3-Step Packing Instruction</b></h4><hr>", unsafe_allow_html=True)
@@ -381,7 +411,7 @@ if results:
             Lay down a grid of <b>{nx} columns</b> and <b>{ny} rows</b> of parts on the floor of the box. 
             <ul>
                 <li>This packs exactly <b>{nx * ny} parts</b> on this layer.</li>
-                <li>Place the 2mm partition grids between each part.</li>
+                <li>Place the {sep_xy}mm partition grids between each part.</li>
             </ul>
             """, unsafe_allow_html=True)
             
@@ -390,19 +420,19 @@ if results:
                 st.markdown(f"""
                 <b>Step 3: Stacking Vertical Layers</b><br>
                 <ul>
-                    <li>Lay down a flat 4mm cardboard divider sheet on top of your completed layer.</li>
+                    <li>Lay down a flat {sep_z}mm cardboard divider sheet on top of your completed layer.</li>
                     <li>Repeat the same grid layout of {nx*ny} parts on top.</li>
-                    <li>Do this until you have built a total of <b>{nz} vertical layers</b> (reaching <b>{int(best_box['Number of Parts per Box'])} pieces</b> in total).</li>
+                    <li>Do this until you have built a total of <b>{nz} vertical layers</b> (reaching <b>{int(viz_box['Number of Parts per Box'])} pieces</b> in total).</li>
                 </ul>
                 """, unsafe_allow_html=True)
             else:
                 st.markdown(f"""
                 <b>Step 3: Finish Packing</b><br>
-                Since all <b>{int(best_box['Number of Parts per Box'])} parts</b> fit in <b>1 single floor layer</b>, you do not need any flat shelf dividers or vertical stacking. 
+                Since all <b>{int(viz_box['Number of Parts per Box'])} parts</b> fit in <b>1 single floor layer</b>, you do not need any flat shelf dividers or vertical stacking. 
                 <br>Just seal the box and ship!
                 """, unsafe_allow_html=True)
                 
-            st.markdown(f"<p style='color:#1864ab; margin-top:10px;'><b>⚖️ Operational Weight:</b> Safe at {best_box['Total Weight (kg)']} kg.</p></div>", unsafe_allow_html=True)
+            st.markdown(f"<p style='color:#1864ab; margin-top:10px;'><b>⚖️ Operational Weight:</b> Safe at {viz_box['Total Weight (kg)']} kg.</p></div>", unsafe_allow_html=True)
             
             # Display uploaded part photo dynamically inside the packing guide panel
             if upload_method == "Multi-Angle 2D Photos" and uploaded_top is not None:
@@ -422,10 +452,10 @@ if results:
         with col_flat:
             # Generate Matplotlib Blueprint of the floor layout
             fig, ax = plt.subplots(figsize=(6, 4))
-            box_l = best_box["Int. Length [mm]"]
-            box_w = best_box["Int. Width [mm]"]
-            ext_l = best_box["Ext. Length [mm]"]
-            ext_w = best_box["Ext. Width [mm]"]
+            box_l = viz_box["Int. Length [mm]"]
+            box_w = viz_box["Int. Width [mm]"]
+            ext_l = viz_box["Ext. Length [mm]"]
+            ext_w = viz_box["Ext. Width [mm]"]
             
             # Draw box border
             ax.add_patch(patches.Rectangle((0, 0), box_l, box_w, fill=False, edgecolor='#212529', linewidth=2.5, label='Box Wall'))
