@@ -97,17 +97,14 @@ except Exception as e:
 # --- SIDEBAR: OPERATOR INPUTS ---
 st.sidebar.header("⚙️ Product Specifications")
 
-# Visual Input Method Selector
-upload_method = st.sidebar.radio("Select Visual Reference Method:", ["Multi-Angle 2D Photos", "3D CAD Model (.STL/.STEP)"])
-uploaded_top = None
-uploaded_front = None
-uploaded_side = None
-uploaded_stl = None
+# Upload mechanism restricted solely to 3D CAD File
+uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
 mesh_cad = None  # Global reference to loaded 3D mesh
 
 # Default part dimensions and weight
 auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
 calculated_weight_kg = 0.25
+material_selected = True  # Weight calculation status gate
 
 # Standard Engineering Material Densities (g/cm^3)
 MATERIAL_DENSITIES = {
@@ -120,57 +117,58 @@ MATERIAL_DENSITIES = {
     "Stainless Steel": 8.00
 }
 
-if upload_method == "Multi-Angle 2D Photos":
-    uploaded_top = st.sidebar.file_uploader("Upload TOP View (Length x Width)", type=["png", "jpg", "jpeg"])
-    uploaded_front = st.sidebar.file_uploader("Upload FRONT View (Length x Height)", type=["png", "jpg", "jpeg"])
-    uploaded_side = st.sidebar.file_uploader("Upload SIDE View (Width x Height)", type=["png", "jpg", "jpeg"])
-else:
-    # ALLOW INTAKE OF STL OR STEP SPECIFICATIONS
-    uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
-    if uploaded_stl is not None:
-        filename = uploaded_stl.name.lower()
-        try:
-            import trimesh
-            uploaded_stl.seek(0)
+if uploaded_stl is not None:
+    filename = uploaded_stl.name.lower()
+    try:
+        import trimesh
+        uploaded_stl.seek(0)
+        
+        # PARSE DYNAMICALLY BASED ON ACTUAL COMPATIBLE CAD EXTENSIONS
+        if filename.endswith('.step') or filename.endswith('.stp'):
+            import cascadio
+            mesh_cad = trimesh.load(uploaded_stl, file_type='step')
+        else:
+            mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
+        
+        # Calculate and load exact coordinates
+        bounds = mesh_cad.bounding_box.extents
+        dims = sorted(bounds)
+        auto_h = round(dims[0], 1)
+        auto_w = round(dims[1], 1)
+        auto_l = round(dims[2], 1)
+        
+        # Extract raw CAD solid volume
+        cad_volume = mesh_cad.volume
+        
+        # Auto unit scaling detector (cm to mm)
+        is_cm_scale = auto_l < 50.0
+        if is_cm_scale:
+            auto_l *= 10.0
+            auto_w *= 10.0
+            auto_h *= 10.0
+            cad_volume *= 1000.0  # Scale volume from cm^3 to mm^3
             
-            # PARSE DYNAMICALLY BASED ON ACTUAL COMPATIBLE CAD EXTENSIONS
-            if filename.endswith('.step') or filename.endswith('.stp'):
-                import cascadio
-                mesh_cad = trimesh.load(uploaded_stl, file_type='step')
-            else:
-                mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
-            
-            # Calculate and load exact coordinates
-            bounds = mesh_cad.bounding_box.extents
-            dims = sorted(bounds)
-            auto_h = round(dims[0], 1)
-            auto_w = round(dims[1], 1)
-            auto_l = round(dims[2], 1)
-            
-            # Extract raw CAD solid volume
-            cad_volume = mesh_cad.volume
-            
-            # Auto unit scaling detector (cm to mm)
-            is_cm_scale = auto_l < 50.0
-            if is_cm_scale:
-                auto_l *= 10.0
-                auto_w *= 10.0
-                auto_h *= 10.0
-                cad_volume *= 1000.0  # Scale volume from cm^3 to mm^3
-                
-            st.sidebar.success(f"📐 Auto-Extracted Dimensions: {auto_l} x {auto_w} x {auto_h} mm")
-            
-            # Dynamic Material Density Selector
-            st.sidebar.markdown("#### 🪵 Material Weight Extractor")
-            selected_material = st.sidebar.selectbox("Select Part Material:", list(MATERIAL_DENSITIES.keys()), index=6) # Default to Stainless Steel
+        st.sidebar.success(f"📐 Auto-Extracted Dimensions: {auto_l} x {auto_w} x {auto_h} mm")
+        
+        # Dynamic Material Density Selector (Mandatory Prompt)
+        st.sidebar.markdown("#### 🪵 Material Weight Extractor")
+        selected_material = st.sidebar.selectbox(
+            "Select Part Material:",
+            options=["Select Material..."] + list(MATERIAL_DENSITIES.keys()),
+            index=0,
+            help="Choose the physical material of this component to calculate its exact solid weight."
+        )
+        
+        if selected_material == "Select Material...":
+            material_selected = False
+        else:
             density = MATERIAL_DENSITIES[selected_material]
-            
             # Calculate weight: Vol (mm^3) * Density (g/cm^3) * 1e-6 (kg/g_mm3)
             calculated_weight_kg = round(cad_volume * density * 1e-6, 3)
             st.sidebar.info(f"⚖️ Calculated Solid Weight ({selected_material}): **{calculated_weight_kg} kg**")
-            
-        except Exception as e_cad:
-            st.sidebar.warning(f"Could not auto-extract CAD dimensions: {e_cad}")
+        
+    except Exception as e_cad:
+        st.sidebar.warning(f"Could not auto-extract CAD dimensions: {e_cad}")
 
 # Product Physical Dimensions Inputs (Pre-filled with CAD data if available)
 st.sidebar.markdown("#### Part Dimensions (mm)")
@@ -199,6 +197,11 @@ orientation_rule = st.sidebar.selectbox(
 )
 
 sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Volumetric Efficiency (%)", "Number of Parts per Box", "Box Price (€)"])
+
+# Block execution if a CAD file is uploaded but the material is not yet selected
+if not material_selected:
+    st.warning("⚠️ **Please select a part material** in the **Material Weight Extractor** dropdown on the sidebar to calculate the weight and recommend cardboard boxes.")
+    st.stop()
 
 # --- RECOMMENDATION SYSTEM MATHEMATICS ---
 def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule):
@@ -396,14 +399,16 @@ if results:
     # --- DYNAMIC SELECTBOX MEMORY (SESSION STATE) ---
     available_boxes = list(ranked_df["Box ID / Specification"].values)
     
-    if "selected_box" not in st.session_state:
+    # --- SMART ACTIVE RESET DETECTOR (Fixes Issue #3) ---
+    # Automatically resets selection back to Index 0 (Top #1) if the box options change due to orientation/file updates!
+    if "last_available_boxes" not in st.session_state or st.session_state["last_available_boxes"] != available_boxes:
+        st.session_state["selected_box"] = available_boxes[0]
+        st.session_state["last_available_boxes"] = available_boxes
+
+    if "selected_box" not in st.session_state or st.session_state["selected_box"] not in available_boxes:
         st.session_state["selected_box"] = available_boxes[0]
         
-    if st.session_state["selected_box"] in available_boxes:
-        default_index = available_boxes.index(st.session_state["selected_box"])
-    else:
-        default_index = 0
-        st.session_state["selected_box"] = available_boxes[0]
+    default_index = available_boxes.index(st.session_state["selected_box"])
 
     def on_box_change():
         st.session_state["selected_box"] = st.session_state["temp_box_selector"]
@@ -483,20 +488,6 @@ if results:
                 """, unsafe_allow_html=True)
                 
             st.markdown(f"<p style='color:#1864ab; margin-top:10px;'><b>⚖️ Operational Weight:</b> Safe at {viz_box['Total Weight (kg)']} kg.</p></div>", unsafe_allow_html=True)
-            
-            if upload_method == "Multi-Angle 2D Photos" and uploaded_top is not None:
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.markdown("##### 📸 Active Orientation Photo View:")
-                
-                dims = sorted([prod_l, prod_w, prod_h])
-                if int(oz) == int(dims[0]) and uploaded_top is not None:
-                    st.image(Image.open(uploaded_top), caption="Laying Flat (Top View)", use_column_width=True)
-                elif int(oz) == int(dims[1]) and uploaded_front is not None:
-                    st.image(Image.open(uploaded_front), caption="Standing on Edge (Front View)", use_column_width=True)
-                elif int(oz) == int(dims[2]) and uploaded_side is not None:
-                    st.image(Image.open(uploaded_side), caption="Standing Vertical (Side View)", use_column_width=True)
-                else:
-                    st.image(Image.open(uploaded_top), caption="Uploaded Top View Reference", use_column_width=True)
             
         with col_flat:
             fig, ax = plt.subplots(figsize=(6, 4))
@@ -670,15 +661,12 @@ if results:
                         hoverinfo='skip'
                     ))
 
-            # Helper to add actual CAD model mesh into a specific compartment (aligned and scaled!)
+            # Helper to add actual CAD model mesh into a specific compartment
             def add_plotly_mesh_part(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz, raw_v, raw_f, text_str):
-                # Calculate extent of raw mesh
                 min_v = np.min(raw_v, axis=0)
                 max_v = np.max(raw_v, axis=0)
                 raw_extent = max_v - min_v
                 
-                # --- NEW PERFECT COORDINATES & PROPORTIONAL ALIGNMENT SYSTEM ---
-                # 1. Find the best permutation to map the raw coordinates directly onto target (dx, dy, dz)
                 best_perm = None
                 min_error = float('inf')
                 for perm in itertools.permutations([0, 1, 2]):
@@ -689,15 +677,12 @@ if results:
                         min_error = error
                         best_perm = perm
                 
-                # 2. Align vertices columns strictly based on the best permutation (corrects orientation!)
                 v_aligned = (raw_v - min_v)[:, list(best_perm)]
                 
-                # 3. Calculate a SINGLE uniform scale factor (keeps perfect 1:1 shape proportions with zero bulging!)
                 aligned_extent = raw_extent[list(best_perm)]
                 scale_factor = np.min(np.array([dx, dy, dz]) / aligned_extent)
                 v_scaled = v_aligned * scale_factor
                 
-                # 4. Center-align the part within its compartment slot
                 scaled_extent = aligned_extent * scale_factor
                 gap_x = dx - scaled_extent[0]
                 gap_y = dy - scaled_extent[1]
@@ -705,7 +690,6 @@ if results:
                 
                 v_final = v_scaled + np.array([x_pos + gap_x/2, y_pos + gap_y/2, z_pos + gap_z/2])
                 
-                # Render using Gouraud-shaded mesh (Upgraded smooth finish)
                 fig_scene.add_trace(go.Mesh3d(
                     x=v_final[:, 0], y=v_final[:, 1], z=v_final[:, 2],
                     i=raw_f[:, 0], j=raw_f[:, 1], k=raw_f[:, 2],
@@ -724,7 +708,7 @@ if results:
                     showlegend=False
                 ))
 
-            # Centering mathematics matching the 2D Matplotlib Blueprint
+            # Centering mathematics matching the 2D Blueprint
             total_grid_w = nx * ox + (nx - 1) * sep_xy
             total_grid_h = ny * oy + (ny - 1) * sep_xy
             leftover_x = (box_l - 2 * clear_side) - total_grid_w
@@ -737,13 +721,11 @@ if results:
             total_parts = nx * ny * nz
             selected_cells = []
             if total_parts <= 4:
-                # Draw in all slots if quantity is small
                 for l in range(nz):
                     for r in range(ny):
                         for c in range(nx):
                             selected_cells.append((c, r, l))
             else:
-                # Draw in exactly 3 distinct spots on the top layer so they are visible and non-overlapping
                 selected_cells.append((0, 0, nz - 1))
                 if nx > 2 and ny > 2:
                     selected_cells.append((nx // 2, ny // 2, nz - 1))
@@ -757,10 +739,8 @@ if results:
                     for c in range(nx):
                         x_pos = start_x_offset + c * (ox + sep_xy)
                         
-                        # Always draw the empty compartment slot outline
                         add_wireframe_compartment(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz)
                         
-                        # Only insert the detailed CAD part mesh in selected cells
                         if (c, r, layer) in selected_cells and mesh_cad is not None:
                             add_plotly_mesh_part(
                                 fig_pack, x_pos, y_pos, z_pos, ox, oy, oz, 
@@ -768,21 +748,19 @@ if results:
                                 f"Part @ Col {c+1}, Row {r+1}, Layer {layer+1}"
                             )
             
-            # Draw Transparent Outer Box boundaries (FEFCO Box Walls)
+            # Draw Outer Box boundaries
             box_v = np.array([
                 [0, 0, 0], [box_l, 0, 0], [box_l, box_w, 0], [0, box_w, 0],
                 [0, 0, viz_box["Int. Height [mm]"]], [box_l, 0, viz_box["Int. Height [mm]"]],
                 [box_l, box_w, viz_box["Int. Height [mm]"]], [0, box_w, viz_box["Int. Height [mm]"]]
             ])
             
-            # Box Edges structure
             edges = [
-                (0, 1), (1, 2), (2, 3), (3, 0),  # Bottom face
-                (4, 5), (5, 6), (6, 7), (7, 4),  # Top face
-                (0, 4), (1, 5), (2, 6), (3, 7)   # Verticals
+                (0, 1), (1, 2), (2, 3), (3, 0),
+                (4, 5), (5, 6), (6, 7), (7, 4),
+                (0, 4), (1, 5), (2, 6), (3, 7)
             ]
             
-            # Add wireframe box outline
             for edge in edges:
                 fig_pack.add_trace(go.Scatter3d(
                     x=[box_v[edge[0]][0], box_v[edge[1]][0]],
