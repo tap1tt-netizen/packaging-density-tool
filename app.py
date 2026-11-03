@@ -100,46 +100,45 @@ uploaded_stl = None
 # Default part dimensions
 auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
 
-# SECURE IN-LINE CAD PARSER (No heavy C++ compiler dependencies needed!)
 if upload_method == "Multi-Angle 2D Photos":
     uploaded_top = st.sidebar.file_uploader("Upload TOP View (Length x Width)", type=["png", "jpg", "jpeg"])
     uploaded_front = st.sidebar.file_uploader("Upload FRONT View (Length x Height)", type=["png", "jpg", "jpeg"])
     uploaded_side = st.sidebar.file_uploader("Upload SIDE View (Width x Height)", type=["png", "jpg", "jpeg"])
 else:
+    # ACCEPT BOTH STL, STEP, AND STP FILES IN THE SELECTION WIDGET
     uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
     if uploaded_stl is not None:
         filename = uploaded_stl.name.lower()
         try:
-            uploaded_stl.seek(0)
+            import trimesh
+            uploaded_stl.seek(0) # Reset buffer stream to prevent empty loading
+            
+            # CHOOSE CORRECT CAD LOADER BASED ON EXTENSION NATIVELY
             if filename.endswith('.step') or filename.endswith('.stp'):
-                # Pure Python step metadata boundary parsing
-                content = uploaded_stl.read().decode('utf-8', errors='ignore')
-                import re
-                box_dims = re.findall(r"CARTESIAN_POINT\s*\(\s*'.*?'\s*,\s*\(\s*([\d.-]+)\s*,\s*([\d.-]+)\s*,\s*([\d.-]+)\s*\)\s*\)", content)
-                if box_dims:
-                    pts = np.array([[float(p[0]), float(p[1]), float(p[2])] for p in box_dims])
-                    bounds = np.ptp(pts, axis=0)
-                    dims = sorted(bounds)
-                    auto_h = max(10.0, round(dims[0], 1))
-                    auto_w = max(10.0, round(dims[1], 1))
-                    auto_l = max(10.0, round(dims[2], 1))
-                    st.sidebar.success(f"📐 Auto-Extracted STEP Dimensions: {auto_l} x {auto_w} x {auto_h} mm")
-                else:
-                    st.sidebar.warning("Unable to automatically parse STEP file curves. Please adjust manually below.")
+                # Loads Cascadio (OpenCascade CAD Parser) to compile the curves and compute Bounding Box math
+                import cascadio
+                mesh_cad = trimesh.load(uploaded_stl, file_type='step')
             else:
-                # STL uploader
-                import trimesh
                 mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
-                bounds = mesh_cad.bounding_box.extents
-                dims = sorted(bounds)
-                auto_h = round(dims[0], 1)
-                auto_w = round(dims[1], 1)
-                auto_l = round(dims[2], 1)
-                st.sidebar.success(f"📐 Auto-Extracted STL Dimensions: {auto_l} x {auto_w} x {auto_h} mm")
+            
+            # MATHEMATICAL BOUNDING BOX CALCULATION (Manager's exact request!)
+            bounds = mesh_cad.bounding_box.extents
+            dims = sorted(bounds)
+            auto_h = round(dims[0], 1)
+            auto_w = round(dims[1], 1)
+            auto_l = round(dims[2], 1)
+            
+            # Dynamic Unit Scale Correction (Converts cm to mm automatically if exported small)
+            if auto_l < 50.0:
+                auto_l *= 10.0
+                auto_w *= 10.0
+                auto_h *= 10.0
+                
+            st.sidebar.success(f"📐 Auto-Extracted Dimensions: {auto_l} x {auto_w} x {auto_h} mm")
         except Exception as e_cad:
-            st.sidebar.warning(f"Using default part parameters. Adjustment available below.")
+            st.sidebar.warning(f"Could not auto-extract CAD dimensions: {e_cad}")
 
-# Product Physical Dimensions Inputs (Pre-filled with CAD data if available)
+# Product Physical Dimensions Inputs (Pre-filled with Bounding Box data if available)
 st.sidebar.markdown("#### Part Dimensions (mm)")
 prod_l = st.sidebar.number_input("Part Length (mm)", min_value=1.0, value=float(auto_l), step=1.0)
 prod_w = st.sidebar.number_input("Part Width (mm)", min_value=1.0, value=float(auto_w), step=1.0)
@@ -484,7 +483,7 @@ if results:
             plt.close(fig)
             
         with col_stack:
-            # --- RESTORED ISOMETRIC VIEW DRAWING CODE ---
+            # --- RESTORED ISOMETRIC VIEW DRAWING CODE WITH PERFECT NUMBERS ON FACES ---
             fig3d = plt.figure(figsize=(4, 3.5))
             ax3d = fig3d.add_subplot(111, projection='3d')
             w_scale = 100
