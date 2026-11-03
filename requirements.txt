@@ -6,3 +6,4 @@ numpy-stl
 trimesh
 scipy
 cascadio
+plotly
