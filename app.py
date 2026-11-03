@@ -160,18 +160,32 @@ clear_height = st.sidebar.slider("Height Clearance buffer (mm)", min_value=0, ma
 sep_xy = st.sidebar.slider("Separator X/Y Thickness (mm)", min_value=0, max_value=10, value=2, help="Thickness of the horizontal dividers")
 sep_z = st.sidebar.slider("Separator Z Thickness (mm)", min_value=0, max_value=10, value=4, help="Thickness of the vertical shelf dividers")
 
-# Enforce stable flat orientation
-strict_flat = st.sidebar.checkbox("Strict Flat Packing (Highly Recommended)", value=True, help="Force the part to remain flat on its base (height stays at its smallest dimension) so it does not tip over in transit.")
+# NEW: Dropdown for Packing Orientation Rules (Allows users to FORCE orientations)
+orientation_rule = st.sidebar.selectbox(
+    "Select Orientation Rule:",
+    ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"],
+    help="Control whether the system forces a specific loading style or automatically finds the absolute maximum layout."
+)
+
 sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Volumetric Efficiency (%)", "Number of Parts per Box", "Box Price (€)"])
 
 # --- RECOMMENDATION SYSTEM MATHEMATICS ---
-def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, strict_flat):
-    if strict_flat:
-        orientations = [
-            (p_l, p_w, p_h),
-            (p_w, p_l, p_h)
-        ]
+def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule):
+    # Sort dimensions to reliably identify Flat, Edge, and Vertical
+    dims = sorted([p_l, p_w, p_h]) # [smallest (Height), middle (Width), largest (Length)]
+    h_dim, w_dim, l_dim = dims[0], dims[1], dims[2]
+
+    if rule == "Force Flat Packing Only":
+        # Height must point up (pz = smallest dimension)
+        orientations = [(l_dim, w_dim, h_dim), (w_dim, l_dim, h_dim)]
+    elif rule == "Force Standing on Edge":
+        # Width must point up (pz = middle dimension)
+        orientations = [(l_dim, h_dim, w_dim), (h_dim, l_dim, w_dim)]
+    elif rule == "Force Standing Vertical":
+        # Length must point up (pz = largest dimension)
+        orientations = [(w_dim, h_dim, l_dim), (h_dim, w_dim, l_dim)]
     else:
+        # Automatic: Check all 6 possible orientations
         orientations = [
             (p_l, p_w, p_h), (p_l, p_h, p_w),
             (p_w, p_l, p_h), (p_w, p_h, p_l),
@@ -231,11 +245,11 @@ for idx, row in df_inventory.iterrows():
     if pd.isna(box_int_l) or pd.isna(box_int_w) or pd.isna(box_int_h):
         continue
         
-    # Get optimal 3D layout count
+    # Get optimal 3D layout count based on orientation rule
     parts_count, pack_orient, grid_layout = calculate_packing(
         box_int_l, box_int_w, box_int_h, 
         prod_l, prod_w, prod_h,
-        strict_flat=strict_flat
+        rule=orientation_rule
     )
     
     if parts_count == 0:
@@ -506,7 +520,6 @@ if results:
             plt.close(fig)
             
         with col_stack:
-            # --- UPDATED 3D ISOMETRIC VIEW WITH PERFECT LABELS ON THE LEFT ---
             fig3d = plt.figure(figsize=(4, 3.5))
             ax3d = fig3d.add_subplot(111, projection='3d')
             w_scale = 100
