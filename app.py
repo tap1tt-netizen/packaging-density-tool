@@ -7,8 +7,6 @@ import matplotlib.patches as patches
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from PIL import Image
 import base64
-import trimesh
-import cascadio  # SECURELY REGISTERED STEP CAD LOADER (Bypasses trimesh step errors!)
 
 # Set up page layout and appearance
 st.set_page_config(
@@ -99,35 +97,30 @@ uploaded_front = None
 uploaded_side = None
 uploaded_stl = None
 
-# Initialize session states for dynamic widget value updates (Locks Streamlit's State Bug!)
-if 'cad_length' not in st.session_state:
-    st.session_state.cad_length = 170.0
-if 'cad_width' not in st.session_state:
-    st.session_state.cad_width = 110.0
-if 'cad_height' not in st.session_state:
-    st.session_state.cad_height = 40.0
-if 'last_uploaded_file' not in st.session_state:
-    st.session_state.last_uploaded_file = None
+# Default part dimensions
+auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
 
 if upload_method == "Multi-Angle 2D Photos":
     uploaded_top = st.sidebar.file_uploader("Upload TOP View (Length x Width)", type=["png", "jpg", "jpeg"])
     uploaded_front = st.sidebar.file_uploader("Upload FRONT View (Length x Height)", type=["png", "jpg", "jpeg"])
     uploaded_side = st.sidebar.file_uploader("Upload SIDE View (Width x Height)", type=["png", "jpg", "jpeg"])
 else:
-    # UPDATED FILE UPLOADER TO PHYSICAL ALLOW STL, STEP AND STP FILES
+    # ALLOW INTAKE OF STL OR STEP SPECIFICATIONS
     uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
-    if uploaded_stl is not None and uploaded_stl.name != st.session_state.last_uploaded_file:
+    if uploaded_stl is not None:
         filename = uploaded_stl.name.lower()
         try:
+            import trimesh
             uploaded_stl.seek(0)
             
             # PARSE DYNAMICALLY BASED ON ACTUAL COMPATIBLE CAD EXTENSIONS
             if filename.endswith('.step') or filename.endswith('.stp'):
+                import cascadio
                 mesh_cad = trimesh.load(uploaded_stl, file_type='step')
             else:
                 mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
             
-            # Extract bounding box boundaries dynamically
+            # Calculate and load exact coordinates
             bounds = mesh_cad.bounding_box.extents
             dims = sorted(bounds)
             auto_h = round(dims[0], 1)
@@ -139,22 +132,16 @@ else:
                 auto_l *= 10.0
                 auto_w *= 10.0
                 auto_h *= 10.0
-            
-            # Push clean data directly to Streamlit's session states to force state update!
-            st.session_state.cad_length = float(auto_l)
-            st.session_state.cad_width = float(auto_w)
-            st.session_state.cad_height = float(auto_h)
-            st.session_state.last_uploaded_file = uploaded_stl.name
-            
-            st.rerun() # Force Streamlit to rerun with newly populated values!
+                
+            st.sidebar.success(f"📐 Auto-Extracted Dimensions: {auto_l} x {auto_w} x {auto_h} mm")
         except Exception as e_cad:
             st.sidebar.warning(f"Could not auto-extract CAD dimensions: {e_cad}")
 
-# Product Physical Dimensions Inputs (Uses Streamlit state keys to reflect CAD data instantly)
+# Product Physical Dimensions Inputs (Pre-filled with CAD data if available)
 st.sidebar.markdown("#### Part Dimensions (mm)")
-prod_l = st.sidebar.number_input("Part Length (mm)", min_value=1.0, value=st.session_state.cad_length, step=1.0, key="length_widget")
-prod_w = st.sidebar.number_input("Part Width (mm)", min_value=1.0, value=st.session_state.cad_width, step=1.0, key="width_widget")
-prod_h = st.sidebar.number_input("Part Height (mm)", min_value=1.0, value=st.session_state.cad_height, step=1.0, key="height_widget")
+prod_l = st.sidebar.number_input("Part Length (mm)", min_value=1.0, value=float(auto_l), step=1.0)
+prod_w = st.sidebar.number_input("Part Width (mm)", min_value=1.0, value=float(auto_w), step=1.0)
+prod_h = st.sidebar.number_input("Part Height (mm)", min_value=1.0, value=float(auto_h), step=1.0)
 
 # Product Weight
 st.sidebar.markdown("#### Part Weight (kg)")
@@ -262,6 +249,7 @@ for idx, row in df_inventory.iterrows():
     total_package_weight = total_payload_wt + box_weight
     
     # Weight Rule Check (Boxes >= 600x400 bypass 15kg limit)
+    # MODIFIED: FIXED FLOAT PRECISION TOLERANCE GAP FOR LARGE BOX DETECTOR
     is_large_box = (ext_l >= 595.0) and (ext_w >= 395.0)
     if not is_large_box and total_package_weight > 15.0:
         continue
