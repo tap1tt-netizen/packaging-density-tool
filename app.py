@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from PIL import Image
-import base64
 
 # Set up page layout and appearance
 st.set_page_config(
@@ -90,37 +89,36 @@ except Exception as e:
 st.sidebar.header("⚙️ Product Specifications")
 
 # Visual Input Method Selector
-upload_method = st.sidebar.radio("Select Visual Reference Method:", ["Multi-Angle 2D Photos", "3D CAD Model (.STL/.STEP)"])
+upload_method = st.sidebar.radio("Select Visual Reference Method:", ["Multi-Angle 2D Photos", "3D CAD Model (.STL)"])
 
 uploaded_top = None
 uploaded_front = None
 uploaded_side = None
 uploaded_stl = None
 
-# Default part dimensions
-auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
+# Initialize session states for dynamic widget value updates (Locks Streamlit's State Bug!)
+if 'cad_length' not in st.session_state:
+    st.session_state.cad_length = 170.0
+if 'cad_width' not in st.session_state:
+    st.session_state.cad_width = 110.0
+if 'cad_height' not in st.session_state:
+    st.session_state.cad_height = 40.0
+if 'last_uploaded_file' not in st.session_state:
+    st.session_state.last_uploaded_file = None
 
 if upload_method == "Multi-Angle 2D Photos":
     uploaded_top = st.sidebar.file_uploader("Upload TOP View (Length x Width)", type=["png", "jpg", "jpeg"])
     uploaded_front = st.sidebar.file_uploader("Upload FRONT View (Length x Height)", type=["png", "jpg", "jpeg"])
     uploaded_side = st.sidebar.file_uploader("Upload SIDE View (Width x Height)", type=["png", "jpg", "jpeg"])
 else:
-    # ALLOW INTAKE OF STL OR STEP SPECIFICATIONS
-    uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
-    if uploaded_stl is not None:
-        filename = uploaded_stl.name.lower()
+    uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL)", type=["stl"])
+    if uploaded_stl is not None and uploaded_stl.name != st.session_state.last_uploaded_file:
         try:
             import trimesh
             uploaded_stl.seek(0)
+            mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
             
-            # PARSE DYNAMICALLY BASED ON ACTUAL COMPATIBLE CAD EXTENSIONS
-            if filename.endswith('.step') or filename.endswith('.stp'):
-                import cascadio
-                mesh_cad = trimesh.load(uploaded_stl, file_type='step')
-            else:
-                mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
-            
-            # Calculate and load exact coordinates
+            # Extract bounding box boundaries dynamically
             bounds = mesh_cad.bounding_box.extents
             dims = sorted(bounds)
             auto_h = round(dims[0], 1)
@@ -132,16 +130,22 @@ else:
                 auto_l *= 10.0
                 auto_w *= 10.0
                 auto_h *= 10.0
-                
-            st.sidebar.success(f"📐 Auto-Extracted Dimensions: {auto_l} x {auto_w} x {auto_h} mm")
+            
+            # Push clean data directly to Streamlit's session states to force state update!
+            st.session_state.cad_length = float(auto_l)
+            st.session_state.cad_width = float(auto_w)
+            st.session_state.cad_height = float(auto_h)
+            st.session_state.last_uploaded_file = uploaded_stl.name
+            
+            st.rerun() # Force Streamlit to rerun with newly populated values!
         except Exception as e_cad:
-            st.sidebar.warning(f"Could not auto-extract CAD dimensions: {e_cad}")
+            st.sidebar.warning(f"Using default part parameters. Adjustment available below.")
 
-# Product Physical Dimensions Inputs (Pre-filled with CAD data if available)
+# Product Physical Dimensions Inputs (Uses Streamlit state keys to reflect CAD data instantly)
 st.sidebar.markdown("#### Part Dimensions (mm)")
-prod_l = st.sidebar.number_input("Part Length (mm)", min_value=1.0, value=float(auto_l), step=1.0)
-prod_w = st.sidebar.number_input("Part Width (mm)", min_value=1.0, value=float(auto_w), step=1.0)
-prod_h = st.sidebar.number_input("Part Height (mm)", min_value=1.0, value=float(auto_h), step=1.0)
+prod_l = st.sidebar.number_input("Part Length (mm)", min_value=1.0, value=st.session_state.cad_length, step=1.0, key="length_widget")
+prod_w = st.sidebar.number_input("Part Width (mm)", min_value=1.0, value=st.session_state.cad_width, step=1.0, key="width_widget")
+prod_h = st.sidebar.number_input("Part Height (mm)", min_value=1.0, value=st.session_state.cad_height, step=1.0, key="height_widget")
 
 # Product Weight
 st.sidebar.markdown("#### Part Weight (kg)")
@@ -249,7 +253,6 @@ for idx, row in df_inventory.iterrows():
     total_package_weight = total_payload_wt + box_weight
     
     # Weight Rule Check (Boxes >= 600x400 bypass 15kg limit)
-    # MODIFIED: FIXED FLOAT PRECISION TOLERANCE GAP FOR LARGE BOX DETECTOR
     is_large_box = (ext_l >= 595.0) and (ext_w >= 395.0)
     if not is_large_box and total_package_weight > 15.0:
         continue
@@ -443,78 +446,4 @@ if results:
             # Draw clearance hatch regions
             ax.add_patch(patches.Rectangle((0, 0), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
             ax.add_patch(patches.Rectangle((0, box_w - clear_side), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
-            ax.add_patch(patches.Rectangle((0, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
-            ax.add_patch(patches.Rectangle((box_l - clear_side, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
-            
-            # --- PERFECT CENTERING BLUEPRINT MATH ---
-            total_grid_w = nx * ox + (nx - 1) * sep_xy
-            total_grid_h = ny * oy + (ny - 1) * sep_xy
-            leftover_x = (box_l - 2 * clear_side) - total_grid_w
-            leftover_y = (box_w - 2 * clear_side) - total_grid_h
-            
-            start_x_offset = clear_side + (leftover_x / 2)
-            start_y_offset = clear_side + (leftover_y / 2)
-            
-            # Draw centered parts
-            for r in range(ny):
-                y_pos = start_y_offset + r * (oy + sep_xy)
-                for c in range(nx):
-                    x_pos = start_x_offset + c * (ox + sep_xy)
-                    ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#a5d8ff', edgecolor='#1971c2', linewidth=1.2))
-                    ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1}, {r+1}", ha='center', va='center', fontsize=8, color='#0f4c81', fontweight='bold')
-            
-            # Custom Red Dimension Indicator Arrows
-            ax.annotate('', xy=(0, -25), xytext=(box_l, -25),
-                        arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
-            ax.text(box_l/2, -45, f"{int(ext_l)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center')
-            
-            ax.annotate('', xy=(box_l + 25, 0), xytext=(box_l + 25, box_w),
-                        arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
-            ax.text(box_l + 45, box_w/2, f"{int(ext_w)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center', va='center', rotation=-90)
-            
-            # Dynamic layer header directly on top of the layout diagram
-            ax.text(box_l/2, box_w + 15, f"Layers: {nz} Vertical", color='#dc3545', fontsize=14, fontweight='bold', ha='center')
-            
-            ax.set_xlim(-40, box_l + 80)
-            ax.set_ylim(-60, box_w + 35)
-            ax.set_aspect('equal')
-            ax.axis('off')
-            st.pyplot(fig)
-            plt.close(fig)
-            
-        with col_stack:
-            # --- RESTORED ISOMETRIC VIEW DRAWING CODE WITH PERFECT NUMBERS ON FACES ---
-            fig3d = plt.figure(figsize=(4, 3.5))
-            ax3d = fig3d.add_subplot(111, projection='3d')
-            w_scale = 100
-            l_scale = w_scale * (box_l / box_w)
-            h_scale = 30
-            
-            for layer in range(nz):
-                z_start = layer * (h_scale + 5)
-                v = np.array([
-                    [0, 0, z_start], [l_scale, 0, z_start], [l_scale, w_scale, z_start], [0, w_scale, z_start],
-                    [0, 0, z_start + h_scale], [l_scale, 0, z_start + h_scale], [l_scale, w_scale, z_start + h_scale], [0, w_scale, z_start + h_scale]
-                ])
-                faces = [
-                    [v[0], v[1], v[5], v[4]], [v[1], v[2], v[6], v[5]], [v[2], v[3], v[7], v[6]],
-                    [v[3], v[0], v[4], v[7]], [v[4], v[5], v[6], v[7]], [v[0], v[1], v[2], v[3]]
-                ]
-                color = '#a5d8ff' if layer < nz - 1 else '#74c0fc'
-                poly = Poly3DCollection(faces, facecolors=color, edgecolors='#1971c2', linewidths=1.5, alpha=0.8)
-                ax3d.add_collection3d(poly)
-                
-                # Big, bold layer number centered right on the front-facing panel
-                ax3d.text(l_scale/2, -15, z_start + h_scale/2, f"{layer + 1}", color='#dc3545', fontweight='bold', fontsize=22, ha='center', va='center', zorder=100)
-                
-            ax3d.set_xlim(-10, l_scale + 10)
-            ax3d.set_ylim(-20, w_scale + 10)
-            ax3d.set_zlim(0, nz * (h_scale + 5) + 10)
-            ax3d.view_init(elev=22, azim=-65)
-            ax3d.axis('off')
-            
-            plt.title("Vertical Stacking Blueprint", fontsize=11, fontweight='bold', color='#212529', pad=10)
-            st.pyplot(fig3d)
-            plt.close(fig3d)
-else:
-    st.warning("⚠️ No suitable boxes in your database can fit this product under the active weight or dimension parameters.")
+            ax.add_patch(patches.Recta
