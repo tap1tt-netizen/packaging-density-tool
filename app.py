@@ -90,7 +90,7 @@ except Exception as e:
 st.sidebar.header("⚙️ Product Specifications")
 
 # Visual Input Method Selector
-upload_method = st.sidebar.radio("Select Visual Reference Method:", ["Multi-Angle 2D Photos", "3D CAD Model (.STL/.STEP)"])
+upload_method = st.sidebar.radio("Select Visual Reference Method:", ["Multi-Angle 2D Photos", "3D CAD Model (.STL)"])
 
 uploaded_top = None
 uploaded_front = None
@@ -100,42 +100,33 @@ uploaded_stl = None
 # Default part dimensions
 auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
 
-# SECURE IN-LINE CAD PARSER (No heavy C++ compiler dependencies needed!)
 if upload_method == "Multi-Angle 2D Photos":
     uploaded_top = st.sidebar.file_uploader("Upload TOP View (Length x Width)", type=["png", "jpg", "jpeg"])
     uploaded_front = st.sidebar.file_uploader("Upload FRONT View (Length x Height)", type=["png", "jpg", "jpeg"])
     uploaded_side = st.sidebar.file_uploader("Upload SIDE View (Width x Height)", type=["png", "jpg", "jpeg"])
 else:
-    uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
+    # 3D CAD LOADER RESTRICTED TO .STL FOR STABLE COORDINATE PARSING
+    uploaded_stl = st.sidebar.file_uploader("Upload 3D STL CAD Model (.STL)", type=["stl"])
     if uploaded_stl is not None:
-        filename = uploaded_stl.name.lower()
         try:
+            import trimesh
             uploaded_stl.seek(0)
-            if filename.endswith('.step') or filename.endswith('.stp'):
-                # Pure Python step metadata boundary parsing
-                content = uploaded_stl.read().decode('utf-8', errors='ignore')
-                import re
-                box_dims = re.findall(r"CARTESIAN_POINT\s*\(\s*'.*?'\s*,\s*\(\s*([\d.-]+)\s*,\s*([\d.-]+)\s*,\s*([\d.-]+)\s*\)\s*\)", content)
-                if box_dims:
-                    pts = np.array([[float(p[0]), float(p[1]), float(p[2])] for p in box_dims])
-                    bounds = np.ptp(pts, axis=0)
-                    dims = sorted(bounds)
-                    auto_h = max(10.0, round(dims[0], 1))
-                    auto_w = max(10.0, round(dims[1], 1))
-                    auto_l = max(10.0, round(dims[2], 1))
-                    st.sidebar.success(f"📐 Auto-Extracted STEP Dimensions: {auto_l} x {auto_w} x {auto_h} mm")
-                else:
-                    st.sidebar.warning("Unable to automatically parse STEP file curves. Please adjust manually below.")
-            else:
-                # STL uploader
-                import trimesh
-                mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
-                bounds = mesh_cad.bounding_box.extents
-                dims = sorted(bounds)
-                auto_h = round(dims[0], 1)
-                auto_w = round(dims[1], 1)
-                auto_l = round(dims[2], 1)
-                st.sidebar.success(f"📐 Auto-Extracted STL Dimensions: {auto_l} x {auto_w} x {auto_h} mm")
+            mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
+            
+            # Extract bounding box boundaries dynamically
+            bounds = mesh_cad.bounding_box.extents
+            dims = sorted(bounds)
+            auto_h = round(dims[0], 1)
+            auto_w = round(dims[1], 1)
+            auto_l = round(dims[2], 1)
+            
+            # Dynamic Unit Scale Correction (Auto-adjusts if CAD is exported in cm)
+            if auto_l < 50.0:
+                auto_l *= 10.0
+                auto_w *= 10.0
+                auto_h *= 10.0
+                
+            st.sidebar.success(f"📐 Auto-Extracted STL Dimensions: {auto_l} x {auto_w} x {auto_h} mm")
         except Exception as e_cad:
             st.sidebar.warning(f"Using default part parameters. Adjustment available below.")
 
@@ -484,7 +475,7 @@ if results:
             plt.close(fig)
             
         with col_stack:
-            # --- RESTORED ISOMETRIC VIEW DRAWING CODE ---
+            # --- RESTORED ISOMETRIC VIEW DRAWING CODE WITH PERFECT NUMBERS ON FACES ---
             fig3d = plt.figure(figsize=(4, 3.5))
             ax3d = fig3d.add_subplot(111, projection='3d')
             w_scale = 100
