@@ -85,13 +85,11 @@ except Exception as e:
     st.code(os.getcwd())
     st.stop()
 
-
 # --- SIDEBAR: OPERATOR INPUTS ---
 st.sidebar.header("⚙️ Product Specifications")
 
 # Visual Input Method Selector
 upload_method = st.sidebar.radio("Select Visual Reference Method:", ["Multi-Angle 2D Photos", "3D CAD Model (.STL/.STEP)"])
-
 uploaded_top = None
 uploaded_front = None
 uploaded_side = None
@@ -99,7 +97,6 @@ uploaded_stl = None
 
 # Default part dimensions
 auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
-
 if upload_method == "Multi-Angle 2D Photos":
     uploaded_top = st.sidebar.file_uploader("Upload TOP View (Length x Width)", type=["png", "jpg", "jpeg"])
     uploaded_front = st.sidebar.file_uploader("Upload FRONT View (Length x Height)", type=["png", "jpg", "jpeg"])
@@ -153,18 +150,15 @@ st.sidebar.header("📏 Divider & Clearance Spacing")
 # Margins and Clearances (Directly from manager discussion)
 clear_side = st.sidebar.slider("Sides Clearance buffer (mm)", min_value=0, max_value=20, value=2, help="Clearance at the wall edges (lengthwise and widthwise)")
 clear_height = st.sidebar.slider("Height Clearance buffer (mm)", min_value=0, max_value=20, value=4, help="Clearance at the top height edge")
-
 sep_xy = st.sidebar.slider("Separator X/Y Thickness (mm)", min_value=0, max_value=10, value=2, help="Thickness of the horizontal dividers")
 sep_z = st.sidebar.slider("Separator Z Thickness (mm)", min_value=0, max_value=10, value=4, help="Thickness of the vertical shelf dividers")
 
 # Enforce stable flat orientation
 strict_flat = st.sidebar.checkbox("Strict Flat Packing (Highly Recommended)", value=True, help="Force the part to remain flat on its base (height stays at 40 mm) so it does not tip over in transit.")
-
 sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Volumetric Efficiency (%)", "Number of Parts per Box", "Box Price (€)"])
 
-
 # --- RECOMMENDATION SYSTEM MATHEMATICS ---
-def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h):
+def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, strict_flat):
     if strict_flat:
         orientations = [
             (p_l, p_w, p_h),
@@ -194,17 +188,15 @@ def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h):
             
     return best_qty, best_config, best_grid_layout
 
-
 # Helper to identify the physical placement style
 def determine_placement_style(p_l, p_w, p_h, oz):
-    dims = sorted([p_l, p_w, p_h]) # [40, 110, 170]
+    dims = sorted([p_l, p_w, p_h]) # [36.3, 119.6, 119.6]
     if int(oz) == int(dims[0]):
         return "🟢 FLAT / HORIZONTAL (Resting on wide base, most stable)"
     elif int(oz) == int(dims[1]):
         return "⚠️ STANDING ON SIDE / EDGE"
     else:
         return "🚨 STANDING VERTICAL / ON END (Unstable, prone to tipping)"
-
 
 # Dynamic empty weight estimation of the FEFCO 0201 flat sheets
 def estimate_box_weight(ext_l, ext_w, ext_h, quality):
@@ -218,11 +210,9 @@ def estimate_box_weight(ext_l, ext_w, ext_h, quality):
     g = grammage_map.get(str(quality).strip(), 0.50)
     return flat_area * g
 
-
 # --- EXECUTE CALCULATION ENGINE ---
 results = []
 single_part_vol = prod_l * prod_w * prod_h
-
 for idx, row in df_inventory.iterrows():
     box_int_l = row['Int.Length [mm]']
     box_int_w = row['Width [mm]']
@@ -237,7 +227,8 @@ for idx, row in df_inventory.iterrows():
     # Get optimal 3D layout count
     parts_count, pack_orient, grid_layout = calculate_packing(
         box_int_l, box_int_w, box_int_h, 
-        prod_l, prod_w, prod_h
+        prod_l, prod_w, prod_h,
+        strict_flat=strict_flat
     )
     
     if parts_count == 0:
@@ -249,7 +240,6 @@ for idx, row in df_inventory.iterrows():
     total_package_weight = total_payload_wt + box_weight
     
     # Weight Rule Check (Boxes >= 600x400 bypass 15kg limit)
-    # MODIFIED: FIXED FLOAT PRECISION TOLERANCE GAP FOR LARGE BOX DETECTOR
     is_large_box = (ext_l >= 595.0) and (ext_w >= 395.0)
     if not is_large_box and total_package_weight > 15.0:
         continue
