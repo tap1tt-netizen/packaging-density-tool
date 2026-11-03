@@ -8,6 +8,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from PIL import Image
 import base64
 import plotly.graph_objects as go
+import itertools
 
 # Set up page layout and appearance
 st.set_page_config(
@@ -676,19 +677,47 @@ if results:
                 max_v = np.max(raw_v, axis=0)
                 raw_extent = max_v - min_v
                 
-                # Align and scale mesh to fit exactly inside the target (dx, dy, dz)
-                v_scaled = (raw_v - min_v) * np.array([dx / raw_extent[0], dy / raw_extent[1], dz / raw_extent[2]])
+                # --- NEW PERFECT COORDINATES & PROPORTIONAL ALIGNMENT SYSTEM ---
+                # 1. Find the best permutation to map the raw coordinates directly onto target (dx, dy, dz)
+                best_perm = None
+                min_error = float('inf')
+                for perm in itertools.permutations([0, 1, 2]):
+                    perm_extent = raw_extent[list(perm)]
+                    ratios = np.array([dx, dy, dz]) / perm_extent
+                    error = np.std(ratios)
+                    if error < min_error:
+                        min_error = error
+                        best_perm = perm
                 
-                # Move to compartment position (perfectly centered within its compartment slot)
-                v_final = v_scaled + np.array([x_pos, y_pos, z_pos])
+                # 2. Align vertices columns strictly based on the best permutation (corrects orientation!)
+                v_aligned = (raw_v - min_v)[:, list(best_perm)]
                 
-                # Render using Gouraud-shaded mesh
+                # 3. Calculate a SINGLE uniform scale factor (keeps perfect 1:1 shape proportions with zero bulging!)
+                aligned_extent = raw_extent[list(best_perm)]
+                scale_factor = np.min(np.array([dx, dy, dz]) / aligned_extent)
+                v_scaled = v_aligned * scale_factor
+                
+                # 4. Center-align the part within its compartment slot
+                scaled_extent = aligned_extent * scale_factor
+                gap_x = dx - scaled_extent[0]
+                gap_y = dy - scaled_extent[1]
+                gap_z = dz - scaled_extent[2]
+                
+                v_final = v_scaled + np.array([x_pos + gap_x/2, y_pos + gap_y/2, z_pos + gap_z/2])
+                
+                # Render using Gouraud-shaded mesh (Upgraded smooth finish)
                 fig_scene.add_trace(go.Mesh3d(
                     x=v_final[:, 0], y=v_final[:, 1], z=v_final[:, 2],
                     i=raw_f[:, 0], j=raw_f[:, 1], k=raw_f[:, 2],
                     color='#74c0fc', opacity=1.0,
                     flatshading=False,
-                    lighting=dict(ambient=0.5, diffuse=0.9, specular=1.0, roughness=0.2),
+                    lighting=dict(
+                        ambient=0.5,
+                        diffuse=0.9,
+                        specular=1.2,
+                        roughness=0.15,
+                        fresnel=0.5
+                    ),
                     name=text_str,
                     hoverinfo="text",
                     text=text_str,
