@@ -104,6 +104,19 @@ uploaded_stl = None
 
 # Default part dimensions
 auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
+calculated_weight_kg = 0.25  # Fallback default weight
+
+# Standard Engineering Material Densities (g/cm^3)
+MATERIAL_DENSITIES = {
+    "ABS Plastic": 1.04,
+    "PLA Plastic": 1.24,
+    "Polypropylene (PP)": 0.90,
+    "Polycarbonate (PC)": 1.20,
+    "Aluminum": 2.70,
+    "Mild Steel": 7.85,
+    "Stainless Steel": 8.00
+}
+
 if upload_method == "Multi-Angle 2D Photos":
     uploaded_top = st.sidebar.file_uploader("Upload TOP View (Length x Width)", type=["png", "jpg", "jpeg"])
     uploaded_front = st.sidebar.file_uploader("Upload FRONT View (Length x Height)", type=["png", "jpg", "jpeg"])
@@ -131,13 +144,28 @@ else:
             auto_w = round(dims[1], 1)
             auto_l = round(dims[2], 1)
             
+            # Extract raw CAD solid volume
+            cad_volume = mesh_cad.volume
+            
             # Auto unit scaling detector (cm to mm)
-            if auto_l < 50.0:
+            is_cm_scale = auto_l < 50.0
+            if is_cm_scale:
                 auto_l *= 10.0
                 auto_w *= 10.0
                 auto_h *= 10.0
+                cad_volume *= 1000.0  # Scale volume from cm^3 to mm^3
                 
             st.sidebar.success(f"📐 Auto-Extracted Dimensions: {auto_l} x {auto_w} x {auto_h} mm")
+            
+            # Dynamic Material Density Selector
+            st.sidebar.markdown("#### 🪵 Material Weight Extractor")
+            selected_material = st.sidebar.selectbox("Select Part Material:", list(MATERIAL_DENSITIES.keys()))
+            density = MATERIAL_DENSITIES[selected_material]
+            
+            # Calculate weight: Vol (mm^3) * Density (g/cm^3) * 1e-6 (kg/g_mm3)
+            calculated_weight_kg = round(cad_volume * density * 1e-6, 3)
+            st.sidebar.info(f"⚖️ Calculated Solid Weight ({selected_material}): **{calculated_weight_kg} kg**")
+            
         except Exception as e_cad:
             st.sidebar.warning(f"Could not auto-extract CAD dimensions: {e_cad}")
 
@@ -147,9 +175,9 @@ prod_l = st.sidebar.number_input("Part Length (mm)", min_value=1.0, value=float(
 prod_w = st.sidebar.number_input("Part Width (mm)", min_value=1.0, value=float(auto_w), step=1.0)
 prod_h = st.sidebar.number_input("Part Height (mm)", min_value=1.0, value=float(auto_h), step=1.0)
 
-# Product Weight
+# Product Weight (Pre-filled with calculated weight if CAD file is uploaded)
 st.sidebar.markdown("#### Part Weight (kg)")
-prod_wt = st.sidebar.number_input("Weight per Part (kg)", min_value=0.01, value=0.25, step=0.05)
+prod_wt = st.sidebar.number_input("Weight per Part (kg)", min_value=0.01, value=float(calculated_weight_kg), step=0.05)
 
 st.sidebar.markdown("---")
 st.sidebar.header("📏 Divider & Clearance Spacing")
@@ -160,7 +188,7 @@ clear_height = st.sidebar.slider("Height Clearance buffer (mm)", min_value=0, ma
 sep_xy = st.sidebar.slider("Separator X/Y Thickness (mm)", min_value=0, max_value=10, value=2, help="Thickness of the horizontal dividers")
 sep_z = st.sidebar.slider("Separator Z Thickness (mm)", min_value=0, max_value=10, value=4, help="Thickness of the vertical shelf dividers")
 
-# NEW: Dropdown for Packing Orientation Rules (Allows users to FORCE orientations)
+# Dropdown for Packing Orientation Rules (Allows users to FORCE orientations)
 orientation_rule = st.sidebar.selectbox(
     "Select Orientation Rule:",
     ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"],
