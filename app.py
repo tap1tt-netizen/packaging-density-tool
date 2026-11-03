@@ -6,6 +6,9 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from PIL import Image
+import base64
+import trimesh
+import cascadio  # SECURELY REGISTERED STEP CAD LOADER (Bypasses trimesh step errors!)
 
 # Set up page layout and appearance
 st.set_page_config(
@@ -89,7 +92,7 @@ except Exception as e:
 st.sidebar.header("⚙️ Product Specifications")
 
 # Visual Input Method Selector
-upload_method = st.sidebar.radio("Select Visual Reference Method:", ["Multi-Angle 2D Photos", "3D CAD Model (.STL)"])
+upload_method = st.sidebar.radio("Select Visual Reference Method:", ["Multi-Angle 2D Photos", "3D CAD Model (.STL/.STEP)"])
 
 uploaded_top = None
 uploaded_front = None
@@ -111,12 +114,18 @@ if upload_method == "Multi-Angle 2D Photos":
     uploaded_front = st.sidebar.file_uploader("Upload FRONT View (Length x Height)", type=["png", "jpg", "jpeg"])
     uploaded_side = st.sidebar.file_uploader("Upload SIDE View (Width x Height)", type=["png", "jpg", "jpeg"])
 else:
-    uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL)", type=["stl"])
+    # UPDATED FILE UPLOADER TO PHYSICAL ALLOW STL, STEP AND STP FILES
+    uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
     if uploaded_stl is not None and uploaded_stl.name != st.session_state.last_uploaded_file:
+        filename = uploaded_stl.name.lower()
         try:
-            import trimesh
             uploaded_stl.seek(0)
-            mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
+            
+            # PARSE DYNAMICALLY BASED ON ACTUAL COMPATIBLE CAD EXTENSIONS
+            if filename.endswith('.step') or filename.endswith('.stp'):
+                mesh_cad = trimesh.load(uploaded_stl, file_type='step')
+            else:
+                mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
             
             # Extract bounding box boundaries dynamically
             bounds = mesh_cad.bounding_box.extents
@@ -139,7 +148,7 @@ else:
             
             st.rerun() # Force Streamlit to rerun with newly populated values!
         except Exception as e_cad:
-            st.sidebar.warning(f"Using default part parameters. Adjustment available below.")
+            st.sidebar.warning(f"Could not auto-extract CAD dimensions: {e_cad}")
 
 # Product Physical Dimensions Inputs (Uses Streamlit state keys to reflect CAD data instantly)
 st.sidebar.markdown("#### Part Dimensions (mm)")
