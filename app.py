@@ -446,4 +446,78 @@ if results:
             # Draw clearance hatch regions
             ax.add_patch(patches.Rectangle((0, 0), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
             ax.add_patch(patches.Rectangle((0, box_w - clear_side), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
-            ax.add_patch(patches.Recta
+            ax.add_patch(patches.Rectangle((0, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
+            ax.add_patch(patches.Rectangle((box_l - clear_side, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
+            
+            # --- PERFECT CENTERING BLUEPRINT MATH ---
+            total_grid_w = nx * ox + (nx - 1) * sep_xy
+            total_grid_h = ny * oy + (ny - 1) * sep_xy
+            leftover_x = (box_l - 2 * clear_side) - total_grid_w
+            leftover_y = (box_w - 2 * clear_side) - total_grid_h
+            
+            start_x_offset = clear_side + (leftover_x / 2)
+            start_y_offset = clear_side + (leftover_y / 2)
+            
+            # Draw centered parts
+            for r in range(ny):
+                y_pos = start_y_offset + r * (oy + sep_xy)
+                for c in range(nx):
+                    x_pos = start_x_offset + c * (ox + sep_xy)
+                    ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#a5d8ff', edgecolor='#1971c2', linewidth=1.2))
+                    ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1}, {r+1}", ha='center', va='center', fontsize=8, color='#0f4c81', fontweight='bold')
+            
+            # Custom Red Dimension Indicator Arrows
+            ax.annotate('', xy=(0, -25), xytext=(box_l, -25),
+                        arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
+            ax.text(box_l/2, -45, f"{int(ext_l)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center')
+            
+            ax.annotate('', xy=(box_l + 25, 0), xytext=(box_l + 25, box_w),
+                        arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
+            ax.text(box_l + 45, box_w/2, f"{int(ext_w)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center', va='center', rotation=-90)
+            
+            # Dynamic layer header directly on top of the layout diagram
+            ax.text(box_l/2, box_w + 15, f"Layers: {nz} Vertical", color='#dc3545', fontsize=14, fontweight='bold', ha='center')
+            
+            ax.set_xlim(-40, box_l + 80)
+            ax.set_ylim(-60, box_w + 35)
+            ax.set_aspect('equal')
+            ax.axis('off')
+            st.pyplot(fig)
+            plt.close(fig)
+            
+        with col_stack:
+            # --- RESTORED ISOMETRIC VIEW DRAWING CODE WITH PERFECT NUMBERS ON FACES ---
+            fig3d = plt.figure(figsize=(4, 3.5))
+            ax3d = fig3d.add_subplot(111, projection='3d')
+            w_scale = 100
+            l_scale = w_scale * (box_l / box_w)
+            h_scale = 30
+            
+            for layer in range(nz):
+                z_start = layer * (h_scale + 5)
+                v = np.array([
+                    [0, 0, z_start], [l_scale, 0, z_start], [l_scale, w_scale, z_start], [0, w_scale, z_start],
+                    [0, 0, z_start + h_scale], [l_scale, 0, z_start + h_scale], [l_scale, w_scale, z_start + h_scale], [0, w_scale, z_start + h_scale]
+                ])
+                faces = [
+                    [v[0], v[1], v[5], v[4]], [v[1], v[2], v[6], v[5]], [v[2], v[3], v[7], v[6]],
+                    [v[3], v[0], v[4], v[7]], [v[4], v[5], v[6], v[7]], [v[0], v[1], v[2], v[3]]
+                ]
+                color = '#a5d8ff' if layer < nz - 1 else '#74c0fc'
+                poly = Poly3DCollection(faces, facecolors=color, edgecolors='#1971c2', linewidths=1.5, alpha=0.8)
+                ax3d.add_collection3d(poly)
+                
+                # Big, bold layer number centered right on the front-facing panel
+                ax3d.text(l_scale/2, -15, z_start + h_scale/2, f"{layer + 1}", color='#dc3545', fontweight='bold', fontsize=22, ha='center', va='center', zorder=100)
+                
+            ax3d.set_xlim(-10, l_scale + 10)
+            ax3d.set_ylim(-20, w_scale + 10)
+            ax3d.set_zlim(0, nz * (h_scale + 5) + 10)
+            ax3d.view_init(elev=22, azim=-65)
+            ax3d.axis('off')
+            
+            plt.title("Vertical Stacking Blueprint", fontsize=11, fontweight='bold', color='#212529', pad=10)
+            st.pyplot(fig3d)
+            plt.close(fig3d)
+else:
+    st.warning("⚠️ No suitable boxes in your database can fit this product under the active weight or dimension parameters.")
