@@ -48,10 +48,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📦 Packaging Density & Interactive Box Recommender")
-st.markdown("### Grid-Based Product Accommodation & Operator Safety Tool")
-st.write("This tool calculates the maximum number of parts that can fit inside our company's standard boxes with partition separators.")
-
 # Bulletproof database reader
 @st.cache_data
 def load_database():
@@ -87,7 +83,6 @@ def load_database():
 
 try:
     df_inventory, filename_loaded = load_database()
-    st.success(f"Connected to Cardboard Database: `{filename_loaded}`")
 except Exception as e:
     st.error("⚠️ Database connection failed!")
     st.info("Please place your cardboard database file named `1.xlsx` in this folder:")
@@ -200,6 +195,9 @@ sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Volumetric Effici
 
 # Block execution if a CAD file is uploaded but the material is not yet selected
 if not material_selected:
+    st.title("📦 Packaging Density & Interactive Box Recommender")
+    st.markdown("### Grid-Based Product Accommodation & Operator Safety Tool")
+    st.write("This tool calculates the maximum number of parts that can fit inside our company's standard boxes with partition separators.")
     st.warning("⚠️ **Please select a part material** in the **Material Weight Extractor** dropdown on the sidebar to calculate the weight and recommend cardboard boxes.")
     st.stop()
 
@@ -344,13 +342,42 @@ if results:
         
     ranked_df = res_df.sort_values(by=sort_by_cols, ascending=ascending_rules).head(10).reset_index(drop=True)
     ranked_df.index = ranked_df.index + 1
+    best_box = ranked_df.iloc[0]
+
+    # --- TOP HEADER SAFETY BADGE LAYOUT (Fixes Issue #1) ---
+    col_title, col_safety_header = st.columns([7, 3])
     
+    with col_title:
+        st.title("📦 Packaging Density & Interactive Box Recommender")
+        st.markdown("### Grid-Based Product Accommodation & Operator Safety Tool")
+        st.write("This tool calculates the maximum number of parts that can fit inside our company's standard boxes with partition separators.")
+    
+    # High-Visibility Weight Indicator exactly next to the title (within the red circle area!)
+    with col_safety_header:
+        total_package_weight = best_box["Total Weight (kg)"]
+        if total_package_weight > 15.0:
+            st.markdown(f"""
+                <div style='background-color:#fff0f0; border-left:5px solid #e03131; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
+                    <b style='color:#e03131; font-size:16px;'>🚨 Operational Weight Alert</b><br>
+                    <span style='font-size:14px; color:#c92a2a; font-weight:bold;'>{total_package_weight} kg (Exceeds 15kg!)</span><br>
+                    <span style='font-size:11px; color:#495057; font-weight:bold;'>Forklift Pallet Handling Required!</span>
+                </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+                <div style='background-color:#ebfbee; border-left:5px solid #2b8a3e; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
+                    <b style='color:#2b8a3e; font-size:16px;'>🟢 Safe Operational Weight</b><br>
+                    <span style='font-size:14px; color:#2b8a3e; font-weight:bold;'>Safe at {total_package_weight} kg</span><br>
+                    <span style='font-size:11px; color:#495057; font-weight:bold;'>Approved for Manual Operator Packing</span>
+                </div>
+            """, unsafe_allow_html=True)
+
+    # Database connected success message
+    st.success(f"Connected to Cardboard Database: `{filename_loaded}`")
+
     # KPI Metric Cards
     st.subheader("💡 Best Matched Packing Insights")
-    best_box = ranked_df.iloc[0]
-    
-    # --- UPGRADED 6-COLUMN KPI DASHBOARD GRID (Fixes Issue #1) ---
-    col1, col2, col3, col4, col5, col6 = st.columns([1.5, 1.3, 1.3, 1.3, 1.3, 2.3])
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.markdown(f"""
             <div class='metric-box'>
@@ -369,26 +396,6 @@ if results:
         st.markdown(f"<div class='metric-box'><b>⚖️ Total Weight</b><br><span style='font-size:24px; font-weight:bold; color:#17a2b8;'>{best_box['Total Weight (kg)']} kg</span></div>", unsafe_allow_html=True)
     with col5:
         st.markdown(f"<div class='metric-box'><b>💰 Box Price</b><br><span style='font-size:24px; font-weight:bold; color:#e83e8c;'>€ {best_box['Box Price (€)']:.2f}</span></div>", unsafe_allow_html=True)
-    
-    # Render Operational Weight Alert Badge in the 6th Column (Perfect Top-Right Empty Space Placement!)
-    with col6:
-        total_package_weight = best_box["Total Weight (kg)"]
-        if total_package_weight > 15.0:
-            st.markdown(f"""
-                <div style='background-color:#fff0f0; border-left:5px solid #e03131; padding:12px; border-radius:10px; min-height:110px;'>
-                    <b style='color:#e03131; font-size:15px;'>🚨 Weight Warning</b><br>
-                    <span style='font-size:13px; color:#c92a2a; font-weight:bold;'>{total_package_weight} kg (Exceeds 15kg!)</span><br>
-                    <span style='font-size:10px; color:#495057;'>Forklift Pallet Handling Required!</span>
-                </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-                <div style='background-color:#ebfbee; border-left:5px solid #2b8a3e; padding:12px; border-radius:10px; min-height:110px;'>
-                    <b style='color:#2b8a3e; font-size:15px;'>🟢 Safe Weight</b><br>
-                    <span style='font-size:13px; color:#2b8a3e; font-weight:bold;'>Safe at {total_package_weight} kg</span><br>
-                    <span style='font-size:10px; color:#495057;'>Safe for Manual Hand Packing</span>
-                </div>
-            """, unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -653,7 +660,7 @@ if results:
                 st.info("Upload your 3D CAD (.STL/.STEP) file to activate the rotatable 3D digital twin viewer!")
         else:
             st.info("💡 Please upload a 3D CAD (.STL/.STEP) file in the sidebar to activate this rotatable digital twin viewer!")
-
+            
     with col_packing_3d:
         st.markdown("##### 📦 Rotatable 3D Box Packing Layout")
         try:
@@ -740,19 +747,17 @@ if results:
             start_x_offset = clear_side + (leftover_x / 2)
             start_y_offset = clear_side + (leftover_y / 2)
             
-            # Determine target cells to display the detailed CAD part
-            total_parts = nx * ny * nz
+            # --- NEW DIAGONAL STAIR-STEP PLACEMENT SCHEME (Fixes Issue #2) ---
+            # Instead of rendering parts in every single cell, we place exactly 1 part on each layer dynamically.
+            # This creates a perfect diagonal stack that prevents parts blocking each other in 3D space!
             selected_cells = []
-            if total_parts <= 4:
-                for l in range(nz):
-                    for r in range(ny):
-                        for c in range(nx):
-                            selected_cells.append((c, r, l))
-            else:
-                selected_cells.append((0, 0, nz - 1))
-                if nx > 2 and ny > 2:
-                    selected_cells.append((nx // 2, ny // 2, nz - 1))
-                selected_cells.append((nx - 1, ny - 1, nz - 1))
+            for l in range(nz):
+                if nz > 1:
+                    c_diag = int(round(l * (nx - 1) / (nz - 1)))
+                    r_diag = int(round(l * (ny - 1) / (nz - 1)))
+                else:
+                    c_diag, r_diag = 0, 0
+                selected_cells.append((c_diag, r_diag, l))
 
             # Draw compartments & selectively insert parts
             for layer in range(nz):
