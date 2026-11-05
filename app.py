@@ -18,47 +18,53 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom Styling for modern corporate look
+# Custom Theme-Proof Styling: Uses Streamlit CSS variables to support Light and Dark themes perfectly
 st.markdown("""
     <style>
     .metric-box {
-        background-color: #f8f9fa;
+        background-color: var(--background-color);
         padding: 15px;
         border-radius: 10px;
+        border: 1px solid var(--text-color);
         border-left: 5px solid #0056b3;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         min-height: 110px;
+        color: var(--text-color);
     }
     .stDataFrame {
         border-radius: 10px;
         overflow: hidden;
     }
     .guide-box {
-        background-color: #f1f3f5;
+        background-color: var(--background-color);
         padding: 20px;
         border-radius: 10px;
-        border: 1px solid #ced4da;
+        border: 1px solid var(--text-color);
+        color: var(--text-color);
     }
     .warning-box {
-        background-color: #fff9db;
+        background-color: rgba(245, 159, 0, 0.15);
         padding: 15px;
         border-radius: 10px;
         border-left: 5px solid #f59f00;
         margin-bottom: 15px;
+        color: var(--text-color);
     }
     .danger-box {
-        background-color: #fff5f5;
+        background-color: rgba(255, 135, 135, 0.15);
         padding: 15px;
         border-radius: 10px;
         border-left: 5px solid #ff8787;
         margin-bottom: 15px;
+        color: var(--text-color);
     }
     .success-box {
-        background-color: #f4fce3;
+        background-color: rgba(148, 216, 45, 0.15);
         padding: 15px;
         border-radius: 10px;
         border-left: 5px solid #94d82d;
         margin-bottom: 15px;
+        color: var(--text-color);
     }
     </style>
 """, unsafe_allow_html=True)
@@ -107,16 +113,13 @@ except Exception as e:
 # --- SIDEBAR: OPERATOR INPUTS ---
 st.sidebar.header("⚙️ Product Specifications")
 
-# Upload mechanism restricted solely to 3D CAD File
 uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
-mesh_cad = None  # Global reference to loaded 3D mesh
+mesh_cad = None  
 
-# Default part dimensions and weight
 auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
 calculated_weight_kg = 0.25
-material_selected = True  # Weight calculation status gate
+material_selected = True  
 
-# Standard Engineering Material Densities (g/cm^3)
 MATERIAL_DENSITIES = {
     "ABS Plastic": 1.04,
     "PLA Plastic": 1.24,
@@ -133,34 +136,29 @@ if uploaded_stl is not None:
         import trimesh
         uploaded_stl.seek(0)
         
-        # PARSE DYNAMICALLY BASED ON ACTUAL COMPATIBLE CAD EXTENSIONS
         if filename.endswith('.step') or filename.endswith('.stp'):
             import cascadio
             mesh_cad = trimesh.load(uploaded_stl, file_type='step')
         else:
             mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
         
-        # Calculate and load exact coordinates
         bounds = mesh_cad.bounding_box.extents
         dims = sorted(bounds)
         auto_h = round(dims[0], 1)
         auto_w = round(dims[1], 1)
         auto_l = round(dims[2], 1)
         
-        # Extract raw CAD solid volume
         cad_volume = max(mesh_cad.volume, 0.001)
         
-        # Auto unit scaling detector (cm to mm)
         is_cm_scale = auto_l < 50.0
         if is_cm_scale:
             auto_l *= 10.0
             auto_w *= 10.0
             auto_h *= 10.0
-            cad_volume *= 1000.0  # Scale volume from cm^3 to mm^3
+            cad_volume *= 1000.0  
             
         st.sidebar.success(f"📐 Auto-Extracted Dimensions: {auto_l} x {auto_w} x {auto_h} mm")
         
-        # Dynamic Material Density Selector (Mandatory Prompt)
         st.sidebar.markdown("#### 🪵 Material Weight Extractor")
         selected_material = st.sidebar.selectbox(
             "Select Part Material:",
@@ -173,47 +171,40 @@ if uploaded_stl is not None:
             material_selected = False
         else:
             density = MATERIAL_DENSITIES[selected_material]
-            # Calculate weight: Vol (mm^3) * Density (g/cm^3) * 1e-6 (kg/g_mm3)
             calculated_weight_kg = round(cad_volume * density * 1e-6, 3)
             st.sidebar.info(f"⚖️ Calculated Solid Weight ({selected_material}): **{calculated_weight_kg} kg**")
         
     except Exception as e_cad:
         st.sidebar.warning(f"Could not auto-extract CAD dimensions: {e_cad}")
 
-# Product Physical Dimensions Inputs (Pre-filled with CAD data if available)
 st.sidebar.markdown("#### Part Dimensions (mm)")
 prod_l = st.sidebar.number_input("Part Length (mm)", min_value=1.0, value=float(auto_l), step=1.0)
 prod_w = st.sidebar.number_input("Part Width (mm)", min_value=1.0, value=float(auto_w), step=1.0)
 prod_h = st.sidebar.number_input("Part Height (mm)", min_value=1.0, value=float(auto_h), step=1.0)
 
-# Product Weight (Pre-filled with calculated weight if CAD file is uploaded)
 st.sidebar.markdown("#### Part Weight (kg)")
 prod_wt = st.sidebar.number_input("Weight per Part (kg)", min_value=0.01, value=float(calculated_weight_kg), step=0.05)
 
 st.sidebar.markdown("---")
 st.sidebar.header("📏 Divider & Clearance Spacing")
 
-# Margins and Clearances
-clear_side = st.sidebar.slider("Sides Clearance buffer (mm)", min_value=0, max_value=20, value=2, help="Clearance at the wall edges")
-clear_height = st.sidebar.slider("Height Clearance buffer (mm)", min_value=0, max_value=20, value=4, help="Clearance at the top height edge")
-sep_xy = st.sidebar.slider("Separator X/Y Thickness (mm)", min_value=0, max_value=10, value=2, help="Thickness of the horizontal dividers")
-sep_z = st.sidebar.slider("Separator Z Thickness (mm)", min_value=0, max_value=10, value=4, help="Thickness of the vertical shelf dividers")
+clear_side = st.sidebar.slider("Sides Clearance buffer (mm)", min_value=0, max_value=20, value=2)
+clear_height = st.sidebar.slider("Height Clearance buffer (mm)", min_value=0, max_value=20, value=4)
+sep_xy = st.sidebar.slider("Separator X/Y Thickness (mm)", min_value=0, max_value=10, value=2)
+sep_z = st.sidebar.slider("Separator Z Thickness (mm)", min_value=0, max_value=10, value=4)
 
-# Dropdown for Packing Orientation Rules
 orientation_rule = st.sidebar.selectbox(
-    "Select Orientation Rule:",
-    ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"],
-    help="Control whether the system forces a specific loading style or automatically finds the absolute maximum layout."
+    "Select Packing Orientation:",
+    ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"]
 )
 
 sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Volumetric Efficiency (%)", "Number of Parts per Box", "Box Price (€)"])
 
-# Block execution if a CAD file is uploaded but the material is not yet selected
 if not material_selected:
     st.title("📦 Packaging Density & Interactive Box Recommender")
     st.markdown("### Grid-Based Product Accommodation & Operator Safety Tool")
-    st.write("This tool calculates the maximum number of parts that can fit inside our company's standard boxes with partition separators.")
-    st.warning("⚠️ **Please select a part material** in the **Material Weight Extractor** dropdown on the sidebar to calculate the weight and recommend cardboard boxes.")
+    st.write("This tool calculates the maximum number of parts that can fit inside standard boxes with partition separators.")
+    st.warning("⚠️ **Please select a part material** in the sidebar to recommend boxes.")
     st.stop()
 
 # --- RECOMMENDATION SYSTEM MATHEMATICS ---
@@ -250,7 +241,6 @@ def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule):
             
     return best_qty, best_config, best_grid_layout
 
-# Helper to identify the physical placement style
 def determine_placement_style(p_l, p_w, p_h, oz):
     dims = sorted([p_l, p_w, p_h])
     if int(oz) == int(dims[0]):
@@ -260,7 +250,6 @@ def determine_placement_style(p_l, p_w, p_h, oz):
     else:
         return "🚨 STANDING VERTICAL / ON END (Unstable, prone to tipping)"
 
-# Dynamic empty weight estimation of the FEFCO 0201 flat sheets
 def estimate_box_weight(ext_l, ext_w, ext_h, quality):
     if pd.isna(ext_l) or pd.isna(ext_w) or pd.isna(ext_h):
         return 0.15
@@ -365,11 +354,9 @@ if results:
     col_title, col_safety_header = st.columns([7, 3])
     
     with col_title:
-        st.title("📦 Packaging Density & Interactive Box Recommender")
-        st.markdown("### Grid-Based Product Accommodation & Operator Safety Tool")
-        st.write("This tool calculates the maximum number of parts that can fit inside our company's standard boxes with partition separators.")
+        st.title("📦 BSH Packaging Density & Box Recommender")
+        st.markdown("### Grid-Based Product Accommodation & Stacking Optimizer")
     
-    # High-Visibility Weight Indicator exactly next to the title
     with col_safety_header:
         total_package_weight = best_box["Total Weight (kg)"]
         ext_l = best_box["Ext. Length [mm]"]
@@ -380,33 +367,31 @@ if results:
         if total_package_weight > 15.0:
             if not is_manual_box:
                 st.markdown(f"""
-                    <div style='background-color:#fff0f0; border-left:5px solid #e03131; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
+                    <div style='background-color:rgba(224, 49, 49, 0.15); border-left:5px solid #e03131; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
                         <b style='color:#e03131; font-size:16px;'>🚨 Forklift Transport Required</b><br>
-                        <span style='font-size:14px; color:#c92a2a; font-weight:bold;'>{total_package_weight} kg (Bypasses manual limit)</span><br>
-                        <span style='font-size:11px; color:#495057;'>Box footprint <b>{int(ext_l)}x{int(ext_w)} mm</b> is larger than the <b>400x300 mm</b> manual threshold. Therefore, exceeding 15 kg is <b>permitted</b>. Forklift Pallet Handling Required.</span>
+                        <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>{total_package_weight} kg (Bypasses manual limit)</span><br>
+                        <span style='font-size:11px;'>Box footprint <b>{int(ext_l)}x{int(ext_w)} mm</b> is larger than the <b>400x300 mm</b> manual threshold. Therefore, exceeding 15 kg is <b>permitted</b>.</span>
                     </div>
                 """, unsafe_allow_html=True)
             else:
                 st.markdown(f"""
-                    <div style='background-color:#fff0f0; border-left:5px solid #e03131; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
+                    <div style='background-color:rgba(224, 49, 49, 0.15); border-left:5px solid #e03131; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
                         <b style='color:#e03131; font-size:16px;'>🚨 Overweight Manual Box</b><br>
-                        <span style='font-size:14px; color:#c92a2a; font-weight:bold;'>{total_package_weight} kg (Exceeds 15kg limit)</span><br>
-                        <span style='font-size:11px; color:#495057;'>Box footprint <b>{int(ext_l)}x{int(ext_w)} mm</b> is within the <b>400x300 mm</b> manual threshold, but exceeds 15 kg. This is prohibited for manual operator packing!</span>
+                        <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>{total_package_weight} kg (Exceeds 15kg limit)</span><br>
+                        <span style='font-size:11px;'>Box footprint <b>{int(ext_l)}x{int(ext_w)} mm</b> is within the <b>400x300 mm</b> manual threshold, but exceeds 15 kg limit. This is prohibited for manual operator packing!</span>
                     </div>
                 """, unsafe_allow_html=True)
         else:
             st.markdown(f"""
-                <div style='background-color:#ebfbee; border-left:5px solid #2b8a3e; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
+                <div style='background-color:rgba(43, 138, 62, 0.15); border-left:5px solid #2b8a3e; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
                     <b style='color:#2b8a3e; font-size:16px;'>🟢 Safe Operational Weight</b><br>
-                    <span style='font-size:14px; color:#2b8a3e; font-weight:bold;'>Safe at {total_package_weight} kg</span><br>
-                    <span style='font-size:11px; color:#495057;'>Box footprint <b>{int(ext_l)}x{int(ext_w)} mm</b> is within the <b>400x300 mm</b>. Approved for Safe Manual Operator Packing.</span>
+                    <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>Safe at {total_package_weight} kg</span><br>
+                    <span style='font-size:11px;'>Box footprint <b>{int(ext_l)}x{int(ext_w)} mm</b> is within the <b>400x300 mm</b> manual threshold. Approved for Safe Manual Operator Packing.</span>
                 </div>
             """, unsafe_allow_html=True)
             
-    # Database connected success message
     st.success(f"Connected to Cardboard Database: `{filename_loaded}`")
     
-    # KPI Metric Cards
     st.subheader("💡 Best Matched Packing Insights")
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
@@ -430,7 +415,6 @@ if results:
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Main Tabs Organization
     tab_recommender, tab_pallet, tab_compression = st.tabs([
         "📦 Tab 1: Box Recommender & Individual Loading", 
         "🚛 Tab 2: Pallet Stacking Optimizer (EPAL 1 & EPAL 2)", 
@@ -441,11 +425,8 @@ if results:
     # TAB 1: BOX RECOMMENDER & INDIVIDUAL LOADING
     # ==========================================
     with tab_recommender:
-        
-        # Prepare Dataframe to display and export
         display_df = ranked_df.drop(columns=["_nx", "_ny", "_nz", "_ox", "_oy", "_oz", "Int. Length [mm]", "Int. Width [mm]", "Int. Height [mm]", "Ext. Length [mm]", "Ext. Width [mm]"])
         
-        # --- REQ: SINGLE DROPDOWN EXPORT SELECTOR NEXT TO SUBHEADER ---
         col_header, col_export_hub = st.columns([7, 3])
         with col_header:
             st.subheader("🏆 Top 10 Recommended Cardboard Boxes")
@@ -499,13 +480,11 @@ if results:
             use_container_width=True
         )
         
-        # --- DYNAMIC PACKING GUIDE & MATPLOTLIB BLUEPRINT ---
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
         
         available_boxes = list(ranked_df["Box ID / Specification"].values)
         
-        # --- SMART ACTIVE RESET DETECTOR ---
         if "last_available_boxes" not in st.session_state or st.session_state["last_available_boxes"] != available_boxes:
             st.session_state["selected_box"] = available_boxes[0]
             st.session_state["last_available_boxes"] = available_boxes
@@ -609,14 +588,20 @@ if results:
                 st.markdown("</div>", unsafe_allow_html=True)
                 
             with col_flat:
-                fig, ax = plt.subplots(figsize=(6, 4))
+                # Dynamically determine Streamlit Theme colors to protect contrast in dark/light modes
+                st_text_color = '#FFFFFF' if st.get_option('theme.base') == 'dark' else '#212529'
+                st_face_color = '#1c7ed6'
+                st_edge_color = '#102a43'
                 
-                ax.add_patch(patches.Rectangle((0, 0), box_l, box_w, fill=False, edgecolor='#212529', linewidth=2.5, label='Box Wall'))
+                fig, ax = plt.subplots(figsize=(6, 4), facecolor='none')
+                ax.set_facecolor('none')
                 
-                ax.add_patch(patches.Rectangle((0, 0), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
-                ax.add_patch(patches.Rectangle((0, box_w - clear_side), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
-                ax.add_patch(patches.Rectangle((0, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
-                ax.add_patch(patches.Rectangle((box_l - clear_side, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
+                ax.add_patch(patches.Rectangle((0, 0), box_l, box_w, fill=False, edgecolor=st_text_color, linewidth=2.5, label='Box Wall'))
+                
+                ax.add_patch(patches.Rectangle((0, 0), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.3))
+                ax.add_patch(patches.Rectangle((0, box_w - clear_side), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.3))
+                ax.add_patch(patches.Rectangle((0, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.3))
+                ax.add_patch(patches.Rectangle((box_l - clear_side, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.3))
                 
                 total_grid_w = nx * ox + (nx - 1) * sep_xy
                 total_grid_h = ny * oy + (ny - 1) * sep_xy
@@ -651,8 +636,8 @@ if results:
                 plt.close(fig)
                 
             with col_stack:
-                fig3d = plt.figure(figsize=(4, 3.5))
-                ax3d = fig3d.add_subplot(111, projection='3d')
+                fig3d = plt.figure(figsize=(4, 3.5), facecolor='none')
+                ax3d = fig3d.add_subplot(111, projection='3d', facecolor='none')
                 w_scale = 100
                 l_scale = w_scale * (box_l / box_w)
                 h_scale = 30
@@ -685,7 +670,7 @@ if results:
                 ax3d.view_init(elev=22, azim=-65)
                 ax3d.axis('off')
                 
-                plt.title("Vertical Stacking Blueprint", fontsize=11, fontweight='bold', color='#212529', pad=10)
+                plt.title("Vertical Stacking Blueprint", fontsize=11, fontweight='bold', color=st_text_color, pad=10)
                 st.pyplot(fig3d)
                 plt.close(fig3d)
                 
@@ -780,9 +765,12 @@ if results:
                     gap_z = dz - scaled_extent[2]
                     v_final = v_scaled + np.array([x_pos + gap_x/2, y_pos + gap_y/2, z_pos + gap_z/2])
                     
+                    # High quality Mesh3d closed with 12 triangles (fixes diagonal visual bugs)
                     fig_scene.add_trace(go.Mesh3d(
                         x=v_final[:, 0], y=v_final[:, 1], z=v_final[:, 2],
-                        i=raw_f[:, 0], j=raw_f[:, 1], k=raw_f[:, 2],
+                        i=[0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1],
+                        j=[1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6],
+                        k=[2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5],
                         color='#74c0fc', opacity=1.0,
                         flatshading=False,
                         lighting=dict(ambient=0.5, diffuse=0.9, specular=1.2, roughness=0.15, fresnel=0.5),
@@ -899,112 +887,75 @@ if results:
             total_pcs = total_boxes * pcs_box
             return total_boxes, nz, best_layer_qty, total_pcs, round(total_weight, 2), best_orient, nx_best, ny_best
 
-        # -------------------------------------------------------------
+        # -----------------------------------------------------------------------------
         # 1. AUTOMATED COMPARATIVE MATRIX: SMALLEST vs. TOP 1 vs. TOP 2 vs. TOP 3
-        # -------------------------------------------------------------
-        st.markdown("### ⚖️ Automated Benchmark Stacking Yield Analysis")
+        # -----------------------------------------------------------------------------
+        st.markdown("### ⚖️ Automated Stacking Comparison")
         st.markdown("This matrix automatically compares **four benchmark options selected strictly from your recommended Top 10 list** on a standard EPAL 1 Pallet:")
         
-        # Pull candidate boxes from the Top 10 list
         ranked_df_copy = ranked_df.copy()
         ranked_df_copy['Footprint Area'] = ranked_df_copy['Ext. Length [mm]'] * ranked_df_copy['Ext. Width [mm]']
         sorted_by_footprint = ranked_df_copy.sort_values(by='Footprint Area')
         
-        # 1. Smallest Footprint Box in Top 10
-        small_row = sorted_by_footprint.iloc[0]
-        small_name = small_row["Box ID / Specification"]
-        
-        # 2. Top 1 Box
-        top1_row = ranked_df_copy.iloc[0]
-        top1_name = top1_row["Box ID / Specification"]
-        
-        # 3. Top 2 Box
-        top2_row = ranked_df_copy.iloc[1] if len(ranked_df_copy) >= 2 else None
-        top2_name = top2_row["Box ID / Specification"] if top2_row is not None else "N/A"
-        
-        # 4. Top 3 Box
-        top3_row = ranked_df_copy.iloc[2] if len(ranked_df_copy) >= 3 else None
-        top3_name = top3_row["Box ID / Specification"] if top3_row is not None else "N/A"
-        
-        # Run palletization solver for each candidate
-        bt_s, _, _, pcs_s, wt_s, _, _, _ = calculate_pallet_stacking(1200, 800, small_row["Ext. Length [mm]"], small_row["Ext. Width [mm]"], small_row["Ext. Height [mm]"], small_row["Total Weight (kg)"], int(small_row["Number of Parts per Box"]))
-        bt_1, _, _, pcs_1, wt_1, _, _, _ = calculate_pallet_stacking(1200, 800, top1_row["Ext. Length [mm]"], top1_row["Ext. Width [mm]"], top1_row["Ext. Height [mm]"], top1_row["Total Weight (kg)"], int(top1_row["Number of Parts per Box"]))
-        
-        if top2_row is not None:
-            bt_2, _, _, pcs_2, wt_2, _, _, _ = calculate_pallet_stacking(1200, 800, top2_row["Ext. Length [mm]"], top2_row["Ext. Width [mm]"], top2_row["Ext. Height [mm]"], top2_row["Total Weight (kg)"], int(top2_row["Number of Parts per Box"]))
-        else:
-            bt_2, pcs_2, wt_2 = "N/A", 0, "N/A"
+        if len(sorted_by_footprint) >= 2:
+            small_row = sorted_by_footprint.iloc[0]
+            small_name = small_row["Box ID / Specification"]
             
-        if top3_row is not None:
-            bt_3, _, _, pcs_3, wt_3, _, _, _ = calculate_pallet_stacking(1200, 800, top3_row["Ext. Length [mm]"], top3_row["Ext. Width [mm]"], top3_row["Ext. Height [mm]"], top3_row["Total Weight (kg)"], int(top3_row["Number of Parts per Box"]))
-        else:
-            bt_3, pcs_3, wt_3 = "N/A", 0, "N/A"
+            top1_row = ranked_df_copy.iloc[0]
+            top1_name = top1_row["Box ID / Specification"]
             
-        # Determine the ultimate yield winner among the four options
-        pcs_vals = [pcs_s, pcs_1, pcs_2, pcs_3]
-        labels_map = {
-            pcs_s: (small_name, "Smallest Footprint Box"),
-            pcs_1: (top1_name, "Top 1 Best Box"),
-            pcs_2: (top2_name, "Top 2 Best Box"),
-            pcs_3: (top3_name, "Top 3 Best Box")
-        }
-        
-        max_yield = max(pcs_vals)
-        winner_box_id, winner_label = labels_map[max_yield]
-        
-        st.markdown(f"""
-        <div class='success-box'>
-            🏆 <b>Automated Yield Decision Winner:</b> The <b>{winner_label} ({winner_box_id})</b> is the optimal palletization choice!<br>
-            It delivers <b style='color:#2b8a3e;'>{max_yield} total pieces</b> per standard EPAL 1 pallet, ensuring maximum spatial shipping density.
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Comparative Matrix Table
-        comp_df = pd.DataFrame([
-            {
-                "Metric Profile": "Box Specification ID", 
-                "Smallest Box (Top 10)": small_name, 
-                "Top 1 Best Box": top1_name,
-                "Top 2 Best Box": top2_name,
-                "Top 3 Best Box": top3_name
-            },
-            {
-                "Metric Profile": "External Footprint Dimensions", 
-                "Smallest Box (Top 10)": f"{int(small_row['Ext. Length [mm]'])}x{int(small_row['Ext. Width [mm]'])} mm", 
-                "Top 1 Best Box": f"{int(top1_row['Ext. Length [mm]'])}x{int(top1_row['Ext. Width [mm]'])} mm",
-                "Top 2 Best Box": f"{int(top2_row['Ext. Length [mm]'])}x{int(top2_row['Ext. Width [mm]'])} mm" if top2_row is not None else "N/A",
-                "Top 3 Best Box": f"{int(top3_row['Ext. Length [mm]'])}x{int(top3_row['Ext. Width [mm]'])} mm" if top3_row is not None else "N/A"
-            },
-            {
-                "Metric Profile": "Parts Loaded (Per Box)", 
-                "Smallest Box (Top 10)": f"{int(small_row['Number of Parts per Box'])} Pcs", 
-                "Top 1 Best Box": f"{int(top1_row['Number of Parts per Box'])} Pcs",
-                "Top 2 Best Box": f"{int(top2_row['Number of Parts per Box'])} Pcs" if top2_row is not None else "N/A",
-                "Top 3 Best Box": f"{int(top3_row['Number of Parts per Box'])} Pcs" if top3_row is not None else "N/A"
-            },
-            {
-                "Metric Profile": "Boxes Loaded (Per Pallet)", 
-                "Smallest Box (Top 10)": f"{bt_s} boxes", 
-                "Top 1 Best Box": f"{bt_1} boxes",
-                "Top 2 Best Box": f"{bt_2} boxes" if top2_row is not None else "N/A",
-                "Top 3 Best Box": f"{bt_3} boxes" if top3_row is not None else "N/A"
-            },
-            {
-                "Metric Profile": "Total Pieces (Per Pallet)", 
-                "Smallest Box (Top 10)": f"{pcs_s} Pcs", 
-                "Top 1 Best Box": f"{pcs_1} Pcs",
-                "Top 2 Best Box": f"{pcs_2} Pcs" if top2_row is not None else "N/A",
-                "Top 3 Best Box": f"{pcs_3} Pcs" if top3_row is not None else "N/A"
-            },
-            {
-                "Metric Profile": "Pallet Weight (inc. 23kg Tare)", 
-                "Smallest Box (Top 10)": f"{wt_s} kg", 
-                "Top 1 Best Box": f"{wt_1} kg",
-                "Top 2 Best Box": f"{wt_2} kg" if top2_row is not None else "N/A",
-                "Top 3 Best Box": f"{wt_3} kg" if top3_row is not None else "N/A"
+            top2_row = ranked_df_copy.iloc[1] if len(ranked_df_copy) >= 2 else None
+            top2_name = top2_row["Box ID / Specification"] if top2_row is not None else "N/A"
+            
+            top3_row = ranked_df_copy.iloc[2] if len(ranked_df_copy) >= 3 else None
+            top3_name = top3_row["Box ID / Specification"] if top3_row is not None else "N/A"
+            
+            # Compute EPAL 1 standard pallet capacity for each benchmark choice
+            bt_s, _, _, pcs_s, wt_s, _, _, _ = calculate_pallet_stacking(1200, 800, small_row["Ext. Length [mm]"], small_row["Ext. Width [mm]"], small_row["Ext. Height [mm]"], small_row["Total Weight (kg)"], int(small_row["Number of Parts per Box"]))
+            bt_1, _, _, pcs_1, wt_1, _, _, _ = calculate_pallet_stacking(1200, 800, top1_row["Ext. Length [mm]"], top1_row["Ext. Width [mm]"], top1_row["Ext. Height [mm]"], top1_row["Total Weight (kg)"], int(top1_row["Number of Parts per Box"]))
+            
+            if top2_row is not None:
+                bt_2, _, _, pcs_2, wt_2, _, _, _ = calculate_pallet_stacking(1200, 800, top2_row["Ext. Length [mm]"], top2_row["Ext. Width [mm]"], top2_row["Ext. Height [mm]"], top2_row["Total Weight (kg)"], int(top2_row["Number of Parts per Box"]))
+            else:
+                bt_2, pcs_2, wt_2 = "N/A", 0, "N/A"
+                
+            if top3_row is not None:
+                bt_3, _, _, pcs_3, wt_3, _, _, _ = calculate_pallet_stacking(1200, 800, top3_row["Ext. Length [mm]"], top3_row["Ext. Width [mm]"], top3_row["Ext. Height [mm]"], top3_row["Total Weight (kg)"], int(top3_row["Number of Parts per Box"]))
+            else:
+                bt_3, pcs_3, wt_3 = "N/A", 0, "N/A"
+            
+            # Determine the ultimate yield winner
+            pcs_vals = [pcs_s, pcs_1, pcs_2, pcs_3]
+            labels_map = {
+                pcs_s: (small_name, "Smallest Footprint Box"),
+                pcs_1: (top1_name, "Top 1 Best Box"),
+                pcs_2: (top2_name, "Top 2 Best Box"),
+                pcs_3: (top3_name, "Top 3 Best Box")
             }
-        ])
-        st.table(comp_df)
+            
+            max_yield = max(pcs_vals)
+            winner_box_id, winner_label = labels_map[max_yield]
+            
+            st.markdown(f"""
+            <div class='success-box'>
+                🏆 <b>Automated Yield Decision Winner:</b> The <b>{winner_label} ({winner_box_id})</b> is the optimal choice!<br>
+                It delivers <b style='color:#2b8a3e;'>{max_yield} total pieces</b> per standard EPAL 1 pallet, ensuring maximum spatial shipping density.
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Comparative Matrix Table
+            comp_df = pd.DataFrame([
+                {"Metric Profile": "Box Specification ID", "Smallest Box (Top 10)": small_name, "Top 1 Best Box": top1_name, "Top 2 Best Box": top2_name, "Top 3 Best Box": top3_name},
+                {"Metric Profile": "External Footprint Dimensions", "Smallest Box (Top 10)": f"{int(small_row['Ext. Length [mm]'])}x{int(small_row['Ext. Width [mm]'])} mm", "Top 1 Best Box": f"{int(top1_row['Ext. Length [mm]'])}x{int(top1_row['Ext. Width [mm]'])} mm", "Top 2 Best Box": f"{int(top2_row['Ext. Length [mm]'])}x{int(top2_row['Ext. Width [mm]'])} mm" if top2_row is not None else "N/A", "Top 3 Best Box": f"{int(top3_row['Ext. Length [mm]'])}x{int(top3_row['Ext. Width [mm]'])} mm" if top3_row is not None else "N/A"},
+                {"Metric Profile": "Parts Loaded (Per Box)", "Smallest Box (Top 10)": f"{int(small_row['Number of Parts per Box'])} Pcs", "Top 1 Best Box": f"{int(top1_row['Number of Parts per Box'])} Pcs", "Top 2 Best Box": f"{int(top2_row['Number of Parts per Box'])} Pcs" if top2_row is not None else "N/A", "Top 3 Best Box": f"{int(top3_row['Number of Parts per Box'])} Pcs" if top3_row is not None else "N/A"},
+                {"Metric Profile": "Boxes Loaded (Per Pallet)", "Smallest Box (Top 10)": f"{bt_s} boxes", "Top 1 Best Box": f"{bt_1} boxes", "Top 2 Best Box": f"{bt_2} boxes" if top2_row is not None else "N/A", "Top 3 Best Box": f"{bt_3} boxes" if top3_row is not None else "N/A"},
+                {"Metric Profile": "Total Pieces (Per Pallet)", "Smallest Box (Top 10)": f"{pcs_s} Pcs", "Top 1 Best Box": f"{pcs_1} Pcs", "Top 2 Best Box": f"{pcs_2} Pcs" if top2_row is not None else "N/A", "Top 3 Best Box": f"{pcs_3} Pcs" if top3_row is not None else "N/A"},
+                {"Metric Profile": "Pallet Weight (inc. 23kg Tare)", "Smallest Box (Top 10)": f"{wt_s} kg", "Top 1 Best Box": f"{wt_1} kg", "Top 2 Best Box": f"{wt_2} kg" if top2_row is not None else "N/A", "Top 3 Best Box": f"{wt_3} kg" if top3_row is not None else "N/A"}
+            ])
+            st.table(comp_df)
+        else:
+            st.info("💡 Multiple unique box sizes are required in the inventory database to generate a comparative analysis.")
+            
         st.markdown("<hr>", unsafe_allow_html=True)
         
         # -------------------------------------------------------------
@@ -1049,7 +1000,7 @@ if results:
             )
             
             st.markdown(f"""
-            <div style='background-color: #f1f3f5; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #228be6;'>
+            <div style='background-color: var(--background-color); padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid var(--text-color); border-left: 5px solid #228be6;'>
                 <h5 style='margin-top: 0px;'>🥇 EPAL 1 standard (1200 x 800 mm)</h5>
                 <b>Orientation:</b> {orient_1}<br>
                 📐 <b>Layer Layout Grid:</b> {nx_1} x {ny_1} (X x Y)<br>
@@ -1061,7 +1012,7 @@ if results:
             """, unsafe_allow_html=True)
             
             st.markdown(f"""
-            <div style='background-color: #f1f3f5; padding: 15px; border-radius: 8px; border-left: 5px solid #15aabf;'>
+            <div style='background-color: var(--background-color); padding: 15px; border-radius: 8px; border: 1px solid var(--text-color); border-left: 5px solid #15aabf;'>
                 <h5 style='margin-top: 0px;'>🥈 EPAL 2 Industrial (1200 x 1000 mm)</h5>
                 <b>Orientation:</b> {orient_2}<br>
                 📐 <b>Layer Layout Grid:</b> {nx_2} x {ny_2} (X x Y)<br>
@@ -1084,10 +1035,9 @@ if results:
             )
             
             try:
-                # Construct clean, realistic 3D Palletizer scene
                 fig_pallet_3d = go.Figure()
                 
-                # 1. Premium Wood Pallet Top Deckboards (Solid Mesh)
+                # Draw Wood EPAL Pallet Base
                 fig_pallet_3d.add_trace(go.Mesh3d(
                     x=[0, active_p_spec["l"], active_p_spec["l"], 0, 0, active_p_spec["l"], active_p_spec["l"], 0],
                     y=[0, 0, active_p_spec["w"], active_p_spec["w"], 0, 0, active_p_spec["w"], active_p_spec["w"]],
@@ -1099,7 +1049,6 @@ if results:
                     flatshading=True, lighting=dict(ambient=0.6, diffuse=0.8, specular=0.1)
                 ))
                 
-                # 2. Three Wood Spacer Runners (Spacer Blocks)
                 runners_y = [
                     (0, 100),
                     (active_p_spec["w"]/2 - 50, active_p_spec["w"]/2 + 50),
@@ -1117,7 +1066,6 @@ if results:
                         flatshading=True, lighting=dict(ambient=0.6, diffuse=0.8, specular=0.1)
                     ))
                     
-                # 3. Bottom deck boards
                 fig_pallet_3d.add_trace(go.Mesh3d(
                     x=[0, active_p_spec["l"], active_p_spec["l"], 0, 0, active_p_spec["l"], active_p_spec["l"], 0],
                     y=[0, 0, active_p_spec["w"], active_p_spec["w"], 0, 0, active_p_spec["w"], active_p_spec["w"]],
@@ -1129,7 +1077,6 @@ if results:
                     flatshading=True, lighting=dict(ambient=0.6, diffuse=0.8, specular=0.1)
                 ))
                 
-                # Set coordinates for box stacking
                 bx_dx = bx_ext_l if p_orient == "Lengthwise (L-parallel)" else bx_ext_w
                 bx_dy = bx_ext_w if p_orient == "Lengthwise (L-parallel)" else bx_ext_l
                 bx_dz = bx_ext_h
@@ -1151,7 +1098,6 @@ if results:
                             x0 = start_x + c * bx_dx
                             x1 = x0 + bx_dx
                             
-                            # Standard 12 wireframe outlines
                             edges = [
                                 ((x0, y0, z0), (x1, y0, z0)), ((x1, y0, z0), (x1, y1, z0)),
                                 ((x1, y1, z0), (x0, y1, z0)), ((x0, y1, z0), (x0, y0, z0)),
@@ -1165,7 +1111,6 @@ if results:
                                 line_y.extend([p1[1], p2[1], None])
                                 line_z.extend([p1[2], p2[2], None])
                                 
-                            # SOLID HIGH QUALITY FACES (12 triangles per box, NO inner diagonals)
                             fig_pallet_3d.add_trace(go.Mesh3d(
                                 x=[x0, x1, x1, x0, x0, x1, x1, x0],
                                 y=[y0, y0, y1, y1, y0, y0, y1, y1],
@@ -1178,7 +1123,6 @@ if results:
                                 lighting=dict(ambient=0.6, diffuse=0.8, roughness=0.3, specular=0.15)
                             ))
                 
-                # Add crisp wireframe trace
                 fig_pallet_3d.add_trace(go.Scatter3d(
                     x=line_x, y=line_y, z=line_z,
                     mode='lines',
@@ -1201,37 +1145,42 @@ if results:
             except Exception as e_pall_plotly:
                 st.warning(f"Error rendering interactive 3D pallet view: {e_pall_plotly}")
 
-    # ==========================================
+    # =======================================================
     # TAB 3: MCKEE GRAVITY COMPRESSION SAFETY CHECK
-    # ==========================================
+    # =======================================================
     with tab_compression:
         st.subheader("🗜️ Corrugated Cardboard McKee Compression Strength Checker")
         st.markdown("Validate if the bottom cardboard box can handle the heavy vertical static loads from the stack above on a 1-meter pallet layout.")
         
-        # --- REQ: DYNAMIC LOAD, ENVIRONMENT & LOGISTICS PARAMETERS ---
+        # --- REQ 1: STACKING METHODOLOGY SELECTOR ---
+        st.markdown("#### ⚙️ Stacking Setup")
+        stack_style = st.selectbox(
+            "Select Pallet Stacking Configuration:",
+            ["Single Pallet Load", "Double-Stacked Pallets (Pallet-on-Pallet)"],
+            help="Single Pallet checks local column load. Double Stacking adds the entire gross weight of the top pallet onto the bottom boxes."
+        )
+        
         st.markdown("#### 🪵 3. Load, Environment & Logistics Parameters")
         col_moisture, col_spread, col_fragility = st.columns(3)
         with col_moisture:
-            moisture_sel = st.selectbox("Moisture (Humidity):", ["Dry", "Damp", "Humid"], index=2, help="Humidity weakens corrugated boxes over time.")
+            moisture_sel = st.selectbox("Moisture (Humidity):", ["Dry", "Damp", "Humid"], index=2, help="Humidity weakens boxes over time.")
         with col_spread:
-            spread_sel = st.selectbox("Load spread:", ["Even", "Concentrated/Uneven"], index=0, help="Even load spread distributes crushing forces evenly.")
+            spread_sel = st.selectbox("Load spread:", ["Even", "Concentrated/Uneven"], index=0)
         with col_fragility:
-            fragility_sel = st.selectbox("Fragility:", ["Low", "High"], index=0, help="High fragility parts require a safer structural margin.")
+            fragility_sel = st.selectbox("Fragility:", ["Low", "High"], index=0)
             
         col_storage, col_transport = st.columns(2)
         with col_storage:
-            storage_sel = st.selectbox("Storage Duration:", ["Short (days)", "Medium (weeks)", "Long (months)"], index=1, help="Corrugated material fatigues under static load over time.")
+            storage_sel = st.selectbox("Storage Duration:", ["Short (days)", "Medium (weeks)", "Long (months)"], index=1)
         with col_transport:
-            transport_sel = st.selectbox("Transport Handling / Vibration:", ["LTL/FTL Truck", "Parcel shipping", "Air/Sea Cargo"], index=1, help="Shipment handling shocks weaken structural integrity.")
+            transport_sel = st.selectbox("Transport Handling / Vibration:", ["LTL/FTL Truck", "Parcel shipping", "Air/Sea Cargo"], index=1)
 
-        # Map degradation factors
         f_moisture = {"Dry": 1.0, "Damp": 1.2, "Humid": 1.5}[moisture_sel]
         f_spread = {"Even": 1.0, "Concentrated/Uneven": 1.25}[spread_sel]
         f_fragility = {"Low": 1.0, "High": 1.3}[fragility_sel]
         f_storage = {"Short (days)": 1.0, "Medium (weeks)": 1.25, "Long (months)": 1.5}[storage_sel]
         f_transport = {"LTL/FTL Truck": 1.0, "Parcel shipping": 1.3, "Air/Sea Cargo": 1.4}[transport_sel]
 
-        # Map material qualities from 1.xlsx to physical Edge Crush Test (ECT) and thickness properties
         QUALITY_PROPERTIES = {
             "1.20B": {"ect": 3.0, "thickness": 3.0, "name": "Single Wall - B Flute"},
             "1.20C": {"ect": 3.8, "thickness": 4.0, "name": "Single Wall - C Flute"},
@@ -1246,43 +1195,47 @@ if results:
         thickness_val = props["thickness"]
         q_name = props["name"]
         
-        # McKee BCT Formula: BCT (Newtons) = 5.876 * ECT (N/mm) * sqrt( thickness * Perimeter )
         box_perimeter = 2 * (viz_box["Int. Length [mm]"] + viz_box["Int. Width [mm]"])
         bct_n = 5.876 * ect_val * np.sqrt(thickness_val * box_perimeter)
-        bct_kg = round(bct_n / 9.81, 1) # Convert Newtons to Kilograms
+        bct_kg = round(bct_n / 9.81, 1) 
         
         # Calculate dynamic Combined Safety Factor (Base multiplier is 1.5)
         sf = round(1.5 * f_moisture * f_spread * f_fragility * f_storage * f_transport, 2)
         bct_safe_load = round(bct_kg / sf, 1)
         
         # Calculate actual static weight on bottom box
-        _, z_layers_calc, _, _, _, _, _, _ = calculate_pallet_stacking(1200, 800, bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx)
+        _, z_layers_calc, best_layer_qty, _, p_wt_calc, _, _, _ = calculate_pallet_stacking(1200, 800, bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx)
         boxes_above = max(0, z_layers_calc - 1)
+        
+        # Base load from boxes directly above in the stack
         actual_bottom_load = round(boxes_above * bx_wt, 1)
         
-        st.markdown("<hr>", unsafe_allow_html=True)
+        # If Double Stacked is toggled, add top pallet gross load spread evenly over bottom pallet surface columns
+        if stack_style == "Double-Stacked Pallets (Pallet-on-Pallet)":
+            top_pallet_weight_contribution = round(p_wt_calc / max(1, best_layer_qty), 1)
+            actual_bottom_load = round(actual_bottom_load + top_pallet_weight_contribution, 1)
+        
         col_comp_kpis = st.columns(4)
         with col_comp_kpis[0]:
-            st.metric("💪 Theoretical Box BCT Strength", f"{bct_kg} kg", help="Ultimate crushing force of a pristine single box.")
+            st.metric("💪 Theoretical Box BCT Strength", f"{bct_kg} kg", help="Ultimate crushing force of a single box.")
         with col_comp_kpis[1]:
-            st.metric("🛡️ Combined Safety Factor (SF)", f"{sf}x", help="Dynamic scaling multiplier based on climate, duration, and logistics.")
+            st.metric("🛡️ Combined Safety Factor (SF)", f"{sf}x", help="Dynamic stacking margin calculated based on climate, storage, and handling conditions.")
         with col_comp_kpis[2]:
             st.metric("🔒 Safe Design Capacity", f"{bct_safe_load} kg", help=f"Maximum allowed load applying a {sf}x safety threshold.")
         with col_comp_kpis[3]:
-            st.metric("🏋️ Actual Static Load on Bottom Box", f"{actual_bottom_load} kg", help="Combined weight of stacked boxes resting directly on the bottom cardboard layer.")
+            st.metric("🏋️ Actual Load on Bottom Box", f"{actual_bottom_load} kg", help="Total static weight supported by the lowest box on the stack.")
             
         st.markdown("#### 🔍 Structural Safety Verdict:")
         if actual_bottom_load == 0:
             st.markdown(f"""
             <div class='success-box'>
-                <b>🟢 Safe (Single Layer Stack):</b> There are no other layers stacked above this box on the pallet. 
-                Compression failure is mathematically impossible.
+                <b>🟢 Safe (Single Layer Stack):</b> There are no other layers stacked above this box on the pallet. Compression failure is mathematically impossible.
             </div>
             """, unsafe_allow_html=True)
         elif actual_bottom_load <= bct_safe_load:
             st.markdown(f"""
             <div class='success-box'>
-                <b>🟢 Safe Stacking Approved:</b> The actual load of <b>{actual_bottom_load} kg</b> is within the safe limit of <b>{bct_safe_load} kg</b>.<br>
+                <b>🟢 Safe Stacking Approved:</b> The actual load of <b>{actual_bottom_load} kg</b> is within the safe limit of <b>{bct_safe_load} kg</b>. 
                 Cardboard quality class <b>{q_class} ({q_name})</b> is structurally sufficient for the bottom layers of this stack under current environment variables!
             </div>
             """, unsafe_allow_html=True)
