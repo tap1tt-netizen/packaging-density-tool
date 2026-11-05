@@ -479,7 +479,7 @@ if results:
         ny = int(viz_box["_ny"])
         nz = int(viz_box["_nz"])
         ox = int(viz_box["_ox"])
-        oy = int(viz_box["_oz"])
+        oy = int(viz_box["_oy"])
         oz = int(viz_box["_oz"])
         box_l = viz_box["Int. Length [mm]"]
         box_w = viz_box["Int. Width [mm]"]
@@ -720,6 +720,7 @@ if results:
                     gap_z = dz - scaled_extent[2]
                     v_final = v_scaled + np.array([x_pos + gap_x/2, y_pos + gap_y/2, z_pos + gap_z/2])
                     
+                    # High quality Mesh3d closed with 12 triangles
                     fig_scene.add_trace(go.Mesh3d(
                         x=v_final[:, 0], y=v_final[:, 1], z=v_final[:, 2],
                         i=raw_f[:, 0], j=raw_f[:, 1], k=raw_f[:, 2],
@@ -840,65 +841,52 @@ if results:
             return total_boxes, nz, best_layer_qty, total_pcs, round(total_weight, 2), best_orient, nx_best, ny_best
 
         # -------------------------------------------------------------
-        # 1. AUTOMATED BIG BOX VS. SMALL BOX PALLET COMPARISON MATRIX
+        # 1. AUTOMATED MATRIX: BEST vs. SMALLEST vs. LARGEST IN TOP 10
         # -------------------------------------------------------------
         st.markdown("### ⚖️ Automated Big Box vs. Small Box Comparison")
-        st.markdown("The algorithm automatically analyzes the entire eligible results database to find the **smallest footprint box** and the **largest footprint box**, evaluating which size delivers the absolute highest pieces per pallet.")
+        st.markdown("This matrix automatically selects and compares **three benchmark boxes directly from your top 10 recommended list** on a standard EPAL 1 Pallet:")
         
-        # Calculate Footprint Area for all eligible boxes
-        res_df['Footprint Area'] = res_df['Ext. Length [mm]'] * res_df['Ext. Width [mm]']
-        sorted_by_footprint = res_df.sort_values(by='Footprint Area')
+        # Calculate Footprint Area for Top 10 boxes
+        ranked_df_copy = ranked_df.copy()
+        ranked_df_copy['Footprint Area'] = ranked_df_copy['Ext. Length [mm]'] * ranked_df_copy['Ext. Width [mm]']
+        sorted_by_footprint = ranked_df_copy.sort_values(by='Footprint Area')
         
-        if len(sorted_by_footprint) >= 2:
-            small_row = sorted_by_footprint.iloc[0]
-            big_row = sorted_by_footprint.iloc[-1]
-            
-            small_name = small_row["Box ID / Specification"]
-            big_name = big_row["Box ID / Specification"]
-            
-            # Compute EPAL 1 standard pallet capacity for both
-            bt_s, _, _, pcs_s, wt_s, _, _, _ = calculate_pallet_stacking(1200, 800, small_row["Ext. Length [mm]"], small_row["Ext. Width [mm]"], small_row["Ext. Height [mm]"], small_row["Total Weight (kg)"], int(small_row["Number of Parts per Box"]))
-            bt_b, _, _, pcs_b, wt_b, _, _, _ = calculate_pallet_stacking(1200, 800, big_row["Ext. Length [mm]"], big_row["Ext. Width [mm]"], big_row["Ext. Height [mm]"], big_row["Total Weight (kg)"], int(big_row["Number of Parts per Box"]))
-            
-            # Winner Decision Banner
-            if pcs_s > pcs_b:
-                diff_val = pcs_s - pcs_b
-                diff_pct = round((diff_val / pcs_b) * 100, 1) if pcs_b > 0 else 0
-                st.markdown(f"""
-                <div class='success-box'>
-                    🏆 <b>Recommended Decision Winner:</b> The <b>Small Box Strategy ({small_name})</b> is the optimal choice!<br>
-                    It delivers <b style='color:#2b8a3e;'>{pcs_s} total pieces</b> per standard EPAL 1 pallet, beating the Big Box <b>({big_name})</b> which only fits <b>{pcs_b} pieces</b> (a massive <b>+{diff_pct}% yield improvement</b>).
-                </div>
-                """, unsafe_allow_html=True)
-            elif pcs_b > pcs_s:
-                diff_val = pcs_b - pcs_s
-                diff_pct = round((diff_val / pcs_s) * 100, 1) if pcs_s > 0 else 0
-                st.markdown(f"""
-                <div class='success-box'>
-                    🏆 <b>Recommended Decision Winner:</b> The <b>Big Box Strategy ({big_name})</b> is the optimal choice!<br>
-                    It delivers <b style='color:#2b8a3e;'>{pcs_b} total pieces</b> per standard EPAL 1 pallet, beating the Small Box <b>({small_name})</b> which only fits <b>{pcs_s} pieces</b> (a massive <b>+{diff_pct}% yield improvement</b>).
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                <div class='warning-box'>
-                    ⚖️ <b>Decision Winner: Tie!</b> Both the Small Box <b>({small_name})</b> and Big Box <b>({big_name})</b> pack exactly <b>{pcs_s} pieces</b> per pallet. Procurement recommends selecting the lower-priced box.
-                </div>
-                """, unsafe_allow_html=True)
-                
-            # Render Comparative Grid
-            comp_df = pd.DataFrame([
-                {"Comparison Parameter": "Box ID / Specification", "Small Box Option": small_name, "Big Box Option": big_name},
-                {"Comparison Parameter": "Footprint Dimensions", "Small Box Option": f"{int(small_row['Ext. Length [mm]'])}x{int(small_row['Ext. Width [mm]'])} mm", "Big Box Option": f"{int(big_row['Ext. Length [mm]'])}x{int(big_row['Ext. Width [mm]'])} mm"},
-                {"Comparison Parameter": "Quantity inside each Box", "Small Box Option": f"{int(small_row['Number of Parts per Box'])} Pcs", "Big Box Option": f"{int(big_row['Number of Parts per Box'])} Pcs"},
-                {"Comparison Parameter": "Boxes per Pallet", "Small Box Option": f"{bt_s} boxes", "Big Box Option": f"{bt_b} boxes"},
-                {"Comparison Parameter": "Total Pieces per Pallet", "Small Box Option": f"{pcs_s} Pcs", "Big Box Option": f"{pcs_b} Pcs"},
-                {"Comparison Parameter": "Pallet Weight (inc. 23kg Pallet)", "Small Box Option": f"{wt_s} kg", "Big Box Option": f"{wt_b} kg"}
-            ])
-            st.table(comp_df)
-        else:
-            st.info("💡 Multiple unique box sizes are required in the inventory database to generate a comparative analysis.")
-            
+        # Pull Top 1 (Best), Smallest, and Largest strictly from recommended Top 10
+        top1_row = ranked_df_copy.iloc[0]
+        small_row = sorted_by_footprint.iloc[0]
+        big_row = sorted_by_footprint.iloc[-1]
+        
+        # Compute EPAL 1 standard pallet capacity for each of the three benchmark choices
+        bt_s, _, _, pcs_s, wt_s, _, _, _ = calculate_pallet_stacking(1200, 800, small_row["Ext. Length [mm]"], small_row["Ext. Width [mm]"], small_row["Ext. Height [mm]"], small_row["Total Weight (kg)"], int(small_row["Number of Parts per Box"]))
+        bt_b, _, _, pcs_b, wt_b, _, _, _ = calculate_pallet_stacking(1200, 800, big_row["Ext. Length [mm]"], big_row["Ext. Width [mm]"], big_row["Ext. Height [mm]"], big_row["Total Weight (kg)"], int(big_row["Number of Parts per Box"]))
+        bt_t, _, _, pcs_t, wt_t, _, _, _ = calculate_pallet_stacking(1200, 800, top1_row["Ext. Length [mm]"], top1_row["Ext. Width [mm]"], top1_row["Ext. Height [mm]"], top1_row["Total Weight (kg)"], int(top1_row["Number of Parts per Box"]))
+        
+        # Determine the ultimate yield winner
+        vals = [pcs_s, pcs_b, pcs_t]
+        rows_map = {pcs_s: (small_row["Box ID / Specification"], "Smallest Footprint Box"), 
+                    pcs_b: (big_row["Box ID / Specification"], "Largest Footprint Box"), 
+                    pcs_t: (top1_row["Box ID / Specification"], "Top 1 (Best Overall) Box")}
+        
+        max_val = max(vals)
+        winner_id, winner_label = rows_map[max_val]
+        
+        st.markdown(f"""
+        <div class='success-box'>
+            🏆 <b>Automated Yield Decision Winner:</b> The <b>{winner_label} ({winner_id})</b> is the optimal palletization choice!<br>
+            It delivers <b style='color:#2b8a3e;'>{max_val} total pieces</b> per standard EPAL 1 pallet, ensuring maximum spatial shipping density.
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Comparative Matrix Table
+        comp_df = pd.DataFrame([
+            {"Metric Profile": "Box Specification ID", "Smallest Box (Top 10)": small_row["Box ID / Specification"], "Top 1 Best Box": top1_row["Box ID / Specification"], "Largest Box (Top 10)": big_row["Box ID / Specification"]},
+            {"Metric Profile": "External Footprint Dimensions", "Smallest Box (Top 10)": f"{int(small_row['Ext. Length [mm]'])}x{int(small_row['Ext. Width [mm]'])} mm", "Top 1 Best Box": f"{int(top1_row['Ext. Length [mm]'])}x{int(top1_row['Ext. Width [mm]'])} mm", "Largest Box (Top 10)": f"{int(big_row['Ext. Length [mm]'])}x{int(big_row['Ext. Width [mm]'])} mm"},
+            {"Metric Profile": "Parts Loaded (Per Box)", "Smallest Box (Top 10)": f"{int(small_row['Number of Parts per Box'])} Pcs", "Top 1 Best Box": f"{int(top1_row['Number of Parts per Box'])} Pcs", "Largest Box (Top 10)": f"{int(big_row['Number of Parts per Box'])} Pcs"},
+            {"Metric Profile": "Boxes Loaded (Per Pallet)", "Smallest Box (Top 10)": f"{bt_s} boxes", "Top 1 Best Box": f"{bt_t} boxes", "Largest Box (Top 10)": f"{bt_b} boxes"},
+            {"Metric Profile": "Total Pieces (Per Pallet)", "Smallest Box (Top 10)": f"{pcs_s} Pcs", "Top 1 Best Box": f"{pcs_t} Pcs", "Largest Box (Top 10)": f"{pcs_b} Pcs"},
+            {"Metric Profile": "Pallet Weight (inc. 23kg Tare)", "Smallest Box (Top 10)": f"{wt_s} kg", "Top 1 Best Box": f"{wt_t} kg", "Largest Box (Top 10)": f"{wt_b} kg"}
+        ])
+        st.table(comp_df)
         st.markdown("<hr>", unsafe_allow_html=True)
         
         # -------------------------------------------------------------
@@ -906,13 +894,12 @@ if results:
         # -------------------------------------------------------------
         st.markdown(f"### 📦 Palletization Report & Interactive 3D Stacking Model")
         
-        # Stacking Report Selector Dropdown
         available_boxes_t2 = list(ranked_df["Box ID / Specification"].values)
         if "selected_box" not in st.session_state or st.session_state["selected_box"] not in available_boxes_t2:
             st.session_state["selected_box"] = available_boxes_t2[0]
             
         selected_box_t2 = st.selectbox(
-            "Select a Cardboard Box to inspect its detailed pallet loading report & rotatable 3D stack:",
+            "Select any Cardboard Box to inspect its detailed pallet loading report & rotatable 3D stack:",
             options=available_boxes_t2,
             index=available_boxes_t2.index(st.session_state["selected_box"]),
             key="pallet_box_selector"
@@ -927,7 +914,6 @@ if results:
         bx_wt = viz_box_t2["Total Weight (kg)"]
         pcs_per_bx = int(viz_box_t2["Number of Parts per Box"])
         
-        # Columns layout for Stacking KPIs and the Rotatable 3D view
         col_metrics, col_plotly_pallet = st.columns([4, 6])
         
         with col_metrics:
@@ -969,7 +955,7 @@ if results:
             """, unsafe_allow_html=True)
             
         with col_plotly_pallet:
-            st.markdown("##### 🔄 Rotatable 3D Stacking Visualizer")
+            st.markdown("##### 🔄 High-Definition Rotatable 3D Palletizer View")
             
             pallet_sel = st.radio("Choose Stacking Blueprint Pallet View:", options=["EPAL 1 (1200x800)", "EPAL 2 (1200x1000)"])
             active_p_spec = PALLETS["EPAL 1 (Standard)"] if "EPAL 1" in pallet_sel else PALLETS["EPAL 2 (Industrial)"]
@@ -980,19 +966,52 @@ if results:
             )
             
             try:
-                # Construct 3D scene
+                # Construct clean, realistic 3D Palletizer scene
                 fig_pallet_3d = go.Figure()
                 
-                # Draw Wood EPAL Pallet Base Block
+                # 1. Premium Wood Pallet Top Deckboards (Solid Mesh)
                 fig_pallet_3d.add_trace(go.Mesh3d(
                     x=[0, active_p_spec["l"], active_p_spec["l"], 0, 0, active_p_spec["l"], active_p_spec["l"], 0],
                     y=[0, 0, active_p_spec["w"], active_p_spec["w"], 0, 0, active_p_spec["w"], active_p_spec["w"]],
-                    z=[-144, -144, -144, -144, 0, 0, 0, 0],
-                    i=[0, 1, 2, 3, 0, 1], j=[1, 2, 3, 0, 4, 5], k=[4, 5, 6, 7, 5, 6],
-                    color='peru', opacity=0.85, name="EPAL Pallet Base"
+                    z=[-22, -22, -22, -22, 0, 0, 0, 0],
+                    i=[0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1],
+                    j=[1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6],
+                    k=[2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5],
+                    color='#d2b48c', opacity=0.95, name="Top Deck Boards",
+                    flatshading=True, lighting=dict(ambient=0.6, diffuse=0.8, specular=0.1)
                 ))
                 
-                # Set coordinates for stacking
+                # 2. Three Wood Spacer Runners (Spacer Blocks)
+                runners_y = [
+                    (0, 100),
+                    (active_p_spec["w"]/2 - 50, active_p_spec["w"]/2 + 50),
+                    (active_p_spec["w"] - 100, active_p_spec["w"])
+                ]
+                for r_idx, (y0, y1) in enumerate(runners_y):
+                    fig_pallet_3d.add_trace(go.Mesh3d(
+                        x=[0, active_p_spec["l"], active_p_spec["l"], 0, 0, active_p_spec["l"], active_p_spec["l"], 0],
+                        y=[y0, y0, y1, y1, y0, y0, y1, y1],
+                        z=[-122, -122, -122, -122, -22, -22, -22, -22],
+                        i=[0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1],
+                        j=[1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6],
+                        k=[2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5],
+                        color='#cd853f', opacity=0.95, name=f"Runner {r_idx+1}",
+                        flatshading=True, lighting=dict(ambient=0.6, diffuse=0.8, specular=0.1)
+                    ))
+                    
+                # 3. Bottom deck boards
+                fig_pallet_3d.add_trace(go.Mesh3d(
+                    x=[0, active_p_spec["l"], active_p_spec["l"], 0, 0, active_p_spec["l"], active_p_spec["l"], 0],
+                    y=[0, 0, active_p_spec["w"], active_p_spec["w"], 0, 0, active_p_spec["w"], active_p_spec["w"]],
+                    z=[-144, -144, -144, -144, -122, -122, -122, -122],
+                    i=[0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1],
+                    j=[1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6],
+                    k=[2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5],
+                    color='#d2b48c', opacity=0.95, name="Bottom Boards",
+                    flatshading=True, lighting=dict(ambient=0.6, diffuse=0.8, specular=0.1)
+                ))
+                
+                # Set coordinates for box stacking
                 bx_dx = bx_ext_l if p_orient == "Lengthwise (L-parallel)" else bx_ext_w
                 bx_dy = bx_ext_w if p_orient == "Lengthwise (L-parallel)" else bx_ext_l
                 bx_dz = bx_ext_h
@@ -1001,10 +1020,12 @@ if results:
                 start_y = (active_p_spec["w"] - ny_act * bx_dy) / 2
                 
                 line_x, line_y, line_z = [], [], []
+                colors_gradient = ["#1c7ed6", "#228be6", "#339af0", "#4dabf7", "#74c0fc", "#a5d8ff"]
                 
                 for layer in range(p_layers):
                     z0 = layer * bx_dz
                     z1 = z0 + bx_dz
+                    color = colors_gradient[layer % len(colors_gradient)]
                     for r in range(ny_act):
                         y0 = start_y + r * bx_dy
                         y1 = y0 + bx_dy
@@ -1012,7 +1033,7 @@ if results:
                             x0 = start_x + c * bx_dx
                             x1 = x0 + bx_dx
                             
-                            # Add standard outer wireframe
+                            # Standard 12 wireframe outlines
                             edges = [
                                 ((x0, y0, z0), (x1, y0, z0)), ((x1, y0, z0), (x1, y1, z0)),
                                 ((x1, y1, z0), (x0, y1, z0)), ((x0, y1, z0), (x0, y0, z0)),
@@ -1026,32 +1047,37 @@ if results:
                                 line_y.extend([p1[1], p2[1], None])
                                 line_z.extend([p1[2], p2[2], None])
                                 
-                            # Draw solid-colored, semi-transparent stacked 3D box shapes
+                            # SOLID HIGH QUALITY FACES (12 triangles per box, NO inner diagonals)
                             fig_pallet_3d.add_trace(go.Mesh3d(
                                 x=[x0, x1, x1, x0, x0, x1, x1, x0],
                                 y=[y0, y0, y1, y1, y0, y0, y1, y1],
                                 z=[z0, z0, z0, z0, z1, z1, z1, z1],
-                                i=[0, 1, 2, 3, 0, 1], j=[1, 2, 3, 0, 4, 5], k=[4, 5, 6, 7, 5, 6],
-                                color='#74c0fc', opacity=0.4, showlegend=False, hoverinfo='skip'
+                                i=[0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1],
+                                j=[1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6],
+                                k=[2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5],
+                                color=color, opacity=0.55, showlegend=False, hoverinfo='skip',
+                                flatshading=True,
+                                lighting=dict(ambient=0.6, diffuse=0.8, roughness=0.3, specular=0.15)
                             ))
                 
-                # Add box outlines trace
+                # Add crisp wireframe trace
                 fig_pallet_3d.add_trace(go.Scatter3d(
                     x=line_x, y=line_y, z=line_z,
                     mode='lines',
-                    line=dict(color='#1c7ed6', width=2),
+                    line=dict(color='#1864ab', width=2),
                     name="Cardboard Boxes"
                 ))
                 
                 fig_pallet_3d.update_layout(
                     scene=dict(
-                        xaxis=dict(title="Length (mm)", range=[-50, active_p_spec["l"]+50]),
-                        yaxis=dict(title="Width (mm)", range=[-50, active_p_spec["w"]+50]),
-                        zaxis=dict(title="Height (mm)", range=[-150, 1100]),
-                        aspectmode='data'
+                        xaxis=dict(title="Length (mm)", range=[-50, active_p_spec["l"]+50], gridcolor='lightgray'),
+                        yaxis=dict(title="Width (mm)", range=[-50, active_p_spec["w"]+50], gridcolor='lightgray'),
+                        zaxis=dict(title="Height (mm)", range=[-150, 1100], gridcolor='lightgray'),
+                        aspectmode='data',
+                        camera=dict(eye=dict(x=1.6, y=1.6, z=1.2))
                     ),
                     margin=dict(l=0, r=0, b=0, t=0),
-                    height=380
+                    height=500
                 )
                 st.plotly_chart(fig_pallet_3d, use_container_width=True)
             except Exception as e_pall_plotly:
