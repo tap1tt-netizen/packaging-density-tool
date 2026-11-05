@@ -441,42 +441,44 @@ if results:
     # TAB 1: BOX RECOMMENDER & INDIVIDUAL LOADING
     # ==========================================
     with tab_recommender:
-        
         # Prepare Dataframe to display and export
         display_df = ranked_df.drop(columns=["_nx", "_ny", "_nz", "_ox", "_oy", "_oz", "Int. Length [mm]", "Int. Width [mm]", "Int. Height [mm]", "Ext. Length [mm]", "Ext. Width [mm]"])
         
-        # --- REQ: DYNAMIC EXPORT BUTTONS PLACEMENT NEXT TO SUBHEADER ---
-        col_header, col_export_xls, col_export_csv = st.columns([5, 2.5, 2.5])
+        # --- REQ: HIGH VISIBILITY SINGLE DROPDOWN EXPORT SELECTOR ---
+        col_header, col_export_hub = st.columns([7, 3])
         with col_header:
             st.subheader("🏆 Top 10 Recommended Cardboard Boxes")
             
-        # Compile Excel in-memory buffer
-        buffer_xls = io.BytesIO()
-        with pd.ExcelWriter(buffer_xls, engine='openpyxl') as writer:
-            display_df.to_excel(writer, sheet_name='Top_10_Recommendations', index=True)
-        xls_data = buffer_xls.getvalue()
-        
-        # Compile CSV in-memory buffer
-        csv_data = display_df.to_csv(index=True).encode('utf-8')
-        
-        with col_export_xls:
-            st.download_button(
-                label="📥 Export Top 10 to Excel (.xlsx)",
-                data=xls_data,
-                file_name="Top_10_Recommended_Boxes.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                help="Download the recommended boxes as a formatted Excel spreadsheet."
+        with col_export_hub:
+            export_format = st.selectbox(
+                "📥 Select Export Format...",
+                ["-- Choose Format --", "Export to Excel (.xlsx)", "Export to CSV (.csv)"],
+                index=0,
+                key="export_selector_hub",
+                help="Download the live Top 10 recommendations directly to your machine."
             )
-        with col_export_csv:
-            st.download_button(
-                label="📄 Export Top 10 to CSV (.csv)",
-                data=csv_data,
-                file_name="Top_10_Recommended_Boxes.csv",
-                mime="text/csv",
-                use_container_width=True,
-                help="Download the recommended boxes as a raw CSV file."
-            )
+            
+            if export_format == "Export to Excel (.xlsx)":
+                buffer_xls = io.BytesIO()
+                with pd.ExcelWriter(buffer_xls, engine='openpyxl') as writer:
+                    display_df.to_excel(writer, sheet_name='Top_10_Recommendations', index=True)
+                xls_data = buffer_xls.getvalue()
+                st.download_button(
+                    label="🟢 Click to Download Excel Sheet",
+                    data=xls_data,
+                    file_name="Top_10_Recommended_Boxes.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            elif export_format == "Export to CSV (.csv)":
+                csv_data = display_df.to_csv(index=True).encode('utf-8')
+                st.download_button(
+                    label="🔵 Click to Download CSV File",
+                    data=csv_data,
+                    file_name="Top_10_Recommended_Boxes.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
             
         st.dataframe(
             display_df,
@@ -777,9 +779,12 @@ if results:
                     gap_z = dz - scaled_extent[2]
                     v_final = v_scaled + np.array([x_pos + gap_x/2, y_pos + gap_y/2, z_pos + gap_z/2])
                     
+                    # High quality Mesh3d closed with 12 triangles (fixes jagged diagonals)
                     fig_scene.add_trace(go.Mesh3d(
                         x=v_final[:, 0], y=v_final[:, 1], z=v_final[:, 2],
-                        i=raw_f[:, 0], j=raw_f[:, 1], k=raw_f[:, 2],
+                        i=[0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1],
+                        j=[1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6],
+                        k=[2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5],
                         color='#74c0fc', opacity=1.0,
                         flatshading=False,
                         lighting=dict(ambient=0.5, diffuse=0.9, specular=1.2, roughness=0.15, fresnel=0.5),
@@ -896,59 +901,67 @@ if results:
             total_pcs = total_boxes * pcs_box
             return total_boxes, nz, best_layer_qty, total_pcs, round(total_weight, 2), best_orient, nx_best, ny_best
 
-        # -------------------------------------------------------------
-        # 1. AUTOMATED MATRIX: BEST vs. SMALLEST vs. LARGEST IN TOP 10
-        # -------------------------------------------------------------
-        st.markdown("### ⚖️ Automated Big Box vs. Small Box Comparison")
-        st.markdown("This matrix automatically selects and compares **three benchmark boxes directly from your top 10 recommended list** on a standard EPAL 1 Pallet:")
+        # -----------------------------------------------------------------------------
+        # 1. AUTOMATED COMPARISON: TOP 1 (BEST) vs. SMALLEST vs. LARGEST IN RECOMMENDED TOP 10
+        # -----------------------------------------------------------------------------
+        st.markdown("### ⚖️ Automated Benchmark Stacking Yield Analysis")
+        st.markdown("This matrix automatically compares **three unique benchmark sizes selected from your recommended Top 10 list** to maximize output:")
         
-        # Calculate Footprint Area for Top 10 boxes
         ranked_df_copy = ranked_df.copy()
         ranked_df_copy['Footprint Area'] = ranked_df_copy['Ext. Length [mm]'] * ranked_df_copy['Ext. Width [mm]']
         sorted_by_footprint = ranked_df_copy.sort_values(by='Footprint Area')
         
-        # Pull Top 1 (Best), Smallest, and Largest strictly from recommended Top 10
-        top1_row = ranked_df_copy.iloc[0]
-        small_row = sorted_by_footprint.iloc[0]
-        big_row = sorted_by_footprint.iloc[-1]
-        
-        # Compute EPAL 1 standard pallet capacity for each of the three benchmark choices
-        bt_s, _, _, pcs_s, wt_s, _, _, _ = calculate_pallet_stacking(1200, 800, small_row["Ext. Length [mm]"], small_row["Ext. Width [mm]"], small_row["Ext. Height [mm]"], small_row["Total Weight (kg)"], int(small_row["Number of Parts per Box"]))
-        bt_b, _, _, pcs_b, wt_b, _, _, _ = calculate_pallet_stacking(1200, 800, big_row["Ext. Length [mm]"], big_row["Ext. Width [mm]"], big_row["Ext. Height [mm]"], big_row["Total Weight (kg)"], int(big_row["Number of Parts per Box"]))
-        bt_t, _, _, pcs_t, wt_t, _, _, _ = calculate_pallet_stacking(1200, 800, top1_row["Ext. Length [mm]"], top1_row["Ext. Width [mm]"], top1_row["Ext. Height [mm]"], top1_row["Total Weight (kg)"], int(top1_row["Number of Parts per Box"]))
-        
-        # Determine the ultimate yield winner
-        vals = [pcs_s, pcs_b, pcs_t]
-        rows_map = {pcs_s: (small_row["Box ID / Specification"], "Smallest Footprint Box"), 
-                    pcs_b: (big_row["Box ID / Specification"], "Largest Footprint Box"), 
-                    pcs_t: (top1_row["Box ID / Specification"], "Top 1 (Best Overall) Box")}
-        
-        max_val = max(vals)
-        winner_id, winner_label = rows_map[max_val]
-        
-        st.markdown(f"""
-        <div class='success-box'>
-            🏆 <b>Automated Yield Decision Winner:</b> The <b>{winner_label} ({winner_id})</b> is the optimal palletization choice!<br>
-            It delivers <b style='color:#2b8a3e;'>{max_val} total pieces</b> per standard EPAL 1 pallet, ensuring maximum spatial shipping density.
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Comparative Matrix Table
-        comp_df = pd.DataFrame([
-            {"Metric Profile": "Box Specification ID", "Smallest Box (Top 10)": small_row["Box ID / Specification"], "Top 1 Best Box": top1_row["Box ID / Specification"], "Largest Box (Top 10)": big_row["Box ID / Specification"]},
-            {"Metric Profile": "External Footprint Dimensions", "Smallest Box (Top 10)": f"{int(small_row['Ext. Length [mm]'])}x{int(small_row['Ext. Width [mm]'])} mm", "Top 1 Best Box": f"{int(top1_row['Ext. Length [mm]'])}x{int(top1_row['Ext. Width [mm]'])} mm", "Largest Box (Top 10)": f"{int(big_row['Ext. Length [mm]'])}x{int(big_row['Ext. Width [mm]'])} mm"},
-            {"Metric Profile": "Parts Loaded (Per Box)", "Smallest Box (Top 10)": f"{int(small_row['Number of Parts per Box'])} Pcs", "Top 1 Best Box": f"{int(top1_row['Number of Parts per Box'])} Pcs", "Largest Box (Top 10)": f"{int(big_row['Number of Parts per Box'])} Pcs"},
-            {"Metric Profile": "Boxes Loaded (Per Pallet)", "Smallest Box (Top 10)": f"{bt_s} boxes", "Top 1 Best Box": f"{bt_t} boxes", "Largest Box (Top 10)": f"{bt_b} boxes"},
-            {"Metric Profile": "Total Pieces (Per Pallet)", "Smallest Box (Top 10)": f"{pcs_s} Pcs", "Top 1 Best Box": f"{pcs_t} Pcs", "Largest Box (Top 10)": f"{pcs_b} Pcs"},
-            {"Metric Profile": "Pallet Weight (inc. 23kg Tare)", "Smallest Box (Top 10)": f"{wt_s} kg", "Top 1 Best Box": f"{wt_t} kg", "Largest Box (Top 10)": f"{wt_b} kg"}
-        ])
-        st.table(comp_df)
+        if len(sorted_by_footprint) >= 2:
+            top1_row = ranked_df_copy.iloc[0]
+            small_row = sorted_by_footprint.iloc[0]
+            big_row = sorted_by_footprint.iloc[-1]
+            
+            top1_name = top1_row["Box ID / Specification"]
+            small_name = small_row["Box ID / Specification"]
+            big_name = big_row["Box ID / Specification"]
+            
+            # Compute EPAL 1 standard pallet capacity for each of the three benchmark choices
+            bt_s, _, _, pcs_s, wt_s, _, _, _ = calculate_pallet_stacking(1200, 800, small_row["Ext. Length [mm]"], small_row["Ext. Width [mm]"], small_row["Ext. Height [mm]"], small_row["Total Weight (kg)"], int(small_row["Number of Parts per Box"]))
+            bt_b, _, _, pcs_b, wt_b, _, _, _ = calculate_pallet_stacking(1200, 800, big_row["Ext. Length [mm]"], big_row["Ext. Width [mm]"], big_row["Ext. Height [mm]"], big_row["Total Weight (kg)"], int(big_row["Number of Parts per Box"]))
+            bt_t, _, _, pcs_t, wt_t, _, _, _ = calculate_pallet_stacking(1200, 800, top1_row["Ext. Length [mm]"], top1_row["Ext. Width [mm]"], top1_row["Ext. Height [mm]"], top1_row["Total Weight (kg)"], int(top1_row["Number of Parts per Box"]))
+            
+            # Determine the ultimate yield winner
+            vals = [pcs_s, pcs_b, pcs_t]
+            rows_map = {
+                pcs_s: (small_name, "Smallest Footprint Box"), 
+                pcs_b: (big_name, "Largest Footprint Box"), 
+                pcs_t: (top1_name, "Top 1 (Best Overall) Box")
+            }
+            
+            max_val = max(vals)
+            winner_id, winner_label = rows_map[max_val]
+            
+            st.markdown(f"""
+            <div class='success-box'>
+                🏆 <b>Automated Yield Decision Winner:</b> The <b>{winner_label} ({winner_id})</b> is the optimal palletization choice!<br>
+                It delivers <b style='color:#2b8a3e;'>{max_val} total pieces</b> per standard EPAL 1 pallet, ensuring maximum spatial shipping density.
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Comparative Matrix Table
+            comp_df = pd.DataFrame([
+                {"Metric Profile": "Box Specification ID", "Smallest Box (Top 10)": small_name, "Top 1 Best Box": top1_name, "Largest Box (Top 10)": big_name},
+                {"Metric Profile": "External Footprint Dimensions", "Smallest Box (Top 10)": f"{int(small_row['Ext. Length [mm]'])}x{int(small_row['Ext. Width [mm]'])} mm", "Top 1 Best Box": f"{int(top1_row['Ext. Length [mm]'])}x{int(top1_row['Ext. Width [mm]'])} mm", "Largest Box (Top 10)": f"{int(big_row['Ext. Length [mm]'])}x{int(big_row['Ext. Width [mm]'])} mm"},
+                {"Metric Profile": "Parts Loaded (Per Box)", "Smallest Box (Top 10)": f"{int(small_row['Number of Parts per Box'])} Pcs", "Top 1 Best Box": f"{int(top1_row['Number of Parts per Box'])} Pcs", "Largest Box (Top 10)": f"{int(big_row['Number of Parts per Box'])} Pcs"},
+                {"Metric Profile": "Boxes Loaded (Per Pallet)", "Smallest Box (Top 10)": f"{bt_s} boxes", "Top 1 Best Box": f"{bt_t} boxes", "Largest Box (Top 10)": f"{bt_b} boxes"},
+                {"Metric Profile": "Total Pieces (Per Pallet)", "Smallest Box (Top 10)": f"{pcs_s} Pcs", "Top 1 Best Box": f"{pcs_t} Pcs", "Largest Box (Top 10)": f"{pcs_b} Pcs"},
+                {"Metric Profile": "Pallet Weight (inc. 23kg Tare)", "Smallest Box (Top 10)": f"{wt_s} kg", "Top 1 Best Box": f"{wt_t} kg", "Largest Box (Top 10)": f"{wt_b} kg"}
+            ])
+            st.table(comp_df)
+        else:
+            st.info("💡 Multiple unique box sizes are required in the inventory database to generate a comparative analysis.")
+            
         st.markdown("<hr>", unsafe_allow_html=True)
         
         # -------------------------------------------------------------
         # 2. INDIVIDUAL STACKING REPORT & INTERACTIVE 3D PALLETIZER
         # -------------------------------------------------------------
-        st.markdown(f"### 📦 Palletization Report & Interactive 3D Stacking Model")
+        st.markdown("### 📦 Palletization Report & Interactive 3D Stacking Model")
         
         available_boxes_t2 = list(ranked_df["Box ID / Specification"].values)
         if "selected_box" not in st.session_state or st.session_state["selected_box"] not in available_boxes_t2:
