@@ -112,14 +112,11 @@ except Exception as e:
 
 # --- SIDEBAR: OPERATOR INPUTS ---
 st.sidebar.header("⚙️ Product Specifications")
-
 uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
 mesh_cad = None  
-
 auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
 calculated_weight_kg = 0.25
 material_selected = True  
-
 MATERIAL_DENSITIES = {
     "ABS Plastic": 1.04,
     "PLA Plastic": 1.24,
@@ -181,23 +178,18 @@ st.sidebar.markdown("#### Part Dimensions (mm)")
 prod_l = st.sidebar.number_input("Part Length (mm)", min_value=1.0, value=float(auto_l), step=1.0)
 prod_w = st.sidebar.number_input("Part Width (mm)", min_value=1.0, value=float(auto_w), step=1.0)
 prod_h = st.sidebar.number_input("Part Height (mm)", min_value=1.0, value=float(auto_h), step=1.0)
-
 st.sidebar.markdown("#### Part Weight (kg)")
 prod_wt = st.sidebar.number_input("Weight per Part (kg)", min_value=0.01, value=float(calculated_weight_kg), step=0.05)
-
 st.sidebar.markdown("---")
 st.sidebar.header("📏 Divider & Clearance Spacing")
-
 clear_side = st.sidebar.slider("Sides Clearance buffer (mm)", min_value=0, max_value=20, value=2)
 clear_height = st.sidebar.slider("Height Clearance buffer (mm)", min_value=0, max_value=20, value=4)
 sep_xy = st.sidebar.slider("Separator X/Y Thickness (mm)", min_value=0, max_value=10, value=2)
 sep_z = st.sidebar.slider("Separator Z Thickness (mm)", min_value=0, max_value=10, value=4)
-
 orientation_rule = st.sidebar.selectbox(
     "Select Packing Orientation:",
     ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"]
 )
-
 sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Volumetric Efficiency (%)", "Number of Parts per Box", "Box Price (€)"])
 
 if not material_selected:
@@ -739,6 +731,7 @@ if results:
                             hoverinfo='skip'
                         ))
                 
+                # 🟢 FIXED: Plots the actual CAD mesh faces (`raw_f`) instead of using hardcoded box indices (0-7)
                 def add_plotly_mesh_part(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz, raw_v, raw_f, text_str):
                     min_v = np.min(raw_v, axis=0)
                     max_v = np.max(raw_v, axis=0)
@@ -765,12 +758,11 @@ if results:
                     gap_z = dz - scaled_extent[2]
                     v_final = v_scaled + np.array([x_pos + gap_x/2, y_pos + gap_y/2, z_pos + gap_z/2])
                     
-                    # High quality Mesh3d closed with 12 triangles (fixes diagonal visual bugs)
                     fig_scene.add_trace(go.Mesh3d(
                         x=v_final[:, 0], y=v_final[:, 1], z=v_final[:, 2],
-                        i=[0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1],
-                        j=[1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6],
-                        k=[2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5],
+                        i=raw_f[:, 0],
+                        j=raw_f[:, 1],
+                        k=raw_f[:, 2],
                         color='#74c0fc', opacity=1.0,
                         flatshading=False,
                         lighting=dict(ambient=0.5, diffuse=0.9, specular=1.2, roughness=0.15, fresnel=0.5),
@@ -1174,13 +1166,11 @@ if results:
             storage_sel = st.selectbox("Storage Duration:", ["Short (days)", "Medium (weeks)", "Long (months)"], index=1)
         with col_transport:
             transport_sel = st.selectbox("Transport Handling / Vibration:", ["LTL/FTL Truck", "Parcel shipping", "Air/Sea Cargo"], index=1)
-
         f_moisture = {"Dry": 1.0, "Damp": 1.2, "Humid": 1.5}[moisture_sel]
         f_spread = {"Even": 1.0, "Concentrated/Uneven": 1.25}[spread_sel]
         f_fragility = {"Low": 1.0, "High": 1.3}[fragility_sel]
         f_storage = {"Short (days)": 1.0, "Medium (weeks)": 1.25, "Long (months)": 1.5}[storage_sel]
         f_transport = {"LTL/FTL Truck": 1.0, "Parcel shipping": 1.3, "Air/Sea Cargo": 1.4}[transport_sel]
-
         QUALITY_PROPERTIES = {
             "1.20B": {"ect": 3.0, "thickness": 3.0, "name": "Single Wall - B Flute"},
             "1.20C": {"ect": 3.8, "thickness": 4.0, "name": "Single Wall - C Flute"},
@@ -1244,9 +1234,9 @@ if results:
             <div class='danger-box'>
                 <b>🚨 Warning - Structural Failure Risk:</b> The actual load of <b>{actual_bottom_load} kg</b> exceeds the safe stacked design capacity of <b>{bct_safe_load} kg</b> under these environmental conditions!<br>
                 <b>Recommendation:</b><br>
-                1. Upgrade the cardboard to a stronger grade (e.g., <b>2.30BC Double-Wall</b>).<br>
-                2. Decrease the stacking height on the pallet (reduce the number of layers).<br>
-                3. Use corner-board protectors to reinforce structural load paths.
+                1\. Upgrade the cardboard to a stronger grade (e.g., <b>2.30BC Double-Wall</b>).<br>
+                2\. Decrease the stacking height on the pallet (reduce the number of layers).<br>
+                3\. Use corner-board protectors to reinforce structural load paths.
             </div>
             """, unsafe_allow_html=True)
             
@@ -1254,7 +1244,7 @@ if results:
         <div class='guide-box'>
             <h5>🧮 How McKee's Formula works under the hood:</h5>
             The Box Compression Test value is calculated using:<br>
-            $$\\text{{BCT}} = 5.876 \\times \\text{{ECT}} \\times \\sqrt{{t \\times P}}$$
+            $$\\text{BCT} = 5.876 \\times \\text{ECT} \\times \\sqrt{t \\times P}$$
             <ul>
                 <li><b>ECT (Edge Crush Test):</b> Standardized strength. For Quality <b>{q_class}</b>, ECT is <b>{ect_val} N/mm</b>.</li>
                 <li><b>t (Thickness):</b> Cardboard thickness. For Quality <b>{q_class}</b>, thickness is <b>{thickness_val} mm</b>.</li>
@@ -1262,6 +1252,5 @@ if results:
             </ul>
         </div>
         """, unsafe_allow_html=True)
-
 else:
     st.warning("⚠️ No suitable boxes in your database can fit this product under the active weight or dimension parameters.")
