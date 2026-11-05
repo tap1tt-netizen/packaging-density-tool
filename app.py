@@ -45,6 +45,20 @@ st.markdown("""
         border-left: 5px solid #f59f00;
         margin-bottom: 15px;
     }
+    .danger-box {
+        background-color: #fff5f5;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 5px solid #ff8787;
+        margin-bottom: 15px;
+    }
+    .success-box {
+        background-color: #f4fce3;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 5px solid #94d82d;
+        margin-bottom: 15px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -133,7 +147,7 @@ if uploaded_stl is not None:
         auto_l = round(dims[2], 1)
         
         # Extract raw CAD solid volume
-        cad_volume = mesh_cad.volume
+        cad_volume = max(mesh_cad.volume, 0.001)
         
         # Auto unit scaling detector (cm to mm)
         is_cm_scale = auto_l < 50.0
@@ -205,7 +219,6 @@ if not material_selected:
 def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule):
     dims = sorted([p_l, p_w, p_h])
     h_dim, w_dim, l_dim = dims[0], dims[1], dims[2]
-
     if rule == "Force Flat Packing Only":
         orientations = [(l_dim, w_dim, h_dim), (w_dim, l_dim, h_dim)]
     elif rule == "Force Standing on Edge":
@@ -286,9 +299,11 @@ for idx, row in df_inventory.iterrows():
     total_payload_wt = parts_count * prod_wt
     total_package_weight = total_payload_wt + box_weight
     
-    # Weight Rule Check (Boxes >= 600x400 bypass 15kg limit)
-    is_large_box = (ext_l >= 595.0) and (ext_w >= 395.0)
-    if not is_large_box and total_package_weight > 15.0:
+    # --- REQ 1: NEW WEIGHT THRESHOLD SHIFT (UNDER 15KG ONLY FOR footprint <= 400x300) ---
+    dims_footprint = sorted([ext_l, ext_w])
+    is_manual_box = (dims_footprint[0] <= 300.0) and (dims_footprint[1] <= 400.0)
+    
+    if is_manual_box and total_package_weight > 15.0:
         continue
         
     # Structural Box Load check
@@ -311,6 +326,7 @@ for idx, row in df_inventory.iterrows():
         "Int. Height [mm]": box_int_h,
         "Ext. Length [mm]": ext_l,
         "Ext. Width [mm]": ext_w,
+        "Ext. Height [mm]": ext_h,
         "Number of Parts per Box": parts_count,
         "Optimal Grid Layout": f"{grid_layout[0]}x{grid_layout[1]}x{grid_layout[2]} (X x Y x Z)",
         "Optimal Orientation": f"{int(pack_orient[0])}x{int(pack_orient[1])}x{int(pack_orient[2])} mm",
@@ -343,8 +359,8 @@ if results:
     ranked_df = res_df.sort_values(by=sort_by_cols, ascending=ascending_rules).head(10).reset_index(drop=True)
     ranked_df.index = ranked_df.index + 1
     best_box = ranked_df.iloc[0]
-
-    # --- TOP HEADER SAFETY BADGE LAYOUT (Fixes Issue #1) ---
+    
+    # --- TOP HEADER SAFETY BADGE LAYOUT ---
     col_title, col_safety_header = st.columns([7, 3])
     
     with col_title:
@@ -352,15 +368,15 @@ if results:
         st.markdown("### Grid-Based Product Accommodation & Operator Safety Tool")
         st.write("This tool calculates the maximum number of parts that can fit inside our company's standard boxes with partition separators.")
     
-    # High-Visibility Weight Indicator exactly next to the title (within the red circle area!)
+    # High-Visibility Weight Indicator exactly next to the title
     with col_safety_header:
         total_package_weight = best_box["Total Weight (kg)"]
         if total_package_weight > 15.0:
             st.markdown(f"""
                 <div style='background-color:#fff0f0; border-left:5px solid #e03131; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
-                    <b style='color:#e03131; font-size:16px;'>🚨 Operational Weight Alert</b><br>
-                    <span style='font-size:14px; color:#c92a2a; font-weight:bold;'>{total_package_weight} kg (Exceeds 15kg!)</span><br>
-                    <span style='font-size:11px; color:#495057; font-weight:bold;'>Forklift Pallet Handling Required!</span>
+                    <b style='color:#e03131; font-size:16px;'>🚨 Forklift Transport Required</b><br>
+                    <span style='font-size:14px; color:#c92a2a; font-weight:bold;'>{total_package_weight} kg (Bypasses manual limit)</span><br>
+                    <span style='font-size:11px; color:#495057; font-weight:bold;'>Box size exceeds 400x300. Forklift Pallet Handling Permitted.</span>
                 </div>
             """, unsafe_allow_html=True)
         else:
@@ -368,13 +384,13 @@ if results:
                 <div style='background-color:#ebfbee; border-left:5px solid #2b8a3e; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
                     <b style='color:#2b8a3e; font-size:16px;'>🟢 Safe Operational Weight</b><br>
                     <span style='font-size:14px; color:#2b8a3e; font-weight:bold;'>Safe at {total_package_weight} kg</span><br>
-                    <span style='font-size:11px; color:#495057; font-weight:bold;'>Approved for Manual Operator Packing</span>
+                    <span style='font-size:11px; color:#495057; font-weight:bold;'>Approved for Manual Operator Packing (<= 400x300)</span>
                 </div>
             """, unsafe_allow_html=True)
-
+            
     # Database connected success message
     st.success(f"Connected to Cardboard Database: `{filename_loaded}`")
-
+    
     # KPI Metric Cards
     st.subheader("💡 Best Matched Packing Insights")
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -399,419 +415,629 @@ if results:
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Main Recommendations Table
-    st.subheader("🏆 Top 10 Recommended Cardboard Boxes")
-    display_df = ranked_df.drop(columns=["_nx", "_ny", "_nz", "_ox", "_oy", "_oz", "Int. Length [mm]", "Int. Width [mm]", "Int. Height [mm]", "Ext. Length [mm]", "Ext. Width [mm]"])
-    st.dataframe(
-        display_df,
-        column_config={
-            "Volumetric Efficiency (%)": st.column_config.ProgressColumn(
-                "Volumetric Efficiency (%)",
-                format="%.2f%%",
-                min_value=0,
-                max_value=100,
-                color="blue"
-            ),
-            "Box Price (€)": st.column_config.NumberColumn(
-                "Box Price (€)",
-                format="€ %.2f"
-            )
-        },
-        use_container_width=True
-    )
+    # Main Tabs Organization
+    tab_recommender, tab_pallet, tab_compression = st.tabs([
+        "📦 Tab 1: Box Recommender & Individual Loading", 
+        "🚛 Tab 2: Pallet Stacking Optimizer (EPAL 1 & EPAL 2)", 
+        "🗜️ Tab 3: McKee Gravity Compression Safety Check"
+    ])
     
-    # --- DYNAMIC PACKING GUIDE & MATPLOTLIB BLUEPRINT EXPANDER ---
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
-    
-    # --- DYNAMIC SELECTBOX MEMORY (SESSION STATE) ---
-    available_boxes = list(ranked_df["Box ID / Specification"].values)
-    
-    # --- SMART ACTIVE RESET DETECTOR ---
-    if "last_available_boxes" not in st.session_state or st.session_state["last_available_boxes"] != available_boxes:
-        st.session_state["selected_box"] = available_boxes[0]
-        st.session_state["last_available_boxes"] = available_boxes
-    if "selected_box" not in st.session_state or st.session_state["selected_box"] not in available_boxes:
-        st.session_state["selected_box"] = available_boxes[0]
+    # ==========================================
+    # TAB 1: BOX RECOMMENDER & INDIVIDUAL LOADING
+    # ==========================================
+    with tab_recommender:
+        # Main Recommendations Table
+        st.subheader("🏆 Top 10 Recommended Cardboard Boxes")
+        display_df = ranked_df.drop(columns=["_nx", "_ny", "_nz", "_ox", "_oy", "_oz", "Int. Length [mm]", "Int. Width [mm]", "Int. Height [mm]", "Ext. Length [mm]", "Ext. Width [mm]"])
+        st.dataframe(
+            display_df,
+            column_config={
+                "Volumetric Efficiency (%)": st.column_config.ProgressColumn(
+                    "Volumetric Efficiency (%)",
+                    format="%.2f%%",
+                    min_value=0,
+                    max_value=100,
+                    color="blue"
+                ),
+                "Box Price (€)": st.column_config.NumberColumn(
+                    "Box Price (€)",
+                    format="€ %.2f"
+                )
+            },
+            use_container_width=True
+        )
         
-    default_index = available_boxes.index(st.session_state["selected_box"])
-    def on_box_change():
-        st.session_state["selected_box"] = st.session_state["temp_box_selector"]
-    selected_box_spec = st.selectbox(
-        "Select a Cardboard Box from the Top 10 to generate its loading blueprints:",
-        options=available_boxes,
-        index=default_index,
-        key="temp_box_selector",
-        on_change=on_box_change
-    )
-    
-    st.session_state["selected_box"] = selected_box_spec
-    viz_box = ranked_df[ranked_df["Box ID / Specification"] == st.session_state["selected_box"]].iloc[0]
-    
-    nx = int(viz_box["_nx"])
-    ny = int(viz_box["_ny"])
-    nz = int(viz_box["_nz"])
-    ox = int(viz_box["_ox"])
-    oy = int(viz_box["_oy"])
-    oz = int(viz_box["_oz"])
-    
-    placement_style = determine_placement_style(prod_l, prod_w, prod_h, oz)
-    
-    is_standing = oz > min(prod_l, prod_w, prod_h)
-    if is_standing and nz == 1:
-        req_height_2_layers = (oz * 2) + sep_z + clear_height
-        st.markdown(f"""
-            <div class='warning-box'>
-                💡 <b>Alternative Orientation Tip:</b> You are packing the parts <b>standing on edge/vertical</b>. 
-                While this fits more parts on the floor grid, you can only pack <b>1 single layer</b> because this box height ({int(viz_box['Int. Height [mm]'])} mm) is too short. 
-                <br>👉 To stack <b>2 layers</b> in this standing orientation, you would need to ask procurement for a taller box with an internal height of at least <b>{int(req_height_2_layers)} mm</b>.
-            </div>
-        """, unsafe_allow_html=True)
-
-    # Render blueprints container (Preserved your Original Layout structure)
-    with st.container():
-        col_text, col_flat, col_stack = st.columns([2.5, 3, 2.5])
+        # --- DYNAMIC PACKING GUIDE & MATPLOTLIB BLUEPRINT ---
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
         
-        with col_text:
-            st.markdown("<div class='guide-box'><h4><b>🛠️ 3-Step Packing Instruction</b></h4><hr>", unsafe_allow_html=True)
+        available_boxes = list(ranked_df["Box ID / Specification"].values)
+        
+        # --- SMART ACTIVE RESET DETECTOR ---
+        if "last_available_boxes" not in st.session_state or st.session_state["last_available_boxes"] != available_boxes:
+            st.session_state["selected_box"] = available_boxes[0]
+            st.session_state["last_available_boxes"] = available_boxes
+        if "selected_box" not in st.session_state or st.session_state["selected_box"] not in available_boxes:
+            st.session_state["selected_box"] = available_boxes[0]
             
+        default_index = available_boxes.index(st.session_state["selected_box"])
+        def on_box_change():
+            st.session_state["selected_box"] = st.session_state["temp_box_selector"]
+            
+        selected_box_spec = st.selectbox(
+            "Select a Cardboard Box from the Top 10 to generate its loading blueprints:",
+            options=available_boxes,
+            index=default_index,
+            key="temp_box_selector",
+            on_change=on_box_change
+        )
+        
+        st.session_state["selected_box"] = selected_box_spec
+        viz_box = ranked_df[ranked_df["Box ID / Specification"] == st.session_state["selected_box"]].iloc[0]
+        
+        nx = int(viz_box["_nx"])
+        ny = int(viz_box["_ny"])
+        nz = int(viz_box["_nz"])
+        ox = int(viz_box["_ox"])
+        oy = int(viz_box["_oy"])
+        oz = int(viz_box["_oz"])
+        box_l = viz_box["Int. Length [mm]"]
+        box_w = viz_box["Int. Width [mm]"]
+        ext_l = viz_box["Ext. Length [mm]"]
+        ext_w = viz_box["Ext. Width [mm]"]
+        
+        placement_style = determine_placement_style(prod_l, prod_w, prod_h, oz)
+        
+        is_standing = oz > min(prod_l, prod_w, prod_h)
+        if is_standing and nz == 1:
+            req_height_2_layers = (oz * 2) + sep_z + clear_height
             st.markdown(f"""
-            <b>Step 1: Orient the Part</b><br>
-            Place each individual part according to this orientation:<br>
-            <i>{placement_style}</i>
-            <ul>
-                <li>📐 <b>Lengthwise (Left-to-Right):</b> {ox} mm</li>
-                <li>📐 <b>Widthwise (Front-to-Back):</b> {oy} mm</li>
-                <li>📐 <b>Height (pointing UP):</b> {oz} mm</li>
-            </ul>
+                <div class='warning-box'>
+                    💡 <b>Alternative Orientation Tip:</b> You are packing the parts <b>standing on edge/vertical</b>. 
+                    While this fits more parts on the floor grid, you can only pack <b>1 single layer</b> because this box height ({int(viz_box['Int. Height [mm]'])} mm) is too short. 
+                    <br>👉 To stack <b>2 layers</b> in this standing orientation, you would need to ask procurement for a taller box with an internal height of at least <b>{int(req_height_2_layers)} mm</b>.
+                </div>
             """, unsafe_allow_html=True)
             
-            st.markdown(f"""
-            <b>Step 2: Arrange the Floor Grid</b><br>
-            Lay down a grid of <b>{nx} columns</b> and <b>{ny} rows</b> of parts on the floor of the box. 
-            <ul>
-                <li>This packs exactly <b>{nx * ny} parts</b> on this layer.</li>
-                <li>Place the {sep_xy}mm partition grids between each part.</li>
-            </ul>
-            """, unsafe_allow_html=True)
+        with st.container():
+            col_text, col_flat, col_stack = st.columns([2.5, 3, 2.5])
             
-            if nz > 1:
+            with col_text:
+                st.markdown("<div class='guide-box'><h4><b>🛠️ 3-Step Packing Instruction</b></h4><hr>", unsafe_allow_html=True)
+                
                 st.markdown(f"""
-                <b>Step 3: Stacking Vertical Layers</b><br>
+                <b>Step 1: Orient the Part</b><br>
+                Place each individual part according to this orientation:<br>
+                <i>{placement_style}</i>
                 <ul>
-                    <li>Lay down a flat {sep_z}mm cardboard divider sheet on top of your completed layer.</li>
-                    <li>Repeat the same grid layout of {nx*ny} parts on top.</li>
-                    <li>Do this until you have built a total of <b>{nz} vertical layers</b> (reaching <b>{int(viz_box['Number of Parts per Box'])} pieces</b> in total).</li>
+                    <li>📐 <b>Lengthwise (Left-to-Right):</b> {ox} mm</li>
+                    <li>📐 <b>Widthwise (Front-to-Back):</b> {oy} mm</li>
+                    <li>📐 <b>Height (pointing UP):</b> {oz} mm</li>
                 </ul>
                 """, unsafe_allow_html=True)
-            else:
+                
                 st.markdown(f"""
-                <b>Step 3: Finish Packing</b><br>
-                Since all <b>{int(viz_box['Number of Parts per Box'])} parts</b> fit in <b>1 single floor layer</b>, you do not need any flat shelf dividers or vertical stacking. 
-                <br>Just seal the box and ship!
+                <b>Step 2: Arrange the Floor Grid</b><br>
+                Lay down a grid of <b>{nx} columns</b> and <b>{ny} rows</b> of parts on the floor of the box. 
+                <ul>
+                    <li>This packs exactly <b>{nx * ny} parts</b> on this layer.</li>
+                    <li>Place the {sep_xy}mm partition grids between each part.</li>
+                </ul>
                 """, unsafe_allow_html=True)
                 
-            # Render selected box weight indicator cleanly below instructions
-            sel_package_weight = viz_box["Total Weight (kg)"]
-            if sel_package_weight > 15.0:
-                st.markdown(f"<p style='color:#e03131; font-weight:bold; margin-top:10px;'>🚨 Operational Weight: Safe at {sel_package_weight} kg (Exceeds 15kg manual limit!)</p>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<p style='color:#2b8a3e; font-weight:bold; margin-top:10px;'>🟢 Operational Weight: Safe at {sel_package_weight} kg</p>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-            
-        with col_flat:
-            fig, ax = plt.subplots(figsize=(6, 4))
-            box_l = viz_box["Int. Length [mm]"]
-            box_w = viz_box["Int. Width [mm]"]
-            ext_l = viz_box["Ext. Length [mm]"]
-            ext_w = viz_box["Ext. Width [mm]"]
-            
-            ax.add_patch(patches.Rectangle((0, 0), box_l, box_w, fill=False, edgecolor='#212529', linewidth=2.5, label='Box Wall'))
-            
-            ax.add_patch(patches.Rectangle((0, 0), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
-            ax.add_patch(patches.Rectangle((0, box_w - clear_side), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
-            ax.add_patch(patches.Rectangle((0, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
-            ax.add_patch(patches.Rectangle((box_l - clear_side, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
-            
-            total_grid_w = nx * ox + (nx - 1) * sep_xy
-            total_grid_h = ny * oy + (ny - 1) * sep_xy
-            leftover_x = (box_l - 2 * clear_side) - total_grid_w
-            leftover_y = (box_w - 2 * clear_side) - total_grid_h
-            
-            start_x_offset = clear_side + (leftover_x / 2)
-            start_y_offset = clear_side + (leftover_y / 2)
-            
-            for r in range(ny):
-                y_pos = start_y_offset + r * (oy + sep_xy)
-                for c in range(nx):
-                    x_pos = start_x_offset + c * (ox + sep_xy)
-                    ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#a5d8ff', edgecolor='#1971c2', linewidth=1.2))
-                    ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1}, {r+1}", ha='center', va='center', fontsize=8, color='#0f4c81', fontweight='bold')
-            
-            ax.annotate('', xy=(0, -25), xytext=(box_l, -25),
-                        arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
-            ax.text(box_l/2, -45, f"{int(ext_l)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center')
-            
-            ax.annotate('', xy=(box_l + 25, 0), xytext=(box_l + 25, box_w),
-                        arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
-            ax.text(box_l + 45, box_w/2, f"{int(ext_w)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center', va='center', rotation=-90)
-            
-            ax.text(box_l/2, box_w + 15, f"Layers: {nz} Vertical", color='#dc3545', fontsize=14, fontweight='bold', ha='center')
-            
-            ax.set_xlim(-40, box_l + 80)
-            ax.set_ylim(-60, box_w + 35)
-            ax.set_aspect('equal')
-            ax.axis('off')
-            st.pyplot(fig)
-            plt.close(fig)
-            
-        with col_stack:
-            fig3d = plt.figure(figsize=(4, 3.5))
-            ax3d = fig3d.add_subplot(111, projection='3d')
-            w_scale = 100
-            l_scale = w_scale * (box_l / box_w)
-            h_scale = 30
-            
-            # --- PERFECT AXIS VERTICAL ASPECT RETENTION ---
-            z_aspect = max(30, nz * 15)
-            ax3d.set_box_aspect((l_scale, w_scale, z_aspect))
-            
-            lbl_font = 9 if nz > 6 else 12
-            
-            for layer in range(nz):
-                z_start = layer * (h_scale + 5)
-                v = np.array([
-                    [0, 0, z_start], [l_scale, 0, z_start], [l_scale, w_scale, z_start], [0, w_scale, z_start],
-                    [0, 0, z_start + h_scale], [l_scale, 0, z_start + h_scale], [l_scale, w_scale, z_start + h_scale], [0, w_scale, z_start + h_scale]
-                ])
-                faces = [
-                    [v[0], v[1], v[5], v[4]], [v[1], v[2], v[6], v[5]], [v[2], v[3], v[7], v[6]],
-                    [v[3], v[0], v[4], v[7]], [v[4], v[5], v[6], v[7]], [v[0], v[1], v[2], v[3]]
-                ]
-                color = '#a5d8ff' if layer < nz - 1 else '#74c0fc'
-                poly = Poly3DCollection(faces, facecolors=color, edgecolors='#1971c2', linewidths=1.5, alpha=0.8)
-                ax3d.add_collection3d(poly)
-                
-                ax3d.text(-35, 20, z_start + h_scale/2, f"L{layer + 1}", color='#dc3545', fontweight='bold', fontsize=lbl_font, ha='right', va='center', zorder=100)
-                ax3d.plot([-30, 0], [10, 0], [z_start + h_scale/2, z_start + h_scale/2], color='#dc3545', linestyle=':', linewidth=1)
-                
-            ax3d.set_xlim(-50, l_scale + 10)
-            ax3d.set_ylim(-20, w_scale + 10)
-            ax3d.set_zlim(0, nz * (h_scale + 5) + 10)
-            ax3d.view_init(elev=22, azim=-65)
-            ax3d.axis('off')
-            
-            plt.title("Vertical Stacking Blueprint", fontsize=11, fontweight='bold', color='#212529', pad=10)
-            st.pyplot(fig3d)
-            plt.close(fig3d)
-
-    # --- DYNAMIC INTERACTIVE 3D DIGITAL TWIN VIEWPORT ---
-    st.markdown("<hr>", unsafe_allow_html=True)
-    st.subheader("🔄 Interactive 3D Digital Twin Viewport (Rotatable)")
-    
-    col_cad, col_packing_3d = st.columns(2)
-    
-    with col_cad:
-        st.markdown("##### 🔍 Rotatable 3D CAD Part Model")
-        if mesh_cad is not None:
-            try:
-                # Extract faces and vertices from loaded CAD file
-                v_coords = mesh_cad.vertices
-                f_indices = mesh_cad.faces
-                
-                x_v, y_v, z_v = v_coords[:, 0], v_coords[:, 1], v_coords[:, 2]
-                i_f, j_f, k_f = f_indices[:, 0], f_indices[:, 1], f_indices[:, 2]
-                
-                # Draw the fully interactive 3D model using Plotly Mesh3d
-                fig_cad = go.Figure(data=[
-                    go.Mesh3d(
-                        x=x_v, y=y_v, z=z_v,
-                        i=i_f, j=j_f, k=k_f,
-                        color='#d1d5db',
-                        opacity=1.0,
-                        flatshading=False,
-                        lighting=dict(
-                            ambient=0.5,
-                            diffuse=0.9,
-                            roughness=0.15,
-                            specular=1.6,
-                            fresnel=0.6
-                        ),
-                        lightposition=dict(
-                            x=1000,
-                            y=1000,
-                            z=1500
-                        ),
-                        name="3D CAD Part"
-                    )
-                ])
-                fig_cad.update_layout(
-                    scene=dict(
-                        aspectmode='data',
-                        xaxis=dict(visible=False),
-                        yaxis=dict(visible=False),
-                        zaxis=dict(visible=False)
-                    ),
-                    margin=dict(l=0, r=0, b=0, t=0),
-                    height=380
-                )
-                st.plotly_chart(fig_cad, use_container_width=True)
-            except Exception as e_plotly:
-                st.info("Upload your 3D CAD (.STL/.STEP) file to activate the rotatable 3D digital twin viewer!")
-        else:
-            st.info("💡 Please upload a 3D CAD (.STL/.STEP) file in the sidebar to activate this rotatable digital twin viewer!")
-            
-    with col_packing_3d:
-        st.markdown("##### 📦 Rotatable 3D Box Packing Layout")
-        try:
-            # Construct a fully interactive 3D wireframe box with real packed parts inside!
-            fig_pack = go.Figure()
-            
-            # Helper to add a 3D wireframe outline for a compartment slot
-            def add_wireframe_compartment(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz):
-                cv = np.array([
-                    [x_pos, y_pos, z_pos], [x_pos + dx, y_pos, z_pos],
-                    [x_pos + dx, y_pos + dy, z_pos], [x_pos, y_pos + dy, z_pos],
-                    [x_pos, y_pos, z_pos + dz], [x_pos + dx, y_pos, z_pos + dz],
-                    [x_pos + dx, y_pos + dy, z_pos + dz], [x_pos, y_pos + dy, z_pos + dz]
-                ])
-                edges_c = [
-                    (0, 1), (1, 2), (2, 3), (3, 0),
-                    (4, 5), (5, 6), (6, 7), (7, 4),
-                    (0, 4), (1, 5), (2, 6), (3, 7)
-                ]
-                for edge in edges_c:
-                    fig_scene.add_trace(go.Scatter3d(
-                        x=[cv[edge[0]][0], cv[edge[1]][0]],
-                        y=[cv[edge[0]][1], cv[edge[1]][1]],
-                        z=[cv[edge[0]][2], cv[edge[1]][2]],
-                        mode='lines',
-                        line=dict(color='rgba(150, 150, 150, 0.4)', width=2),
-                        showlegend=False,
-                        hoverinfo='skip'
-                    ))
-
-            # Helper to add actual CAD model mesh into a specific compartment
-            def add_plotly_mesh_part(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz, raw_v, raw_f, text_str):
-                min_v = np.min(raw_v, axis=0)
-                max_v = np.max(raw_v, axis=0)
-                raw_extent = max_v - min_v
-                
-                best_perm = None
-                min_error = float('inf')
-                for perm in itertools.permutations([0, 1, 2]):
-                    perm_extent = raw_extent[list(perm)]
-                    ratios = np.array([dx, dy, dz]) / perm_extent
-                    error = np.std(ratios)
-                    if error < min_error:
-                        min_error = error
-                        best_perm = perm
-                
-                v_aligned = (raw_v - min_v)[:, list(best_perm)]
-                
-                aligned_extent = raw_extent[list(best_perm)]
-                scale_factor = np.min(np.array([dx, dy, dz]) / aligned_extent)
-                v_scaled = v_aligned * scale_factor
-                
-                scaled_extent = aligned_extent * scale_factor
-                gap_x = dx - scaled_extent[0]
-                gap_y = dy - scaled_extent[1]
-                gap_z = dz - scaled_extent[2]
-                
-                v_final = v_scaled + np.array([x_pos + gap_x/2, y_pos + gap_y/2, z_pos + gap_z/2])
-                
-                fig_scene.add_trace(go.Mesh3d(
-                    x=v_final[:, 0], y=v_final[:, 1], z=v_final[:, 2],
-                    i=raw_f[:, 0], j=raw_f[:, 1], k=raw_f[:, 2],
-                    color='#74c0fc', opacity=1.0,
-                    flatshading=False,
-                    lighting=dict(
-                        ambient=0.5,
-                        diffuse=0.9,
-                        specular=1.2,
-                        roughness=0.15,
-                        fresnel=0.5
-                    ),
-                    name=text_str,
-                    hoverinfo="text",
-                    text=text_str,
-                    showlegend=False
-                ))
-
-            # Centering mathematics matching the 2D Blueprint
-            total_grid_w = nx * ox + (nx - 1) * sep_xy
-            total_grid_h = ny * oy + (ny - 1) * sep_xy
-            leftover_x = (box_l - 2 * clear_side) - total_grid_w
-            leftover_y = (box_w - 2 * clear_side) - total_grid_h
-            
-            start_x_offset = clear_side + (leftover_x / 2)
-            start_y_offset = clear_side + (leftover_y / 2)
-            
-            # --- NEW DIAGONAL STAIR-STEP PLACEMENT SCHEME (Fixes Issue #2) ---
-            # Instead of rendering parts in every single cell, we place exactly 1 part on each layer dynamically.
-            # This creates a perfect diagonal stack that prevents parts blocking each other in 3D space!
-            selected_cells = []
-            for l in range(nz):
                 if nz > 1:
-                    c_diag = int(round(l * (nx - 1) / (nz - 1)))
-                    r_diag = int(round(l * (ny - 1) / (nz - 1)))
+                    st.markdown(f"""
+                    <b>Step 3: Stacking Vertical Layers</b><br>
+                    <ul>
+                        <li>Lay down a flat {sep_z}mm cardboard divider sheet on top of your completed layer.</li>
+                        <li>Repeat the same grid layout of {nx*ny} parts on top.</li>
+                        <li>Do this until you have built a total of <b>{nz} vertical layers</b> (reaching <b>{int(viz_box['Number of Parts per Box'])} pieces</b> in total).</li>
+                    </ul>
+                    """, unsafe_allow_html=True)
                 else:
-                    c_diag, r_diag = 0, 0
-                selected_cells.append((c_diag, r_diag, l))
-
-            # Draw compartments & selectively insert parts
-            for layer in range(nz):
-                z_pos = layer * (oz + sep_z)
+                    st.markdown(f"""
+                    <b>Step 3: Finish Packing</b><br>
+                    Since all <b>{int(viz_box['Number of Parts per Box'])} parts</b> fit in <b>1 single floor layer</b>, you do not need any flat shelf dividers or vertical stacking. 
+                    <br>Just seal the box and ship!
+                    """, unsafe_allow_html=True)
+                    
+                sel_package_weight = viz_box["Total Weight (kg)"]
+                if sel_package_weight > 15.0:
+                    st.markdown(f"<p style='color:#e03131; font-weight:bold; margin-top:10px;'>🚨 Operational Weight: {sel_package_weight} kg (Exceeds 15kg manual limit!)</p>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<p style='color:#2b8a3e; font-weight:bold; margin-top:10px;'>🟢 Operational Weight: Safe at {sel_package_weight} kg</p>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+                
+            with col_flat:
+                fig, ax = plt.subplots(figsize=(6, 4))
+                
+                ax.add_patch(patches.Rectangle((0, 0), box_l, box_w, fill=False, edgecolor='#212529', linewidth=2.5, label='Box Wall'))
+                
+                ax.add_patch(patches.Rectangle((0, 0), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
+                ax.add_patch(patches.Rectangle((0, box_w - clear_side), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
+                ax.add_patch(patches.Rectangle((0, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
+                ax.add_patch(patches.Rectangle((box_l - clear_side, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.6))
+                
+                total_grid_w = nx * ox + (nx - 1) * sep_xy
+                total_grid_h = ny * oy + (ny - 1) * sep_xy
+                leftover_x = (box_l - 2 * clear_side) - total_grid_w
+                leftover_y = (box_w - 2 * clear_side) - total_grid_h
+                
+                start_x_offset = clear_side + (leftover_x / 2)
+                start_y_offset = clear_side + (leftover_y / 2)
+                
                 for r in range(ny):
                     y_pos = start_y_offset + r * (oy + sep_xy)
                     for c in range(nx):
                         x_pos = start_x_offset + c * (ox + sep_xy)
-                        
-                        add_wireframe_compartment(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz)
-                        
-                        if (c, r, layer) in selected_cells and mesh_cad is not None:
-                            add_plotly_mesh_part(
-                                fig_pack, x_pos, y_pos, z_pos, ox, oy, oz, 
-                                mesh_cad.vertices, mesh_cad.faces, 
-                                f"Part @ Col {c+1}, Row {r+1}, Layer {layer+1}"
-                            )
-            
-            # Draw Outer Box boundaries
-            box_v = np.array([
-                [0, 0, 0], [box_l, 0, 0], [box_l, box_w, 0], [0, box_w, 0],
-                [0, 0, viz_box["Int. Height [mm]"]], [box_l, 0, viz_box["Int. Height [mm]"]],
-                [box_l, box_w, viz_box["Int. Height [mm]"]], [0, box_w, viz_box["Int. Height [mm]"]]
-            ])
-            
-            edges = [
-                (0, 1), (1, 2), (2, 3), (3, 0),
-                (4, 5), (5, 6), (6, 7), (7, 4),
-                (0, 4), (1, 5), (2, 6), (3, 7)
-            ]
-            
-            for edge in edges:
-                fig_pack.add_trace(go.Scatter3d(
-                    x=[box_v[edge[0]][0], box_v[edge[1]][0]],
-                    y=[box_v[edge[0]][1], box_v[edge[1]][1]],
-                    z=[box_v[edge[0]][2], box_v[edge[1]][2]],
-                    mode='lines',
-                    line=dict(color='#212529', width=4),
-                    showlegend=False,
-                    hoverinfo='skip'
-                ))
+                        ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#a5d8ff', edgecolor='#1971c2', linewidth=1.2))
+                        ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1}, {r+1}", ha='center', va='center', fontsize=8, color='#0f4c81', fontweight='bold')
                 
-            fig_pack.update_layout(
-                scene=dict(
-                    xaxis_title="Length (mm)",
-                    yaxis_title="Width (mm)",
-                    zaxis_title="Height (mm)",
-                    aspectmode='data'
-                ),
-                margin=dict(l=0, r=0, b=0, t=0),
-                height=380
+                ax.annotate('', xy=(0, -25), xytext=(box_l, -25),
+                            arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
+                ax.text(box_l/2, -45, f"{int(ext_l)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center')
+                
+                ax.annotate('', xy=(box_l + 25, 0), xytext=(box_l + 25, box_w),
+                            arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
+                ax.text(box_l + 45, box_w/2, f"{int(ext_w)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center', va='center', rotation=-90)
+                
+                ax.text(box_l/2, box_w + 15, f"Layers: {nz} Vertical", color='#dc3545', fontsize=14, fontweight='bold', ha='center')
+                
+                ax.set_xlim(-40, box_l + 80)
+                ax.set_ylim(-60, box_w + 35)
+                ax.set_aspect('equal')
+                ax.axis('off')
+                st.pyplot(fig)
+                plt.close(fig)
+                
+            with col_stack:
+                fig3d = plt.figure(figsize=(4, 3.5))
+                ax3d = fig3d.add_subplot(111, projection='3d')
+                w_scale = 100
+                l_scale = w_scale * (box_l / box_w)
+                h_scale = 30
+                
+                z_aspect = max(30, nz * 15)
+                ax3d.set_box_aspect((l_scale, w_scale, z_aspect))
+                
+                lbl_font = 9 if nz > 6 else 12
+                
+                for layer in range(nz):
+                    z_start = layer * (h_scale + 5)
+                    v = np.array([
+                        [0, 0, z_start], [l_scale, 0, z_start], [l_scale, w_scale, z_start], [0, w_scale, z_start],
+                        [0, 0, z_start + h_scale], [l_scale, 0, z_start + h_scale], [l_scale, w_scale, z_start + h_scale], [0, w_scale, z_start + h_scale]
+                    ])
+                    faces = [
+                        [v[0], v[1], v[5], v[4]], [v[1], v[2], v[6], v[5]], [v[2], v[3], v[7], v[6]],
+                        [v[3], v[0], v[4], v[7]], [v[4], v[5], v[6], v[7]], [v[0], v[1], v[2], v[3]]
+                    ]
+                    color = '#a5d8ff' if layer < nz - 1 else '#74c0fc'
+                    poly = Poly3DCollection(faces, facecolors=color, edgecolors='#1971c2', linewidths=1.5, alpha=0.8)
+                    ax3d.add_collection3d(poly)
+                    
+                    ax3d.text(-35, 20, z_start + h_scale/2, f"L{layer + 1}", color='#dc3545', fontweight='bold', fontsize=lbl_font, ha='right', va='center', zorder=100)
+                    ax3d.plot([-30, 0], [10, 0], [z_start + h_scale/2, z_start + h_scale/2], color='#dc3545', linestyle=':', linewidth=1)
+                    
+                ax3d.set_xlim(-50, l_scale + 10)
+                ax3d.set_ylim(-20, w_scale + 10)
+                ax3d.set_zlim(0, nz * (h_scale + 5) + 10)
+                ax3d.view_init(elev=22, azim=-65)
+                ax3d.axis('off')
+                
+                plt.title("Vertical Stacking Blueprint", fontsize=11, fontweight='bold', color='#212529', pad=10)
+                st.pyplot(fig3d)
+                plt.close(fig3d)
+                
+        # --- DYNAMIC INTERACTIVE 3D DIGITAL TWIN VIEWPORT ---
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.subheader("🔄 Interactive 3D Digital Twin Viewport (Rotatable)")
+        col_cad, col_packing_3d = st.columns(2)
+        
+        with col_cad:
+            st.markdown("##### 🔍 Rotatable 3D CAD Part Model")
+            if mesh_cad is not None:
+                try:
+                    v_coords = mesh_cad.vertices
+                    f_indices = mesh_cad.faces
+                    x_v, y_v, z_v = v_coords[:, 0], v_coords[:, 1], v_coords[:, 2]
+                    i_f, j_f, k_f = f_indices[:, 0], f_indices[:, 1], f_indices[:, 2]
+                    
+                    fig_cad = go.Figure(data=[
+                        go.Mesh3d(
+                            x=x_v, y=y_v, z=z_v,
+                            i=i_f, j=j_f, k=k_f,
+                            color='#d1d5db',
+                            opacity=1.0,
+                            flatshading=False,
+                            lighting=dict(ambient=0.5, diffuse=0.9, roughness=0.15, specular=1.6, fresnel=0.6),
+                            lightposition=dict(x=1000, y=1000, z=1500),
+                            name="3D CAD Part"
+                        )
+                    ])
+                    fig_cad.update_layout(
+                        scene=dict(aspectmode='data', xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)),
+                        margin=dict(l=0, r=0, b=0, t=0),
+                        height=380
+                    )
+                    st.plotly_chart(fig_cad, use_container_width=True)
+                except Exception as e_plotly:
+                    st.info("Upload your 3D CAD (.STL/.STEP) file to activate the rotatable 3D digital twin viewer!")
+            else:
+                st.info("💡 Please upload a 3D CAD (.STL/.STEP) file in the sidebar to activate this rotatable digital twin viewer!")
+                
+        with col_packing_3d:
+            st.markdown("##### 📦 Rotatable 3D Box Packing Layout")
+            try:
+                fig_pack = go.Figure()
+                
+                def add_wireframe_compartment(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz):
+                    cv = np.array([
+                        [x_pos, y_pos, z_pos], [x_pos + dx, y_pos, z_pos],
+                        [x_pos + dx, y_pos + dy, z_pos], [x_pos, y_pos + dy, z_pos],
+                        [x_pos, y_pos, z_pos + dz], [x_pos + dx, y_pos, z_pos + dz],
+                        [x_pos + dx, y_pos + dy, z_pos + dz], [x_pos, y_pos + dy, z_pos + dz]
+                    ])
+                    edges_c = [
+                        (0, 1), (1, 2), (2, 3), (3, 0),
+                        (4, 5), (5, 6), (6, 7), (7, 4),
+                        (0, 4), (1, 5), (2, 6), (3, 7)
+                    ]
+                    for edge in edges_c:
+                        fig_scene.add_trace(go.Scatter3d(
+                            x=[cv[edge[0]][0], cv[edge[1]][0]],
+                            y=[cv[edge[0]][1], cv[edge[1]][1]],
+                            z=[cv[edge[0]][2], cv[edge[1]][2]],
+                            mode='lines',
+                            line=dict(color='rgba(150, 150, 150, 0.4)', width=2),
+                            showlegend=False,
+                            hoverinfo='skip'
+                        ))
+                
+                def add_plotly_mesh_part(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz, raw_v, raw_f, text_str):
+                    min_v = np.min(raw_v, axis=0)
+                    max_v = np.max(raw_v, axis=0)
+                    raw_extent = max_v - min_v
+                    
+                    best_perm = None
+                    min_error = float('inf')
+                    for perm in itertools.permutations([0, 1, 2]):
+                        perm_extent = raw_extent[list(perm)]
+                        ratios = np.array([dx, dy, dz]) / perm_extent
+                        error = np.std(ratios)
+                        if error < min_error:
+                            min_error = error
+                            best_perm = perm
+                    
+                    v_aligned = (raw_v - min_v)[:, list(best_perm)]
+                    aligned_extent = raw_extent[list(best_perm)]
+                    scale_factor = np.min(np.array([dx, dy, dz]) / aligned_extent)
+                    v_scaled = v_aligned * scale_factor
+                    scaled_extent = aligned_extent * scale_factor
+                    
+                    gap_x = dx - scaled_extent[0]
+                    gap_y = dy - scaled_extent[1]
+                    gap_z = dz - scaled_extent[2]
+                    v_final = v_scaled + np.array([x_pos + gap_x/2, y_pos + gap_y/2, z_pos + gap_z/2])
+                    
+                    fig_scene.add_trace(go.Mesh3d(
+                        x=v_final[:, 0], y=v_final[:, 1], z=v_final[:, 2],
+                        i=raw_f[:, 0], j=raw_f[:, 1], k=raw_f[:, 2],
+                        color='#74c0fc', opacity=1.0,
+                        flatshading=False,
+                        lighting=dict(ambient=0.5, diffuse=0.9, specular=1.2, roughness=0.15, fresnel=0.5),
+                        name=text_str,
+                        hoverinfo="text",
+                        text=text_str,
+                        showlegend=False
+                    ))
+                
+                total_grid_w = nx * ox + (nx - 1) * sep_xy
+                total_grid_h = ny * oy + (ny - 1) * sep_xy
+                leftover_x = (box_l - 2 * clear_side) - total_grid_w
+                leftover_y = (box_w - 2 * clear_side) - total_grid_h
+                start_x_offset = clear_side + (leftover_x / 2)
+                start_y_offset = clear_side + (leftover_y / 2)
+                
+                selected_cells = []
+                for l in range(nz):
+                    if nz > 1:
+                        c_diag = int(round(l * (nx - 1) / (nz - 1)))
+                        r_diag = int(round(l * (ny - 1) / (nz - 1)))
+                    else:
+                        c_diag, r_diag = 0, 0
+                    selected_cells.append((c_diag, r_diag, l))
+                
+                for layer in range(nz):
+                    z_pos = layer * (oz + sep_z)
+                    for r in range(ny):
+                        y_pos = start_y_offset + r * (oy + sep_xy)
+                        for c in range(nx):
+                            x_pos = start_x_offset + c * (ox + sep_xy)
+                            add_wireframe_compartment(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz)
+                            if (c, r, layer) in selected_cells and mesh_cad is not None:
+                                add_plotly_mesh_part(
+                                    fig_pack, x_pos, y_pos, z_pos, ox, oy, oz, 
+                                    mesh_cad.vertices, mesh_cad.faces, 
+                                    f"Part @ Col {c+1}, Row {r+1}, Layer {layer+1}"
+                                )
+                
+                box_v = np.array([
+                    [0, 0, 0], [box_l, 0, 0], [box_l, box_w, 0], [0, box_w, 0],
+                    [0, 0, viz_box["Int. Height [mm]"]], [box_l, 0, viz_box["Int. Height [mm]"]],
+                    [box_l, box_w, viz_box["Int. Height [mm]"]], [0, box_w, viz_box["Int. Height [mm]"]]
+                ])
+                edges = [
+                    (0, 1), (1, 2), (2, 3), (3, 0),
+                    (4, 5), (5, 6), (6, 7), (7, 4),
+                    (0, 4), (1, 5), (2, 6), (3, 7)
+                ]
+                for edge in edges:
+                    fig_pack.add_trace(go.Scatter3d(
+                        x=[box_v[edge[0]][0], box_v[edge[1]][0]],
+                        y=[box_v[edge[0]][1], box_v[edge[1]][1]],
+                        z=[box_v[edge[0]][2], box_v[edge[1]][2]],
+                        mode='lines',
+                        line=dict(color='#212529', width=4),
+                        showlegend=False,
+                        hoverinfo='skip'
+                    ))
+                    
+                fig_pack.update_layout(
+                    scene=dict(xaxis_title="Length (mm)", yaxis_title="Width (mm)", zaxis_title="Height (mm)", aspectmode='data'),
+                    margin=dict(l=0, r=0, b=0, t=0),
+                    height=380
+                )
+                st.plotly_chart(fig_pack, use_container_width=True)
+            except Exception as e_pack_plotly:
+                st.warning(f"Error rendering interactive 3D box packing model: {e_pack_plotly}")
+
+    # ==========================================
+    # TAB 2: PALLETIZATION OPTIMIZER (EPAL 1 & 2)
+    # ==========================================
+    with tab_pallet:
+        st.subheader("🚛 Multi-Pallet Optimization Engine")
+        st.markdown("Calculate how many boxes and pieces fit on standard industrial EPAL pallets under a **1000 mm height constraint** and a **1000 kg gross weight limit**.")
+        
+        # Pallet specifications dictionary
+        PALLETS = {
+            "EPAL 1 (Standard)": {"l": 1200, "w": 800, "tare": 23.0},
+            "EPAL 2 (Industrial)": {"l": 1200, "w": 1000, "tare": 23.0}
+        }
+        
+        # Packing calculations for the selected box
+        bx_ext_l = viz_box["Ext. Length [mm]"]
+        bx_ext_w = viz_box["Ext. Width [mm]"]
+        bx_ext_h = viz_box["Ext. Height [mm]"]
+        bx_wt = viz_box["Total Weight (kg)"]
+        pcs_per_bx = int(viz_box["Number of Parts per Box"])
+        
+        def calculate_pallet_stacking(pallet_l, pallet_w, ext_l, ext_w, ext_h, box_wt, pcs_box, pallet_tare=23.0, max_h=1000.0, max_wt=1000.0):
+            # Orientation A (Lengthwise)
+            nx_a = int(pallet_l // ext_l)
+            ny_a = int(pallet_w // ext_w)
+            layers_a = nx_a * ny_a
+            
+            # Orientation B (Widthwise)
+            nx_b = int(pallet_l // ext_w)
+            ny_b = int(pallet_w // ext_l)
+            layers_b = nx_b * ny_b
+            
+            best_layer_qty = max(layers_a, layers_b)
+            best_orient = "Lengthwise (L-parallel)" if layers_a >= layers_b else "Widthwise (W-parallel)"
+            
+            # Max stackable layers based on height (excluding pallet itself as box height limit is 1m)
+            nz = int(max_h // ext_h)
+            if nz < 1:
+                nz = 1
+                
+            total_boxes = best_layer_qty * nz
+            total_weight = total_boxes * box_wt + pallet_tare
+            
+            # If weight exceeds 1000 kg, scale down vertical layers
+            while total_weight > max_wt and nz > 1:
+                nz -= 1
+                total_boxes = best_layer_qty * nz
+                total_weight = total_boxes * box_wt + pallet_tare
+                
+            total_pcs = total_boxes * pcs_box
+            return total_boxes, nz, best_layer_qty, total_pcs, round(total_weight, 2), best_orient
+
+        # Stacking calculation outputs for both pallets
+        st.markdown(f"#### 📦 Stacking Report for Selected Box: **{st.session_state['selected_box']}**")
+        col_ep1, col_ep2 = st.columns(2)
+        
+        with col_ep1:
+            st.markdown("### 🥇 EPAL 1 (1200 x 800 mm)")
+            b_total, z_layers, layer_qty, p_pcs, p_wt, orient = calculate_pallet_stacking(
+                PALLETS["EPAL 1 (Standard)"]["l"], PALLETS["EPAL 1 (Standard)"]["w"],
+                bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx, PALLETS["EPAL 1 (Standard)"]["tare"]
             )
-            st.plotly_chart(fig_pack, use_container_width=True)
-        except Exception as e_pack_plotly:
-            st.warning(f"Error rendering interactive 3D box packing model: {e_pack_plotly}")
+            st.markdown(f"""
+            <div class='guide-box'>
+                <b>Optimal Orientation:</b> {orient}<br>
+                📐 <b>Boxes per Layer:</b> {layer_qty} units<br>
+                🪜 <b>Max Vertical Layers:</b> {z_layers} stacks<br>
+                📦 <b>Total Boxes per Pallet:</b> {b_total} boxes<br>
+                ✨ <b>Total Pieces Fitted:</b> <b style='color:#2b8a3e; font-size:18px;'>{p_pcs} Pcs</b><br>
+                ⚖️ <b>Total Gross Weight:</b> <b>{p_wt} kg</b> (including 23kg Pallet)
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with col_ep2:
+            st.markdown("### 🥈 EPAL 2 (1200 x 1000 mm)")
+            b_total2, z_layers2, layer_qty2, p_pcs2, p_wt2, orient2 = calculate_pallet_stacking(
+                PALLETS["EPAL 2 (Industrial)"]["l"], PALLETS["EPAL 2 (Industrial)"]["w"],
+                bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx, PALLETS["EPAL 2 (Industrial)"]["tare"]
+            )
+            st.markdown(f"""
+            <div class='guide-box'>
+                <b>Optimal Orientation:</b> {orient2}<br>
+                📐 <b>Boxes per Layer:</b> {layer_qty2} units<br>
+                🪜 <b>Max Vertical Layers:</b> {z_layers2} stacks<br>
+                📦 <b>Total Boxes per Pallet:</b> {b_total2} boxes<br>
+                ✨ <b>Total Pieces Fitted:</b> <b style='color:#2b8a3e; font-size:18px;'>{p_pcs2} Pcs</b><br>
+                ⚖️ <b>Total Gross Weight:</b> <b>{p_wt2} kg</b> (including 23kg Pallet)
+            </div>
+            """, unsafe_allow_html=True)
+            
+        # --- REQ 4: BIG VS SMALL BOX PALLET PAYLOAD COMPARISON ---
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.subheader("⚖️ Big Box vs. Small Box Pallet Optimization Matrix")
+        st.markdown("Often, smaller boxes pack more parts inside themselves but might fit poorly on the pallet footprint. Contrast two box configurations to find the optimal shipping yield:")
+        
+        col_sel_a, col_sel_b = st.columns(2)
+        with col_sel_a:
+            box_choice_a = st.selectbox("Select Box A (Reference Box):", options=available_boxes, index=0)
+        with col_sel_b:
+            box_choice_b = st.selectbox("Select Box B (Comparison Box):", options=available_boxes, index=min(1, len(available_boxes)-1))
+            
+        box_a_data = ranked_df[ranked_df["Box ID / Specification"] == box_choice_a].iloc[0]
+        box_b_data = ranked_df[ranked_df["Box ID / Specification"] == box_choice_b].iloc[0]
+        
+        # Calculate for EPAL 1 (Standard 1200x800)
+        bt_a, _, _, pcs_a, wt_a, _ = calculate_pallet_stacking(1200, 800, box_a_data["Ext. Length [mm]"], box_a_data["Ext. Width [mm]"], box_a_data["Ext. Height [mm]"], box_a_data["Total Weight (kg)"], int(box_a_data["Number of Parts per Box"]))
+        bt_b, _, _, pcs_b, wt_b, _ = calculate_pallet_stacking(1200, 800, box_b_data["Ext. Length [mm]"], box_b_data["Ext. Width [mm]"], box_b_data["Ext. Height [mm]"], box_b_data["Total Weight (kg)"], int(box_b_data["Number of Parts per Box"]))
+        
+        col_card_comp = st.columns(1)[0]
+        with col_card_comp:
+            if pcs_a > pcs_b:
+                diff_pct = round(((pcs_a - pcs_b) / pcs_b) * 100, 1) if pcs_b > 0 else 0
+                st.markdown(f"""
+                <div class='success-box'>
+                    🏆 <b>Decision Winner:</b> Box size <b>{box_choice_a}</b> is more suitable!<br>
+                    It delivers <b style='color:#2b8a3e;'>{pcs_a} pieces</b> per EPAL 1 pallet compared to <b>{pcs_b} pieces</b> from Box <b>{box_choice_b}</b> (+{diff_pct}% yield increase).
+                </div>
+                """, unsafe_allow_html=True)
+            elif pcs_b > pcs_a:
+                diff_pct = round(((pcs_b - pcs_a) / pcs_a) * 100, 1) if pcs_a > 0 else 0
+                st.markdown(f"""
+                <div class='success-box'>
+                    🏆 <b>Decision Winner:</b> Box size <b>{box_choice_b}</b> is more suitable!<br>
+                    It delivers <b style='color:#2b8a3e;'>{pcs_b} pieces</b> per EPAL 1 pallet compared to <b>{pcs_a} pieces</b> from Box <b>{box_choice_a}</b> (+{diff_pct}% yield increase).
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div class='warning-box'>
+                    ⚖️ <b>Decision Winner: Tie!</b> Both boxes result in the exact same quantity of pieces per pallet. 
+                    Choose the option with the lower contract price.
+                </div>
+                """, unsafe_allow_html=True)
+                
+        # Comparison Table
+        comp_table = pd.DataFrame([
+            {
+                "Metric": "Internal Part Qty (per Box)",
+                box_choice_a: f"{int(box_a_data['Number of Parts per Box'])} Pcs",
+                box_choice_b: f"{int(box_b_data['Number of Parts per Box'])} Pcs"
+            },
+            {
+                "Metric": "Total Boxes per Pallet",
+                box_choice_a: f"{bt_a} boxes",
+                box_choice_b: f"{bt_b} boxes"
+            },
+            {
+                "Metric": "Total Pieces per Pallet",
+                box_choice_a: f"{pcs_a} Pcs",
+                box_choice_b: f"{pcs_b} Pcs"
+            },
+            {
+                "Metric": "Pallet Weight (including 23kg Tare)",
+                box_choice_a: f"{wt_a} kg",
+                box_choice_b: f"{wt_b} kg"
+            }
+        ])
+        st.table(comp_table)
+
+    # ==========================================
+    # TAB 3: MCKEE GRAVITY COMPRESSION SAFETY CHECK
+    # ==========================================
+    with tab_compression:
+        st.subheader("🗜️ Corrugated Cardboard McKee Compression Strength Checker")
+        st.markdown("Validate if the bottom cardboard box can handle the heavy vertical static loads from the stack above on a 1-meter pallet layout.")
+        
+        # Map material qualities from 1.xlsx to physical Edge Crush Test (ECT) and thickness properties
+        # Values standardized for engineering calculations
+        QUALITY_PROPERTIES = {
+            "1.20B": {"ect": 3.0, "thickness": 3.0, "name": "Single Wall - B Flute"},
+            "1.20C": {"ect": 3.8, "thickness": 4.0, "name": "Single Wall - C Flute"},
+            "2.30EB": {"ect": 5.5, "thickness": 4.5, "name": "Double Wall - EB Flute"},
+            "2.30BC": {"ect": 7.5, "thickness": 6.5, "name": "Double Wall - BC Flute"}
+        }
+        
+        q_class = str(viz_box["Quality Class"]).strip()
+        props = QUALITY_PROPERTIES.get(q_class, {"ect": 4.0, "thickness": 3.5, "name": "Custom / Unknown Grade"})
+        
+        ect_val = props["ect"]
+        thickness_val = props["thickness"]
+        q_name = props["name"]
+        
+        # McKee BCT Formula: BCT (Newtons) = 5.876 * ECT (N/mm) * sqrt( thickness * Perimeter )
+        # Box outer perimeter P (mm)
+        box_perimeter = 2 * (viz_box["Int. Length [mm]"] + viz_box["Int. Width [mm]"])
+        bct_n = 5.876 * ect_val * np.sqrt(thickness_val * box_perimeter)
+        bct_kg = round(bct_n / 9.81, 1) # Convert Newtons to Kilograms
+        
+        # Safety Factor Multiplier Slider
+        sf = st.slider("Select Industrial Safety Factor (SF):", min_value=1.5, max_value=6.0, value=3.0, step=0.5,
+                       help="Standard warehouse: 3.0. Humid/high vibration: 4.0 - 5.0. Static safety loads degrade over time.")
+        
+        bct_safe_load = round(bct_kg / sf, 1)
+        
+        # Calculate actual static weight on bottom box
+        # For a stack, the bottom box supports (Total Vertical Layers - 1) boxes above it.
+        # Find vertical layers of standard stack
+        _, z_layers_calc, _, _, _, _ = calculate_pallet_stacking(1200, 800, bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx)
+        boxes_above = max(0, z_layers_calc - 1)
+        actual_bottom_load = round(boxes_above * bx_wt, 1)
+        
+        col_comp_kpis = st.columns(3)
+        with col_comp_kpis[0]:
+            st.metric("💪 Theoretical Box BCT Strength", f"{bct_kg} kg", help="Ultimate crushing force of a pristine single box.")
+        with col_comp_kpis[1]:
+            st.metric("🛡️ Safe Design Capacity (SF Limit)", f"{bct_safe_load} kg", help=f"Maximum allowed load applying a {sf}x safety threshold.")
+        with col_comp_kpis[2]:
+            st.metric("🏋️ Actual Static Load on Bottom Box", f"{actual_bottom_load} kg", help="Combined weight of stacked boxes resting directly on the bottom cardboard layer.")
+            
+        st.markdown("#### 🔍 Structural Safety Verdict:")
+        if actual_bottom_load == 0:
+            st.markdown(f"""
+            <div class='success-box'>
+                <b>🟢 Safe (Single Layer Stack):</b> There are no other layers stacked above this box on the pallet. 
+                Compression failure is mathematically impossible.
+            </div>
+            """, unsafe_allow_html=True)
+        elif actual_bottom_load <= bct_safe_load:
+            st.markdown(f"""
+            <div class='success-box'>
+                <b>🟢 Safe Stacking Approved:</b> The actual load of <b>{actual_bottom_load} kg</b> is within the safe limit of <b>{bct_safe_load} kg</b>. 
+                Cardboard quality class <b>{q_class} ({q_name})</b> is structurally sufficient for the bottom layers of this stack!
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class='danger-box'>
+                <b>🚨 Warning - Structural Failure Risk:</b> The actual load of <b>{actual_bottom_load} kg</b> exceeds the safe stacked design capacity of <b>{bct_safe_load} kg</b>!<br>
+                <b>Recommendation:</b><br>
+                1. Upgrade the cardboard to a stronger grade (e.g., <b>2.30BC Double-Wall</b>).<br>
+                2. Decrease the stacking height on the pallet (reduce the number of layers).<br>
+                3. Use corner-board protectors to reinforce structural load paths.
+            </div>
+            """, unsafe_allow_html=True)
+            
+        st.markdown(f"""
+        <div class='guide-box'>
+            <h5>🧮 How McKee's Formula works under the hood:</h5>
+            The Box Compression Test value is calculated using:<br>
+            $$\\text{{BCT}} = 5.876 \\times \\text{{ECT}} \\times \\sqrt{{t \\times P}}$$
+            <ul>
+                <li><b>ECT (Edge Crush Test):</b> Standardized strength. For Quality <b>{q_class}</b>, ECT is <b>{ect_val} N/mm</b>.</li>
+                <li><b>t (Thickness):</b> Cardboard caliper thickness. For Quality <b>{q_class}</b>, thickness is <b>{thickness_val} mm</b>.</li>
+                <li><b>P (Perimeter):</b> Measured boundary. For this box, perimeter is <b>{int(box_perimeter)} mm</b>.</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
 else:
     st.warning("⚠️ No suitable boxes in your database can fit this product under the active weight or dimension parameters.")
