@@ -919,7 +919,7 @@ if results:
             # Determine the ultimate yield winner
             pcs_vals = [pcs_s, pcs_1, pcs_2, pcs_3]
             labels_map = {
-                pcs_s: (small_name, "Smallest Footprint Box"),
+                pcs_s: (small_name, "Smallest Box (Top 10)"),
                 pcs_1: (top1_name, "Top 1 Best Box"),
                 pcs_2: (top2_name, "Top 2 Best Box"),
                 pcs_3: (top3_name, "Top 3 Best Box")
@@ -1240,11 +1240,12 @@ if results:
             </div>
             """, unsafe_allow_html=True)
             
-        st.markdown(f"""
+        # 🟢 FIXED: Raw f-string with double curly braces for math components ensures seamless execution without syntax errors
+        st.markdown(fr"""
         <div class='guide-box'>
             <h5>🧮 How McKee's Formula works under the hood:</h5>
             The Box Compression Test value is calculated using:<br>
-            $$\\text{BCT} = 5.876 \\times \\text{ECT} \\times \\sqrt{t \\times P}$$
+            $$\text{{BCT}} = 5.876 \times \text{{ECT}} \times \sqrt{{t \times P}}$$
             <ul>
                 <li><b>ECT (Edge Crush Test):</b> Standardized strength. For Quality <b>{q_class}</b>, ECT is <b>{ect_val} N/mm</b>.</li>
                 <li><b>t (Thickness):</b> Cardboard thickness. For Quality <b>{q_class}</b>, thickness is <b>{thickness_val} mm</b>.</li>
