@@ -299,7 +299,7 @@ for idx, row in df_inventory.iterrows():
     total_payload_wt = parts_count * prod_wt
     total_package_weight = total_payload_wt + box_weight
     
-    # --- REQ 1: NEW WEIGHT THRESHOLD SHIFT (UNDER 15KG ONLY FOR footprint <= 400x300) ---
+    # --- REQ 1: WEIGHT THRESHOLD SHIFT (UNDER 15KG ONLY FOR footprint <= 400x300) ---
     dims_footprint = sorted([ext_l, ext_w])
     is_manual_box = (dims_footprint[0] <= 300.0) and (dims_footprint[1] <= 400.0)
     
@@ -376,7 +376,7 @@ if results:
                 <div style='background-color:#fff0f0; border-left:5px solid #e03131; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
                     <b style='color:#e03131; font-size:16px;'>🚨 Forklift Transport Required</b><br>
                     <span style='font-size:14px; color:#c92a2a; font-weight:bold;'>{total_package_weight} kg (Bypasses manual limit)</span><br>
-                    <span style='font-size:11px; color:#495057; font-weight:bold;'>Box size exceeds 400x300. Forklift Pallet Handling Permitted.</span>
+                    <span style='font-size:11px; color:#495057; font-weight:bold;'>Box size or weight exceeds manual limit. Forklift Pallet Handling Permitted.</span>
                 </div>
             """, unsafe_allow_html=True)
         else:
@@ -479,7 +479,7 @@ if results:
         ny = int(viz_box["_ny"])
         nz = int(viz_box["_nz"])
         ox = int(viz_box["_ox"])
-        oy = int(viz_box["_oy"])
+        oy = int(viz_box["_oz"])
         oz = int(viz_box["_oz"])
         box_l = viz_box["Int. Length [mm]"]
         box_w = viz_box["Int. Width [mm]"]
@@ -631,7 +631,7 @@ if results:
                 
         # --- DYNAMIC INTERACTIVE 3D DIGITAL TWIN VIEWPORT ---
         st.markdown("<hr>", unsafe_allow_html=True)
-        st.subheader("🔄 Interactive 3D Digital Twin Viewport (Rotatable)")
+        st.subheader("🔄 Interactive 3D Box & Part Twin Viewport (Rotatable)")
         col_cad, col_packing_3d = st.columns(2)
         
         with col_cad:
@@ -792,41 +792,37 @@ if results:
             except Exception as e_pack_plotly:
                 st.warning(f"Error rendering interactive 3D box packing model: {e_pack_plotly}")
 
-    # ==========================================
-    # TAB 2: PALLETIZATION OPTIMIZER (EPAL 1 & 2)
-    # ==========================================
+    # =======================================================
+    # TAB 2: PALLET STACKING OPTIMIZER & COMPARATIVE ANALYSIS
+    # =======================================================
     with tab_pallet:
         st.subheader("🚛 Multi-Pallet Optimization Engine")
-        st.markdown("Calculate how many boxes and pieces fit on standard industrial EPAL pallets under a **1000 mm height constraint** and a **1000 kg gross weight limit**.")
+        st.markdown("Maximize pallet transport layout efficiency under a **1000 mm height constraint** and a **1000 kg gross weight limit**.")
         
-        # Pallet specifications dictionary
+        # EPAL Pallets Dimensions (in mm)
         PALLETS = {
             "EPAL 1 (Standard)": {"l": 1200, "w": 800, "tare": 23.0},
             "EPAL 2 (Industrial)": {"l": 1200, "w": 1000, "tare": 23.0}
         }
         
-        # Packing calculations for the selected box
-        bx_ext_l = viz_box["Ext. Length [mm]"]
-        bx_ext_w = viz_box["Ext. Width [mm]"]
-        bx_ext_h = viz_box["Ext. Height [mm]"]
-        bx_wt = viz_box["Total Weight (kg)"]
-        pcs_per_bx = int(viz_box["Number of Parts per Box"])
-        
+        # Universal Palletization Stacking Solver
         def calculate_pallet_stacking(pallet_l, pallet_w, ext_l, ext_w, ext_h, box_wt, pcs_box, pallet_tare=23.0, max_h=1000.0, max_wt=1000.0):
-            # Orientation A (Lengthwise)
+            # Orientation A (Lengthwise L-parallel)
             nx_a = int(pallet_l // ext_l)
             ny_a = int(pallet_w // ext_w)
             layers_a = nx_a * ny_a
             
-            # Orientation B (Widthwise)
+            # Orientation B (Widthwise W-parallel)
             nx_b = int(pallet_l // ext_w)
             ny_b = int(pallet_w // ext_l)
             layers_b = nx_b * ny_b
             
             best_layer_qty = max(layers_a, layers_b)
             best_orient = "Lengthwise (L-parallel)" if layers_a >= layers_b else "Widthwise (W-parallel)"
+            nx_best = nx_a if layers_a >= layers_b else nx_b
+            ny_best = ny_a if layers_a >= layers_b else ny_b
             
-            # Max stackable layers based on height (excluding pallet itself as box height limit is 1m)
+            # Max vertical layers (Pure Box stacking height up to 1000mm)
             nz = int(max_h // ext_h)
             if nz < 1:
                 nz = 1
@@ -834,121 +830,232 @@ if results:
             total_boxes = best_layer_qty * nz
             total_weight = total_boxes * box_wt + pallet_tare
             
-            # If weight exceeds 1000 kg, scale down vertical layers
+            # Reduce stack height layers if pallet weight exceeds the 1000 kg threshold
             while total_weight > max_wt and nz > 1:
                 nz -= 1
                 total_boxes = best_layer_qty * nz
                 total_weight = total_boxes * box_wt + pallet_tare
                 
             total_pcs = total_boxes * pcs_box
-            return total_boxes, nz, best_layer_qty, total_pcs, round(total_weight, 2), best_orient
+            return total_boxes, nz, best_layer_qty, total_pcs, round(total_weight, 2), best_orient, nx_best, ny_best
 
-        # Stacking calculation outputs for both pallets
-        st.markdown(f"#### 📦 Stacking Report for Selected Box: **{st.session_state['selected_box']}**")
-        col_ep1, col_ep2 = st.columns(2)
+        # -------------------------------------------------------------
+        # 1. AUTOMATED BIG BOX VS. SMALL BOX PALLET COMPARISON MATRIX
+        # -------------------------------------------------------------
+        st.markdown("### ⚖️ Automated Big Box vs. Small Box Comparison")
+        st.markdown("The algorithm automatically analyzes the entire eligible results database to find the **smallest footprint box** and the **largest footprint box**, evaluating which size delivers the absolute highest pieces per pallet.")
         
-        with col_ep1:
-            st.markdown("### 🥇 EPAL 1 (1200 x 800 mm)")
-            b_total, z_layers, layer_qty, p_pcs, p_wt, orient = calculate_pallet_stacking(
-                PALLETS["EPAL 1 (Standard)"]["l"], PALLETS["EPAL 1 (Standard)"]["w"],
-                bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx, PALLETS["EPAL 1 (Standard)"]["tare"]
-            )
-            st.markdown(f"""
-            <div class='guide-box'>
-                <b>Optimal Orientation:</b> {orient}<br>
-                📐 <b>Boxes per Layer:</b> {layer_qty} units<br>
-                🪜 <b>Max Vertical Layers:</b> {z_layers} stacks<br>
-                📦 <b>Total Boxes per Pallet:</b> {b_total} boxes<br>
-                ✨ <b>Total Pieces Fitted:</b> <b style='color:#2b8a3e; font-size:18px;'>{p_pcs} Pcs</b><br>
-                ⚖️ <b>Total Gross Weight:</b> <b>{p_wt} kg</b> (including 23kg Pallet)
-            </div>
-            """, unsafe_allow_html=True)
+        # Calculate Footprint Area for all eligible boxes
+        res_df['Footprint Area'] = res_df['Ext. Length [mm]'] * res_df['Ext. Width [mm]']
+        sorted_by_footprint = res_df.sort_values(by='Footprint Area')
+        
+        if len(sorted_by_footprint) >= 2:
+            small_row = sorted_by_footprint.iloc[0]
+            big_row = sorted_by_footprint.iloc[-1]
             
-        with col_ep2:
-            st.markdown("### 🥈 EPAL 2 (1200 x 1000 mm)")
-            b_total2, z_layers2, layer_qty2, p_pcs2, p_wt2, orient2 = calculate_pallet_stacking(
-                PALLETS["EPAL 2 (Industrial)"]["l"], PALLETS["EPAL 2 (Industrial)"]["w"],
-                bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx, PALLETS["EPAL 2 (Industrial)"]["tare"]
-            )
-            st.markdown(f"""
-            <div class='guide-box'>
-                <b>Optimal Orientation:</b> {orient2}<br>
-                📐 <b>Boxes per Layer:</b> {layer_qty2} units<br>
-                🪜 <b>Max Vertical Layers:</b> {z_layers2} stacks<br>
-                📦 <b>Total Boxes per Pallet:</b> {b_total2} boxes<br>
-                ✨ <b>Total Pieces Fitted:</b> <b style='color:#2b8a3e; font-size:18px;'>{p_pcs2} Pcs</b><br>
-                ⚖️ <b>Total Gross Weight:</b> <b>{p_wt2} kg</b> (including 23kg Pallet)
-            </div>
-            """, unsafe_allow_html=True)
+            small_name = small_row["Box ID / Specification"]
+            big_name = big_row["Box ID / Specification"]
             
-        # --- REQ 4: BIG VS SMALL BOX PALLET PAYLOAD COMPARISON ---
-        st.markdown("<hr>", unsafe_allow_html=True)
-        st.subheader("⚖️ Big Box vs. Small Box Pallet Optimization Matrix")
-        st.markdown("Often, smaller boxes pack more parts inside themselves but might fit poorly on the pallet footprint. Contrast two box configurations to find the optimal shipping yield:")
-        
-        col_sel_a, col_sel_b = st.columns(2)
-        with col_sel_a:
-            box_choice_a = st.selectbox("Select Box A (Reference Box):", options=available_boxes, index=0)
-        with col_sel_b:
-            box_choice_b = st.selectbox("Select Box B (Comparison Box):", options=available_boxes, index=min(1, len(available_boxes)-1))
+            # Compute EPAL 1 standard pallet capacity for both
+            bt_s, _, _, pcs_s, wt_s, _, _, _ = calculate_pallet_stacking(1200, 800, small_row["Ext. Length [mm]"], small_row["Ext. Width [mm]"], small_row["Ext. Height [mm]"], small_row["Total Weight (kg)"], int(small_row["Number of Parts per Box"]))
+            bt_b, _, _, pcs_b, wt_b, _, _, _ = calculate_pallet_stacking(1200, 800, big_row["Ext. Length [mm]"], big_row["Ext. Width [mm]"], big_row["Ext. Height [mm]"], big_row["Total Weight (kg)"], int(big_row["Number of Parts per Box"]))
             
-        box_a_data = ranked_df[ranked_df["Box ID / Specification"] == box_choice_a].iloc[0]
-        box_b_data = ranked_df[ranked_df["Box ID / Specification"] == box_choice_b].iloc[0]
-        
-        # Calculate for EPAL 1 (Standard 1200x800)
-        bt_a, _, _, pcs_a, wt_a, _ = calculate_pallet_stacking(1200, 800, box_a_data["Ext. Length [mm]"], box_a_data["Ext. Width [mm]"], box_a_data["Ext. Height [mm]"], box_a_data["Total Weight (kg)"], int(box_a_data["Number of Parts per Box"]))
-        bt_b, _, _, pcs_b, wt_b, _ = calculate_pallet_stacking(1200, 800, box_b_data["Ext. Length [mm]"], box_b_data["Ext. Width [mm]"], box_b_data["Ext. Height [mm]"], box_b_data["Total Weight (kg)"], int(box_b_data["Number of Parts per Box"]))
-        
-        col_card_comp = st.columns(1)[0]
-        with col_card_comp:
-            if pcs_a > pcs_b:
-                diff_pct = round(((pcs_a - pcs_b) / pcs_b) * 100, 1) if pcs_b > 0 else 0
+            # Winner Decision Banner
+            if pcs_s > pcs_b:
+                diff_val = pcs_s - pcs_b
+                diff_pct = round((diff_val / pcs_b) * 100, 1) if pcs_b > 0 else 0
                 st.markdown(f"""
                 <div class='success-box'>
-                    🏆 <b>Decision Winner:</b> Box size <b>{box_choice_a}</b> is more suitable!<br>
-                    It delivers <b style='color:#2b8a3e;'>{pcs_a} pieces</b> per EPAL 1 pallet compared to <b>{pcs_b} pieces</b> from Box <b>{box_choice_b}</b> (+{diff_pct}% yield increase).
+                    🏆 <b>Recommended Decision Winner:</b> The <b>Small Box Strategy ({small_name})</b> is the optimal choice!<br>
+                    It delivers <b style='color:#2b8a3e;'>{pcs_s} total pieces</b> per standard EPAL 1 pallet, beating the Big Box <b>({big_name})</b> which only fits <b>{pcs_b} pieces</b> (a massive <b>+{diff_pct}% yield improvement</b>).
                 </div>
                 """, unsafe_allow_html=True)
-            elif pcs_b > pcs_a:
-                diff_pct = round(((pcs_b - pcs_a) / pcs_a) * 100, 1) if pcs_a > 0 else 0
+            elif pcs_b > pcs_s:
+                diff_val = pcs_b - pcs_s
+                diff_pct = round((diff_val / pcs_s) * 100, 1) if pcs_s > 0 else 0
                 st.markdown(f"""
                 <div class='success-box'>
-                    🏆 <b>Decision Winner:</b> Box size <b>{box_choice_b}</b> is more suitable!<br>
-                    It delivers <b style='color:#2b8a3e;'>{pcs_b} pieces</b> per EPAL 1 pallet compared to <b>{pcs_a} pieces</b> from Box <b>{box_choice_a}</b> (+{diff_pct}% yield increase).
+                    🏆 <b>Recommended Decision Winner:</b> The <b>Big Box Strategy ({big_name})</b> is the optimal choice!<br>
+                    It delivers <b style='color:#2b8a3e;'>{pcs_b} total pieces</b> per standard EPAL 1 pallet, beating the Small Box <b>({small_name})</b> which only fits <b>{pcs_s} pieces</b> (a massive <b>+{diff_pct}% yield improvement</b>).
                 </div>
                 """, unsafe_allow_html=True)
             else:
-                st.markdown("""
+                st.markdown(f"""
                 <div class='warning-box'>
-                    ⚖️ <b>Decision Winner: Tie!</b> Both boxes result in the exact same quantity of pieces per pallet. 
-                    Choose the option with the lower contract price.
+                    ⚖️ <b>Decision Winner: Tie!</b> Both the Small Box <b>({small_name})</b> and Big Box <b>({big_name})</b> pack exactly <b>{pcs_s} pieces</b> per pallet. Procurement recommends selecting the lower-priced box.
                 </div>
                 """, unsafe_allow_html=True)
                 
-        # Comparison Table
-        comp_table = pd.DataFrame([
-            {
-                "Metric": "Internal Part Qty (per Box)",
-                box_choice_a: f"{int(box_a_data['Number of Parts per Box'])} Pcs",
-                box_choice_b: f"{int(box_b_data['Number of Parts per Box'])} Pcs"
-            },
-            {
-                "Metric": "Total Boxes per Pallet",
-                box_choice_a: f"{bt_a} boxes",
-                box_choice_b: f"{bt_b} boxes"
-            },
-            {
-                "Metric": "Total Pieces per Pallet",
-                box_choice_a: f"{pcs_a} Pcs",
-                box_choice_b: f"{pcs_b} Pcs"
-            },
-            {
-                "Metric": "Pallet Weight (including 23kg Tare)",
-                box_choice_a: f"{wt_a} kg",
-                box_choice_b: f"{wt_b} kg"
-            }
-        ])
-        st.table(comp_table)
+            # Render Comparative Grid
+            comp_df = pd.DataFrame([
+                {"Comparison Parameter": "Box ID / Specification", "Small Box Option": small_name, "Big Box Option": big_name},
+                {"Comparison Parameter": "Footprint Dimensions", "Small Box Option": f"{int(small_row['Ext. Length [mm]'])}x{int(small_row['Ext. Width [mm]'])} mm", "Big Box Option": f"{int(big_row['Ext. Length [mm]'])}x{int(big_row['Ext. Width [mm]'])} mm"},
+                {"Comparison Parameter": "Quantity inside each Box", "Small Box Option": f"{int(small_row['Number of Parts per Box'])} Pcs", "Big Box Option": f"{int(big_row['Number of Parts per Box'])} Pcs"},
+                {"Comparison Parameter": "Boxes per Pallet", "Small Box Option": f"{bt_s} boxes", "Big Box Option": f"{bt_b} boxes"},
+                {"Comparison Parameter": "Total Pieces per Pallet", "Small Box Option": f"{pcs_s} Pcs", "Big Box Option": f"{pcs_b} Pcs"},
+                {"Comparison Parameter": "Pallet Weight (inc. 23kg Pallet)", "Small Box Option": f"{wt_s} kg", "Big Box Option": f"{wt_b} kg"}
+            ])
+            st.table(comp_df)
+        else:
+            st.info("💡 Multiple unique box sizes are required in the inventory database to generate a comparative analysis.")
+            
+        st.markdown("<hr>", unsafe_allow_html=True)
+        
+        # -------------------------------------------------------------
+        # 2. INDIVIDUAL STACKING REPORT & INTERACTIVE 3D PALLETIZER
+        # -------------------------------------------------------------
+        st.markdown(f"### 📦 Palletization Report & Interactive 3D Stacking Model")
+        
+        # Stacking Report Selector Dropdown
+        available_boxes_t2 = list(ranked_df["Box ID / Specification"].values)
+        if "selected_box" not in st.session_state or st.session_state["selected_box"] not in available_boxes_t2:
+            st.session_state["selected_box"] = available_boxes_t2[0]
+            
+        selected_box_t2 = st.selectbox(
+            "Select a Cardboard Box to inspect its detailed pallet loading report & rotatable 3D stack:",
+            options=available_boxes_t2,
+            index=available_boxes_t2.index(st.session_state["selected_box"]),
+            key="pallet_box_selector"
+        )
+        st.session_state["selected_box"] = selected_box_t2
+        
+        viz_box_t2 = ranked_df[ranked_df["Box ID / Specification"] == selected_box_t2].iloc[0]
+        
+        bx_ext_l = viz_box_t2["Ext. Length [mm]"]
+        bx_ext_w = viz_box_t2["Ext. Width [mm]"]
+        bx_ext_h = viz_box_t2["Ext. Height [mm]"]
+        bx_wt = viz_box_t2["Total Weight (kg)"]
+        pcs_per_bx = int(viz_box_t2["Number of Parts per Box"])
+        
+        # Columns layout for Stacking KPIs and the Rotatable 3D view
+        col_metrics, col_plotly_pallet = st.columns([4, 6])
+        
+        with col_metrics:
+            st.markdown(f"#### 📋 Stacking Report for **{selected_box_t2}**")
+            
+            # Compute EPAL 1
+            b_total_1, z_layers_1, layer_qty_1, p_pcs_1, p_wt_1, orient_1, nx_1, ny_1 = calculate_pallet_stacking(
+                PALLETS["EPAL 1 (Standard)"]["l"], PALLETS["EPAL 1 (Standard)"]["w"],
+                bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx, PALLETS["EPAL 1 (Standard)"]["tare"]
+            )
+            # Compute EPAL 2
+            b_total_2, z_layers_2, layer_qty_2, p_pcs_2, p_wt_2, orient_2, nx_2, ny_2 = calculate_pallet_stacking(
+                PALLETS["EPAL 2 (Industrial)"]["l"], PALLETS["EPAL 2 (Industrial)"]["w"],
+                bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx, PALLETS["EPAL 2 (Industrial)"]["tare"]
+            )
+            
+            st.markdown(f"""
+            <div style='background-color: #f1f3f5; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #228be6;'>
+                <h5 style='margin-top: 0px;'>🥇 EPAL 1 standard (1200 x 800 mm)</h5>
+                <b>Orientation:</b> {orient_1}<br>
+                📐 <b>Layer Layout Grid:</b> {nx_1} x {ny_1} (X x Y)<br>
+                🪜 <b>Stacking Height (Vertical Layers):</b> {z_layers_1} layers<br>
+                📦 <b>Total Boxes:</b> {b_total_1} units<br>
+                ✨ <b>Total Pieces:</b> <b style='color:#2b8a3e;'>{p_pcs_1} Pcs</b><br>
+                ⚖️ <b>Pallet Weight:</b> <b>{p_wt_1} kg</b> (including 23kg Pallet)
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown(f"""
+            <div style='background-color: #f1f3f5; padding: 15px; border-radius: 8px; border-left: 5px solid #15aabf;'>
+                <h5 style='margin-top: 0px;'>🥈 EPAL 2 Industrial (1200 x 1000 mm)</h5>
+                <b>Orientation:</b> {orient_2}<br>
+                📐 <b>Layer Layout Grid:</b> {nx_2} x {ny_2} (X x Y)<br>
+                🪜 <b>Stacking Height (Vertical Layers):</b> {z_layers_2} layers<br>
+                📦 <b>Total Boxes:</b> {b_total_2} units<br>
+                ✨ <b>Total Pieces:</b> <b style='color:#2b8a3e;'>{p_pcs_2} Pcs</b><br>
+                ⚖️ <b>Pallet Weight:</b> <b>{p_wt_2} kg</b> (including 23kg Pallet)
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with col_plotly_pallet:
+            st.markdown("##### 🔄 Rotatable 3D Stacking Visualizer")
+            
+            pallet_sel = st.radio("Choose Stacking Blueprint Pallet View:", options=["EPAL 1 (1200x800)", "EPAL 2 (1200x1000)"])
+            active_p_spec = PALLETS["EPAL 1 (Standard)"] if "EPAL 1" in pallet_sel else PALLETS["EPAL 2 (Industrial)"]
+            
+            p_boxes, p_layers, p_l_qty, _, _, p_orient, nx_act, ny_act = calculate_pallet_stacking(
+                active_p_spec["l"], active_p_spec["w"],
+                bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx, active_p_spec["tare"]
+            )
+            
+            try:
+                # Construct 3D scene
+                fig_pallet_3d = go.Figure()
+                
+                # Draw Wood EPAL Pallet Base Block
+                fig_pallet_3d.add_trace(go.Mesh3d(
+                    x=[0, active_p_spec["l"], active_p_spec["l"], 0, 0, active_p_spec["l"], active_p_spec["l"], 0],
+                    y=[0, 0, active_p_spec["w"], active_p_spec["w"], 0, 0, active_p_spec["w"], active_p_spec["w"]],
+                    z=[-144, -144, -144, -144, 0, 0, 0, 0],
+                    i=[0, 1, 2, 3, 0, 1], j=[1, 2, 3, 0, 4, 5], k=[4, 5, 6, 7, 5, 6],
+                    color='peru', opacity=0.85, name="EPAL Pallet Base"
+                ))
+                
+                # Set coordinates for stacking
+                bx_dx = bx_ext_l if p_orient == "Lengthwise (L-parallel)" else bx_ext_w
+                bx_dy = bx_ext_w if p_orient == "Lengthwise (L-parallel)" else bx_ext_l
+                bx_dz = bx_ext_h
+                
+                start_x = (active_p_spec["l"] - nx_act * bx_dx) / 2
+                start_y = (active_p_spec["w"] - ny_act * bx_dy) / 2
+                
+                line_x, line_y, line_z = [], [], []
+                
+                for layer in range(p_layers):
+                    z0 = layer * bx_dz
+                    z1 = z0 + bx_dz
+                    for r in range(ny_act):
+                        y0 = start_y + r * bx_dy
+                        y1 = y0 + bx_dy
+                        for c in range(nx_act):
+                            x0 = start_x + c * bx_dx
+                            x1 = x0 + bx_dx
+                            
+                            # Add standard outer wireframe
+                            edges = [
+                                ((x0, y0, z0), (x1, y0, z0)), ((x1, y0, z0), (x1, y1, z0)),
+                                ((x1, y1, z0), (x0, y1, z0)), ((x0, y1, z0), (x0, y0, z0)),
+                                ((x0, y0, z1), (x1, y0, z1)), ((x1, y0, z1), (x1, y1, z1)),
+                                ((x1, y1, z1), (x0, y1, z1)), ((x0, y1, z1), (x0, y0, z1)),
+                                ((x0, y0, z0), (x0, y0, z1)), ((x1, y0, z0), (x1, y0, z1)),
+                                ((x1, y1, z0), (x1, y1, z1)), ((x0, y1, z0), (x0, y1, z1))
+                            ]
+                            for p1, p2 in edges:
+                                line_x.extend([p1[0], p2[0], None])
+                                line_y.extend([p1[1], p2[1], None])
+                                line_z.extend([p1[2], p2[2], None])
+                                
+                            # Draw solid-colored, semi-transparent stacked 3D box shapes
+                            fig_pallet_3d.add_trace(go.Mesh3d(
+                                x=[x0, x1, x1, x0, x0, x1, x1, x0],
+                                y=[y0, y0, y1, y1, y0, y0, y1, y1],
+                                z=[z0, z0, z0, z0, z1, z1, z1, z1],
+                                i=[0, 1, 2, 3, 0, 1], j=[1, 2, 3, 0, 4, 5], k=[4, 5, 6, 7, 5, 6],
+                                color='#74c0fc', opacity=0.4, showlegend=False, hoverinfo='skip'
+                            ))
+                
+                # Add box outlines trace
+                fig_pallet_3d.add_trace(go.Scatter3d(
+                    x=line_x, y=line_y, z=line_z,
+                    mode='lines',
+                    line=dict(color='#1c7ed6', width=2),
+                    name="Cardboard Boxes"
+                ))
+                
+                fig_pallet_3d.update_layout(
+                    scene=dict(
+                        xaxis=dict(title="Length (mm)", range=[-50, active_p_spec["l"]+50]),
+                        yaxis=dict(title="Width (mm)", range=[-50, active_p_spec["w"]+50]),
+                        zaxis=dict(title="Height (mm)", range=[-150, 1100]),
+                        aspectmode='data'
+                    ),
+                    margin=dict(l=0, r=0, b=0, t=0),
+                    height=380
+                )
+                st.plotly_chart(fig_pallet_3d, use_container_width=True)
+            except Exception as e_pall_plotly:
+                st.warning(f"Error rendering interactive 3D pallet view: {e_pall_plotly}")
 
     # ==========================================
     # TAB 3: MCKEE GRAVITY COMPRESSION SAFETY CHECK
@@ -958,7 +1065,6 @@ if results:
         st.markdown("Validate if the bottom cardboard box can handle the heavy vertical static loads from the stack above on a 1-meter pallet layout.")
         
         # Map material qualities from 1.xlsx to physical Edge Crush Test (ECT) and thickness properties
-        # Values standardized for engineering calculations
         QUALITY_PROPERTIES = {
             "1.20B": {"ect": 3.0, "thickness": 3.0, "name": "Single Wall - B Flute"},
             "1.20C": {"ect": 3.8, "thickness": 4.0, "name": "Single Wall - C Flute"},
@@ -974,7 +1080,6 @@ if results:
         q_name = props["name"]
         
         # McKee BCT Formula: BCT (Newtons) = 5.876 * ECT (N/mm) * sqrt( thickness * Perimeter )
-        # Box outer perimeter P (mm)
         box_perimeter = 2 * (viz_box["Int. Length [mm]"] + viz_box["Int. Width [mm]"])
         bct_n = 5.876 * ect_val * np.sqrt(thickness_val * box_perimeter)
         bct_kg = round(bct_n / 9.81, 1) # Convert Newtons to Kilograms
@@ -986,9 +1091,7 @@ if results:
         bct_safe_load = round(bct_kg / sf, 1)
         
         # Calculate actual static weight on bottom box
-        # For a stack, the bottom box supports (Total Vertical Layers - 1) boxes above it.
-        # Find vertical layers of standard stack
-        _, z_layers_calc, _, _, _, _ = calculate_pallet_stacking(1200, 800, bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx)
+        _, z_layers_calc, _, _, _, _, _, _ = calculate_pallet_stacking(1200, 800, bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx)
         boxes_above = max(0, z_layers_calc - 1)
         actual_bottom_load = round(boxes_above * bx_wt, 1)
         
@@ -1033,7 +1136,7 @@ if results:
             $$\\text{{BCT}} = 5.876 \\times \\text{{ECT}} \\times \\sqrt{{t \\times P}}$$
             <ul>
                 <li><b>ECT (Edge Crush Test):</b> Standardized strength. For Quality <b>{q_class}</b>, ECT is <b>{ect_val} N/mm</b>.</li>
-                <li><b>t (Thickness):</b> Cardboard caliper thickness. For Quality <b>{q_class}</b>, thickness is <b>{thickness_val} mm</b>.</li>
+                <li><b>t (Thickness):</b> Cardboard thickness. For Quality <b>{q_class}</b>, thickness is <b>{thickness_val} mm</b>.</li>
                 <li><b>P (Perimeter):</b> Measured boundary. For this box, perimeter is <b>{int(box_perimeter)} mm</b>.</li>
             </ul>
         </div>
