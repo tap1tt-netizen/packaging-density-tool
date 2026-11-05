@@ -371,20 +371,34 @@ if results:
     # High-Visibility Weight Indicator exactly next to the title
     with col_safety_header:
         total_package_weight = best_box["Total Weight (kg)"]
+        ext_l = best_box["Ext. Length [mm]"]
+        ext_w = best_box["Ext. Width [mm]"]
+        dims_footprint = sorted([ext_l, ext_w])
+        is_manual_box = (dims_footprint[0] <= 300.0) and (dims_footprint[1] <= 400.0)
+        
         if total_package_weight > 15.0:
-            st.markdown(f"""
-                <div style='background-color:#fff0f0; border-left:5px solid #e03131; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
-                    <b style='color:#e03131; font-size:16px;'>🚨 Forklift Transport Required</b><br>
-                    <span style='font-size:14px; color:#c92a2a; font-weight:bold;'>{total_package_weight} kg (Bypasses manual limit)</span><br>
-                    <span style='font-size:11px; color:#495057; font-weight:bold;'>Box size or weight exceeds manual limit. Forklift Pallet Handling Permitted.</span>
-                </div>
-            """, unsafe_allow_html=True)
+            if not is_manual_box:
+                st.markdown(f"""
+                    <div style='background-color:#fff0f0; border-left:5px solid #e03131; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
+                        <b style='color:#e03131; font-size:16px;'>🚨 Forklift Transport Required</b><br>
+                        <span style='font-size:14px; color:#c92a2a; font-weight:bold;'>{total_package_weight} kg (Bypasses manual limit)</span><br>
+                        <span style='font-size:11px; color:#495057;'>Box footprint <b>{int(ext_l)}x{int(ext_w)} mm</b> is larger than the <b>400x300 mm</b> manual threshold. Therefore, exceeding 15 kg is <b>permitted</b>. Forklift Pallet Handling Required.</span>
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                    <div style='background-color:#fff0f0; border-left:5px solid #e03131; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
+                        <b style='color:#e03131; font-size:16px;'>🚨 Overweight Manual Box</b><br>
+                        <span style='font-size:14px; color:#c92a2a; font-weight:bold;'>{total_package_weight} kg (Exceeds 15kg limit)</span><br>
+                        <span style='font-size:11px; color:#495057;'>Box footprint <b>{int(ext_l)}x{int(ext_w)} mm</b> is within the <b>400x300 mm</b> manual threshold, but exceeds 15 kg. This is prohibited for manual operator packing!</span>
+                    </div>
+                """, unsafe_allow_html=True)
         else:
             st.markdown(f"""
                 <div style='background-color:#ebfbee; border-left:5px solid #2b8a3e; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
                     <b style='color:#2b8a3e; font-size:16px;'>🟢 Safe Operational Weight</b><br>
                     <span style='font-size:14px; color:#2b8a3e; font-weight:bold;'>Safe at {total_package_weight} kg</span><br>
-                    <span style='font-size:11px; color:#495057; font-weight:bold;'>Approved for Manual Operator Packing (<= 400x300)</span>
+                    <span style='font-size:11px; color:#495057;'>Box footprint <b>{int(ext_l)}x{int(ext_w)} mm</b> is within the <b>400x300 mm</b>. Approved for Safe Manual Operator Packing.</span>
                 </div>
             """, unsafe_allow_html=True)
             
@@ -542,8 +556,16 @@ if results:
                     """, unsafe_allow_html=True)
                     
                 sel_package_weight = viz_box["Total Weight (kg)"]
+                ext_l_sel = viz_box["Ext. Length [mm]"]
+                ext_w_sel = viz_box["Ext. Width [mm]"]
+                dims_footprint_sel = sorted([ext_l_sel, ext_w_sel])
+                is_manual_box_sel = (dims_footprint_sel[0] <= 300.0) and (dims_footprint_sel[1] <= 400.0)
+                
                 if sel_package_weight > 15.0:
-                    st.markdown(f"<p style='color:#e03131; font-weight:bold; margin-top:10px;'>🚨 Operational Weight: {sel_package_weight} kg (Exceeds 15kg manual limit!)</p>", unsafe_allow_html=True)
+                    if not is_manual_box_sel:
+                        st.markdown(f"<p style='color:#2b8a3e; font-weight:bold; margin-top:10px;'>🟢 Operational Weight: {sel_package_weight} kg (Permitted: Box footprint {int(ext_l_sel)}x{int(ext_w_sel)} mm exceeds 400x300 mm manual threshold)</p>", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"<p style='color:#e03131; font-weight:bold; margin-top:10px;'>🚨 Operational Weight: {sel_package_weight} kg (Overweight manual packing error!)</p>", unsafe_allow_html=True)
                 else:
                     st.markdown(f"<p style='color:#2b8a3e; font-weight:bold; margin-top:10px;'>🟢 Operational Weight: Safe at {sel_package_weight} kg</p>", unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
@@ -720,7 +742,6 @@ if results:
                     gap_z = dz - scaled_extent[2]
                     v_final = v_scaled + np.array([x_pos + gap_x/2, y_pos + gap_y/2, z_pos + gap_z/2])
                     
-                    # High quality Mesh3d closed with 12 triangles
                     fig_scene.add_trace(go.Mesh3d(
                         x=v_final[:, 0], y=v_final[:, 1], z=v_final[:, 2],
                         i=raw_f[:, 0], j=raw_f[:, 1], k=raw_f[:, 2],
