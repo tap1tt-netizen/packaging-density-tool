@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit st
 import pandas as pd
 import numpy as np
 import os
@@ -900,50 +900,109 @@ if results:
             return total_boxes, nz, best_layer_qty, total_pcs, round(total_weight, 2), best_orient, nx_best, ny_best
 
         # -------------------------------------------------------------
-        # 1. AUTOMATED MATRIX: BEST vs. SMALLEST vs. LARGEST IN TOP 10
+        # 1. AUTOMATED COMPARATIVE MATRIX: SMALLEST vs. TOP 1 vs. TOP 2 vs. TOP 3
         # -------------------------------------------------------------
-        st.markdown("### ⚖️ Automated Big Box vs. Small Box Comparison")
-        st.markdown("This matrix automatically selects and compares **three benchmark boxes directly from your top 10 recommended list** on a standard EPAL 1 Pallet:")
+        st.markdown("### ⚖️ Automated Benchmark Stacking Yield Analysis")
+        st.markdown("This matrix automatically compares **four benchmark options selected strictly from your recommended Top 10 list** on a standard EPAL 1 Pallet:")
         
-        # Calculate Footprint Area for Top 10 boxes
+        # Pull candidate boxes from the Top 10 list
         ranked_df_copy = ranked_df.copy()
         ranked_df_copy['Footprint Area'] = ranked_df_copy['Ext. Length [mm]'] * ranked_df_copy['Ext. Width [mm]']
         sorted_by_footprint = ranked_df_copy.sort_values(by='Footprint Area')
         
-        # Pull Top 1 (Best), Smallest, and Largest strictly from recommended Top 10
-        top1_row = ranked_df_copy.iloc[0]
+        # 1. Smallest Footprint Box in Top 10
         small_row = sorted_by_footprint.iloc[0]
-        big_row = sorted_by_footprint.iloc[-1]
+        small_name = small_row["Box ID / Specification"]
         
-        # Compute EPAL 1 standard pallet capacity for each of the three benchmark choices
+        # 2. Top 1 Box
+        top1_row = ranked_df_copy.iloc[0]
+        top1_name = top1_row["Box ID / Specification"]
+        
+        # 3. Top 2 Box
+        top2_row = ranked_df_copy.iloc[1] if len(ranked_df_copy) >= 2 else None
+        top2_name = top2_row["Box ID / Specification"] if top2_row is not None else "N/A"
+        
+        # 4. Top 3 Box
+        top3_row = ranked_df_copy.iloc[2] if len(ranked_df_copy) >= 3 else None
+        top3_name = top3_row["Box ID / Specification"] if top3_row is not None else "N/A"
+        
+        # Run palletization solver for each candidate
         bt_s, _, _, pcs_s, wt_s, _, _, _ = calculate_pallet_stacking(1200, 800, small_row["Ext. Length [mm]"], small_row["Ext. Width [mm]"], small_row["Ext. Height [mm]"], small_row["Total Weight (kg)"], int(small_row["Number of Parts per Box"]))
-        bt_b, _, _, pcs_b, wt_b, _, _, _ = calculate_pallet_stacking(1200, 800, big_row["Ext. Length [mm]"], big_row["Ext. Width [mm]"], big_row["Ext. Height [mm]"], big_row["Total Weight (kg)"], int(big_row["Number of Parts per Box"]))
-        bt_t, _, _, pcs_t, wt_t, _, _, _ = calculate_pallet_stacking(1200, 800, top1_row["Ext. Length [mm]"], top1_row["Ext. Width [mm]"], top1_row["Ext. Height [mm]"], top1_row["Total Weight (kg)"], int(top1_row["Number of Parts per Box"]))
+        bt_1, _, _, pcs_1, wt_1, _, _, _ = calculate_pallet_stacking(1200, 800, top1_row["Ext. Length [mm]"], top1_row["Ext. Width [mm]"], top1_row["Ext. Height [mm]"], top1_row["Total Weight (kg)"], int(top1_row["Number of Parts per Box"]))
         
-        # Determine the ultimate yield winner
-        vals = [pcs_s, pcs_b, pcs_t]
-        rows_map = {pcs_s: (small_row["Box ID / Specification"], "Smallest Footprint Box"), 
-                    pcs_b: (big_row["Box ID / Specification"], "Largest Footprint Box"), 
-                    pcs_t: (top1_row["Box ID / Specification"], "Top 1 (Best Overall) Box")}
+        if top2_row is not None:
+            bt_2, _, _, pcs_2, wt_2, _, _, _ = calculate_pallet_stacking(1200, 800, top2_row["Ext. Length [mm]"], top2_row["Ext. Width [mm]"], top2_row["Ext. Height [mm]"], top2_row["Total Weight (kg)"], int(top2_row["Number of Parts per Box"]))
+        else:
+            bt_2, pcs_2, wt_2 = "N/A", 0, "N/A"
+            
+        if top3_row is not None:
+            bt_3, _, _, pcs_3, wt_3, _, _, _ = calculate_pallet_stacking(1200, 800, top3_row["Ext. Length [mm]"], top3_row["Ext. Width [mm]"], top3_row["Ext. Height [mm]"], top3_row["Total Weight (kg)"], int(top3_row["Number of Parts per Box"]))
+        else:
+            bt_3, pcs_3, wt_3 = "N/A", 0, "N/A"
+            
+        # Determine the ultimate yield winner among the four options
+        pcs_vals = [pcs_s, pcs_1, pcs_2, pcs_3]
+        labels_map = {
+            pcs_s: (small_name, "Smallest Footprint Box"),
+            pcs_1: (top1_name, "Top 1 Best Box"),
+            pcs_2: (top2_name, "Top 2 Best Box"),
+            pcs_3: (top3_name, "Top 3 Best Box")
+        }
         
-        max_val = max(vals)
-        winner_id, winner_label = rows_map[max_val]
+        max_yield = max(pcs_vals)
+        winner_box_id, winner_label = labels_map[max_yield]
         
         st.markdown(f"""
         <div class='success-box'>
-            🏆 <b>Automated Yield Decision Winner:</b> The <b>{winner_label} ({winner_id})</b> is the optimal palletization choice!<br>
-            It delivers <b style='color:#2b8a3e;'>{max_val} total pieces</b> per standard EPAL 1 pallet, ensuring maximum spatial shipping density.
+            🏆 <b>Automated Yield Decision Winner:</b> The <b>{winner_label} ({winner_box_id})</b> is the optimal palletization choice!<br>
+            It delivers <b style='color:#2b8a3e;'>{max_yield} total pieces</b> per standard EPAL 1 pallet, ensuring maximum spatial shipping density.
         </div>
         """, unsafe_allow_html=True)
         
         # Comparative Matrix Table
         comp_df = pd.DataFrame([
-            {"Metric Profile": "Box Specification ID", "Smallest Box (Top 10)": small_row["Box ID / Specification"], "Top 1 Best Box": top1_row["Box ID / Specification"], "Largest Box (Top 10)": big_row["Box ID / Specification"]},
-            {"Metric Profile": "External Footprint Dimensions", "Smallest Box (Top 10)": f"{int(small_row['Ext. Length [mm]'])}x{int(small_row['Ext. Width [mm]'])} mm", "Top 1 Best Box": f"{int(top1_row['Ext. Length [mm]'])}x{int(top1_row['Ext. Width [mm]'])} mm", "Largest Box (Top 10)": f"{int(big_row['Ext. Length [mm]'])}x{int(big_row['Ext. Width [mm]'])} mm"},
-            {"Metric Profile": "Parts Loaded (Per Box)", "Smallest Box (Top 10)": f"{int(small_row['Number of Parts per Box'])} Pcs", "Top 1 Best Box": f"{int(top1_row['Number of Parts per Box'])} Pcs", "Largest Box (Top 10)": f"{int(big_row['Number of Parts per Box'])} Pcs"},
-            {"Metric Profile": "Boxes Loaded (Per Pallet)", "Smallest Box (Top 10)": f"{bt_s} boxes", "Top 1 Best Box": f"{bt_t} boxes", "Largest Box (Top 10)": f"{bt_b} boxes"},
-            {"Metric Profile": "Total Pieces (Per Pallet)", "Smallest Box (Top 10)": f"{pcs_s} Pcs", "Top 1 Best Box": f"{pcs_t} Pcs", "Largest Box (Top 10)": f"{pcs_b} Pcs"},
-            {"Metric Profile": "Pallet Weight (inc. 23kg Tare)", "Smallest Box (Top 10)": f"{wt_s} kg", "Top 1 Best Box": f"{wt_t} kg", "Largest Box (Top 10)": f"{wt_b} kg"}
+            {
+                "Metric Profile": "Box Specification ID", 
+                "Smallest Box (Top 10)": small_name, 
+                "Top 1 Best Box": top1_name,
+                "Top 2 Best Box": top2_name,
+                "Top 3 Best Box": top3_name
+            },
+            {
+                "Metric Profile": "External Footprint Dimensions", 
+                "Smallest Box (Top 10)": f"{int(small_row['Ext. Length [mm]'])}x{int(small_row['Ext. Width [mm]'])} mm", 
+                "Top 1 Best Box": f"{int(top1_row['Ext. Length [mm]'])}x{int(top1_row['Ext. Width [mm]'])} mm",
+                "Top 2 Best Box": f"{int(top2_row['Ext. Length [mm]'])}x{int(top2_row['Ext. Width [mm]'])} mm" if top2_row is not None else "N/A",
+                "Top 3 Best Box": f"{int(top3_row['Ext. Length [mm]'])}x{int(top3_row['Ext. Width [mm]'])} mm" if top3_row is not None else "N/A"
+            },
+            {
+                "Metric Profile": "Parts Loaded (Per Box)", 
+                "Smallest Box (Top 10)": f"{int(small_row['Number of Parts per Box'])} Pcs", 
+                "Top 1 Best Box": f"{int(top1_row['Number of Parts per Box'])} Pcs",
+                "Top 2 Best Box": f"{int(top2_row['Number of Parts per Box'])} Pcs" if top2_row is not None else "N/A",
+                "Top 3 Best Box": f"{int(top3_row['Number of Parts per Box'])} Pcs" if top3_row is not None else "N/A"
+            },
+            {
+                "Metric Profile": "Boxes Loaded (Per Pallet)", 
+                "Smallest Box (Top 10)": f"{bt_s} boxes", 
+                "Top 1 Best Box": f"{bt_1} boxes",
+                "Top 2 Best Box": f"{bt_2} boxes" if top2_row is not None else "N/A",
+                "Top 3 Best Box": f"{bt_3} boxes" if top3_row is not None else "N/A"
+            },
+            {
+                "Metric Profile": "Total Pieces (Per Pallet)", 
+                "Smallest Box (Top 10)": f"{pcs_s} Pcs", 
+                "Top 1 Best Box": f"{pcs_1} Pcs",
+                "Top 2 Best Box": f"{pcs_2} Pcs" if top2_row is not None else "N/A",
+                "Top 3 Best Box": f"{pcs_3} Pcs" if top3_row is not None else "N/A"
+            },
+            {
+                "Metric Profile": "Pallet Weight (inc. 23kg Tare)", 
+                "Smallest Box (Top 10)": f"{wt_s} kg", 
+                "Top 1 Best Box": f"{wt_1} kg",
+                "Top 2 Best Box": f"{wt_2} kg" if top2_row is not None else "N/A",
+                "Top 3 Best Box": f"{wt_3} kg" if top3_row is not None else "N/A"
+            }
         ])
         st.table(comp_df)
         st.markdown("<hr>", unsafe_allow_html=True)
@@ -1142,9 +1201,9 @@ if results:
             except Exception as e_pall_plotly:
                 st.warning(f"Error rendering interactive 3D pallet view: {e_pall_plotly}")
 
-    # =======================================================
+    # ==========================================
     # TAB 3: MCKEE GRAVITY COMPRESSION SAFETY CHECK
-    # =======================================================
+    # ==========================================
     with tab_compression:
         st.subheader("🗜️ Corrugated Cardboard McKee Compression Strength Checker")
         st.markdown("Validate if the bottom cardboard box can handle the heavy vertical static loads from the stack above on a 1-meter pallet layout.")
@@ -1161,7 +1220,7 @@ if results:
             
         col_storage, col_transport = st.columns(2)
         with col_storage:
-            storage_sel = st.selectbox("Storage Duration:", ["Short (days)", "Medium (weeks)", "Long (months)"], index=1, help="Corrugated material fatgues under static load over time.")
+            storage_sel = st.selectbox("Storage Duration:", ["Short (days)", "Medium (weeks)", "Long (months)"], index=1, help="Corrugated material fatigues under static load over time.")
         with col_transport:
             transport_sel = st.selectbox("Transport Handling / Vibration:", ["LTL/FTL Truck", "Parcel shipping", "Air/Sea Cargo"], index=1, help="Shipment handling shocks weaken structural integrity.")
 
