@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
+import io
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
@@ -440,9 +441,43 @@ if results:
     # TAB 1: BOX RECOMMENDER & INDIVIDUAL LOADING
     # ==========================================
     with tab_recommender:
-        # Main Recommendations Table
-        st.subheader("🏆 Top 10 Recommended Cardboard Boxes")
+        
+        # Prepare Dataframe to display and export
         display_df = ranked_df.drop(columns=["_nx", "_ny", "_nz", "_ox", "_oy", "_oz", "Int. Length [mm]", "Int. Width [mm]", "Int. Height [mm]", "Ext. Length [mm]", "Ext. Width [mm]"])
+        
+        # --- REQ: DYNAMIC EXPORT BUTTONS PLACEMENT NEXT TO SUBHEADER ---
+        col_header, col_export_xls, col_export_csv = st.columns([5, 2.5, 2.5])
+        with col_header:
+            st.subheader("🏆 Top 10 Recommended Cardboard Boxes")
+            
+        # Compile Excel in-memory buffer
+        buffer_xls = io.BytesIO()
+        with pd.ExcelWriter(buffer_xls, engine='openpyxl') as writer:
+            display_df.to_excel(writer, sheet_name='Top_10_Recommendations', index=True)
+        xls_data = buffer_xls.getvalue()
+        
+        # Compile CSV in-memory buffer
+        csv_data = display_df.to_csv(index=True).encode('utf-8')
+        
+        with col_export_xls:
+            st.download_button(
+                label="📥 Export Top 10 to Excel (.xlsx)",
+                data=xls_data,
+                file_name="Top_10_Recommended_Boxes.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                help="Download the recommended boxes as a formatted Excel spreadsheet."
+            )
+        with col_export_csv:
+            st.download_button(
+                label="📄 Export Top 10 to CSV (.csv)",
+                data=csv_data,
+                file_name="Top_10_Recommended_Boxes.csv",
+                mime="text/csv",
+                use_container_width=True,
+                help="Download the recommended boxes as a raw CSV file."
+            )
+            
         st.dataframe(
             display_df,
             column_config={
