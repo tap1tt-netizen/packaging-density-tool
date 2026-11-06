@@ -731,7 +731,7 @@ if results:
                             hoverinfo='skip'
                         ))
                 
-                # 🟢 FIXED: Plots the actual CAD mesh faces (`raw_f`) instead of using hardcoded box indices (0-7)
+                # 🟢 FIXED: Plotly correctly renders actual face indices (raw_f) instead of hardcoded bounding box indices
                 def add_plotly_mesh_part(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz, raw_v, raw_f, text_str):
                     min_v = np.min(raw_v, axis=0)
                     max_v = np.max(raw_v, axis=0)
@@ -919,7 +919,7 @@ if results:
             # Determine the ultimate yield winner
             pcs_vals = [pcs_s, pcs_1, pcs_2, pcs_3]
             labels_map = {
-                pcs_s: (small_name, "Smallest Box (Top 10)"),
+                pcs_s: (small_name, "Smallest Footprint Box"),
                 pcs_1: (top1_name, "Top 1 Best Box"),
                 pcs_2: (top2_name, "Top 2 Best Box"),
                 pcs_3: (top3_name, "Top 3 Best Box")
@@ -935,10 +935,11 @@ if results:
             </div>
             """, unsafe_allow_html=True)
             
-            # Comparative Matrix Table
+            # 🟢 NEW STYLING: Comparative Matrix Table (With Optimal Packing Orientation included)
             comp_df = pd.DataFrame([
                 {"Metric Profile": "Box Specification ID", "Smallest Box (Top 10)": small_name, "Top 1 Best Box": top1_name, "Top 2 Best Box": top2_name, "Top 3 Best Box": top3_name},
                 {"Metric Profile": "External Footprint Dimensions", "Smallest Box (Top 10)": f"{int(small_row['Ext. Length [mm]'])}x{int(small_row['Ext. Width [mm]'])} mm", "Top 1 Best Box": f"{int(top1_row['Ext. Length [mm]'])}x{int(top1_row['Ext. Width [mm]'])} mm", "Top 2 Best Box": f"{int(top2_row['Ext. Length [mm]'])}x{int(top2_row['Ext. Width [mm]'])} mm" if top2_row is not None else "N/A", "Top 3 Best Box": f"{int(top3_row['Ext. Length [mm]'])}x{int(top3_row['Ext. Width [mm]'])} mm" if top3_row is not None else "N/A"},
+                {"Metric Profile": "Optimal Packing Orientation", "Smallest Box (Top 10)": determine_placement_style(prod_l, prod_w, prod_h, small_row["_oz"]), "Top 1 Best Box": determine_placement_style(prod_l, prod_w, prod_h, top1_row["_oz"]), "Top 2 Best Box": determine_placement_style(prod_l, prod_w, prod_h, top2_row["_oz"]) if top2_row is not None else "N/A", "Top 3 Best Box": determine_placement_style(prod_l, prod_w, prod_h, top3_row["_oz"]) if top3_row is not None else "N/A"},
                 {"Metric Profile": "Parts Loaded (Per Box)", "Smallest Box (Top 10)": f"{int(small_row['Number of Parts per Box'])} Pcs", "Top 1 Best Box": f"{int(top1_row['Number of Parts per Box'])} Pcs", "Top 2 Best Box": f"{int(top2_row['Number of Parts per Box'])} Pcs" if top2_row is not None else "N/A", "Top 3 Best Box": f"{int(top3_row['Number of Parts per Box'])} Pcs" if top3_row is not None else "N/A"},
                 {"Metric Profile": "Boxes Loaded (Per Pallet)", "Smallest Box (Top 10)": f"{bt_s} boxes", "Top 1 Best Box": f"{bt_1} boxes", "Top 2 Best Box": f"{bt_2} boxes" if top2_row is not None else "N/A", "Top 3 Best Box": f"{bt_3} boxes" if top3_row is not None else "N/A"},
                 {"Metric Profile": "Total Pieces (Per Pallet)", "Smallest Box (Top 10)": f"{pcs_s} Pcs", "Top 1 Best Box": f"{pcs_1} Pcs", "Top 2 Best Box": f"{pcs_2} Pcs" if top2_row is not None else "N/A", "Top 3 Best Box": f"{pcs_3} Pcs" if top3_row is not None else "N/A"},
@@ -1152,25 +1153,29 @@ if results:
             help="Single Pallet checks local column load. Double Stacking adds the entire gross weight of the top pallet onto the bottom boxes."
         )
         
+        # 🟢 NEW DROP-DOWNS: Aligned drop-down metrics from PackagingTools.io standards
         st.markdown("#### 🪵 3. Load, Environment & Logistics Parameters")
         col_moisture, col_spread, col_fragility = st.columns(3)
         with col_moisture:
-            moisture_sel = st.selectbox("Moisture (Humidity):", ["Dry", "Damp", "Humid"], index=2, help="Humidity weakens boxes over time.")
+            moisture_sel = st.selectbox("Moisture (Humidity):", ["Dry", "Normal", "Humid", "Wet"], index=1, help="Humidity weakens boxes over time.")
         with col_spread:
-            spread_sel = st.selectbox("Load spread:", ["Even", "Concentrated/Uneven"], index=0)
+            spread_sel = st.selectbox("Load spread:", ["Even", "Uneven", "Center", "Corner"], index=0)
         with col_fragility:
-            fragility_sel = st.selectbox("Fragility:", ["Low", "High"], index=0)
+            fragility_sel = st.selectbox("Fragility:", ["Low", "Medium", "High"], index=1)
             
         col_storage, col_transport = st.columns(2)
         with col_storage:
             storage_sel = st.selectbox("Storage Duration:", ["Short (days)", "Medium (weeks)", "Long (months)"], index=1)
         with col_transport:
-            transport_sel = st.selectbox("Transport Handling / Vibration:", ["LTL/FTL Truck", "Parcel shipping", "Air/Sea Cargo"], index=1)
-        f_moisture = {"Dry": 1.0, "Damp": 1.2, "Humid": 1.5}[moisture_sel]
-        f_spread = {"Even": 1.0, "Concentrated/Uneven": 1.25}[spread_sel]
-        f_fragility = {"Low": 1.0, "High": 1.3}[fragility_sel]
+            transport_sel = st.selectbox("Transport Handling / Vibration:", ["LTL/FT FTL Truck", "Parcel shipping", "Air/Sea Cargo"], index=1)
+
+        # Standard Multiplier Weights corresponding to the PackagingTools.io standards
+        f_moisture = {"Dry": 1.0, "Normal": 1.1, "Humid": 1.3, "Wet": 1.6}[moisture_sel]
+        f_spread = {"Even": 1.0, "Uneven": 1.2, "Center": 1.35, "Corner": 1.5}[spread_sel]
+        f_fragility = {"Low": 1.0, "Medium": 1.15, "High": 1.3}[fragility_sel]
         f_storage = {"Short (days)": 1.0, "Medium (weeks)": 1.25, "Long (months)": 1.5}[storage_sel]
-        f_transport = {"LTL/FTL Truck": 1.0, "Parcel shipping": 1.3, "Air/Sea Cargo": 1.4}[transport_sel]
+        f_transport = {"LTL/FT FTL Truck": 1.0, "Parcel shipping": 1.3, "Air/Sea Cargo": 1.4}[transport_sel]
+
         QUALITY_PROPERTIES = {
             "1.20B": {"ect": 3.0, "thickness": 3.0, "name": "Single Wall - B Flute"},
             "1.20C": {"ect": 3.8, "thickness": 4.0, "name": "Single Wall - C Flute"},
@@ -1240,7 +1245,7 @@ if results:
             </div>
             """, unsafe_allow_html=True)
             
-        # 🟢 FIXED: Raw f-string with double curly braces for math components ensures seamless execution without syntax errors
+        # 🟢 FIXED: Raw f-string with double curly braces for math LaTeX syntax avoids f-string compile errors
         st.markdown(fr"""
         <div class='guide-box'>
             <h5>🧮 How McKee's Formula works under the hood:</h5>
