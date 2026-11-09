@@ -731,6 +731,7 @@ if results:
                             hoverinfo='skip'
                         ))
                 
+                # 🟢 FIXED: Plots the actual CAD mesh faces (`raw_f`) instead of using hardcoded box indices (0-7)
                 def add_plotly_mesh_part(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz, raw_v, raw_f, text_str):
                     min_v = np.min(raw_v, axis=0)
                     max_v = np.max(raw_v, axis=0)
@@ -1274,28 +1275,31 @@ if results:
             </div>
             """, unsafe_allow_html=True)
             
-        # 🟢 UPDATED WORKINGS BOX: Standard metric formula step-by-step math workings
-        st.markdown(fr"""
-        <div class='guide-box'>
-            <h5>🧮 Step-by-Step Mathematical Workings (McKee Metric Standard):</h5>
-            The Box Compression Test (BCT) is computed dynamically using metric units:
-            $$\text{{BCT (N)}} = 1.82 \times \text{{ECT}} \times \sqrt{{t \times P}}$$
+        # 🟢 DECOUPLED LATEX COMPILER: Renders pristine formulas by bypassing the f-string curly-brace conflict
+        st.markdown("<div class='guide-box'><h5>🧮 Step-by-Step Mathematical Workings (McKee Metric Standard):</h5>"
+                    "The Box Compression Test (BCT) is computed dynamically using metric units:</div>", unsafe_allow_html=True)
+        
+        # Display formulas in pristine, clean LaTeX blocks (isolated from f-strings to avoid any weird symbols)
+        st.latex(r"\text{BCT (Newtons)} = 1.82 \times \text{ECT} \times \sqrt{t \times P}")
+        st.latex(r"\text{BCT (kg)} = \frac{\text{BCT (Newtons)}}{9.81 \text{ m/s}^2}")
+        st.latex(r"\text{Safe Design Capacity} = \frac{\text{BCT (kg)}}{\text{Combined Safety Factor (SF)}}")
+        
+        st.markdown(f"""
+        <div class='guide-box' style='margin-top:-20px; border-top-left-radius:0px; border-top-right-radius:0px; border-top:0px;'>
+            <b>Active Box Parameters:</b>
             <ul>
-                <li><b>ECT (Edge Crush Test):</b> Quality <b>{q_class_t3}</b> baseline is <b>{ect_val_t3} N/mm</b>.</li>
-                <li><b>t (Thickness):</b> Quality <b>{q_class_t3}</b> baseline is <b>{thickness_val_t3} mm</b>.</li>
+                <li><b>ECT (Edge Crush Test):</b> Quality class <b>{q_class_t3}</b> baseline is <b>{ect_val_t3} N/mm</b>.</li>
+                <li><b>t (Thickness):</b> Quality class <b>{q_class_t3}</b> baseline is <b>{thickness_val_t3} mm</b>.</li>
                 <li><b>P (Perimeter):</b> Measured boundary is <b>{int(box_perimeter_t3)} mm</b> (Lengthwise wall perimeter).</li>
             </ul>
             <hr style='border: 0.5px solid var(--text-color); opacity: 0.2;'>
-            <b>Step 1: Calculate Pristine Laboratory Crushing Force (Newtons)</b>
-            $$\text{{BCT}} = 1.82 \times {ect_val_t3} \times \sqrt{{{thickness_val_t3} \times {int(box_perimeter_t3)}}} = \mathbf{{{bct_n_t3:.2f}\text{{ Newtons}}}}$$
-            <br>
-            <b>Step 2: Convert to Mass Equivalents (kg) using standard gravity</b>
-            $$\text{{BCT (kg)}} = \frac{{{bct_n_t3:.2f}\text{{ N}}}}{{9.81\text{{ m/s}}^2}} = \mathbf{{{bct_kg_t3}\text{{ kg}}}}$$
-            <br>
-            <b>Step 3: Apply the Combined Safety Factor ({sf_t3}x)</b>
-            $$\text{{Safe Design Capacity}} = \frac{{{bct_kg_t3}\text{{ kg}}}}{{{sf_t3}}} = \mathbf{{{bct_safe_load_t3}\text{{ kg}}}}$$
-            <hr style='border: 0.5px solid var(--text-color); opacity: 0.2;'>
-            <p style='font-size: 11px;'><i>*Calculations have been standardized to metric parameters, correcting any past unit mismatches.</i></p>
+            <b>Step-by-Step Calculations:</b><br><br>
+            <b>1. Pristine Crushing Force:</b><br>
+            1.82 × {ect_val_t3} N/mm × √({thickness_val_t3} mm × {int(box_perimeter_t3)} mm) = <b>{bct_n_t3:.2f} Newtons</b><br><br>
+            <b>2. Mass Conversion (kg):</b><br>
+            {bct_n_t3:.2f} N ÷ 9.81 m/s² = <b>{bct_kg_t3} kg</b><br><br>
+            <b>3. Stacking Environment Safety Limit applied ({sf_t3}x):</b><br>
+            {bct_kg_t3} kg ÷ {sf_t3} = <b>{bct_safe_load_t3} kg</b> (Safe Design Capacity)
         </div>
         """, unsafe_allow_html=True)
 else:
