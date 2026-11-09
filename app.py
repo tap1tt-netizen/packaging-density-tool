@@ -1274,17 +1274,28 @@ if results:
             </div>
             """, unsafe_allow_html=True)
             
-        # 🟢 FIXED: Raw f-string with double curly braces for math LaTeX syntax avoids f-string compile errors
+        # 🟢 UPDATED WORKINGS BOX: Standard metric formula step-by-step math workings
         st.markdown(fr"""
         <div class='guide-box'>
-            <h5>🧮 How McKee's Formula works under the hood:</h5>
-            The Box Compression Test value is calculated using:<br>
-            $$\text{{BCT}} = 1.82 \times \text{{ECT}} \times \sqrt{{t \times P}}$$
+            <h5>🧮 Step-by-Step Mathematical Workings (McKee Metric Standard):</h5>
+            The Box Compression Test (BCT) is computed dynamically using metric units:
+            $$\text{{BCT (N)}} = 1.82 \times \text{{ECT}} \times \sqrt{{t \times P}}$$
             <ul>
-                <li><b>ECT (Edge Crush Test):</b> Standardized strength. For Quality <b>{q_class_t3}</b>, ECT is <b>{ect_val_t3} N/mm</b>.</li>
-                <li><b>t (Thickness):</b> Cardboard thickness. For Quality <b>{q_class_t3}</b>, thickness is <b>{thickness_val_t3} mm</b>.</li>
-                <li><b>P (Perimeter):</b> Measured boundary. For this box, perimeter is <b>{int(box_perimeter_t3)} mm</b>.</li>
+                <li><b>ECT (Edge Crush Test):</b> Quality <b>{q_class_t3}</b> baseline is <b>{ect_val_t3} N/mm</b>.</li>
+                <li><b>t (Thickness):</b> Quality <b>{q_class_t3}</b> baseline is <b>{thickness_val_t3} mm</b>.</li>
+                <li><b>P (Perimeter):</b> Measured boundary is <b>{int(box_perimeter_t3)} mm</b> (Lengthwise wall perimeter).</li>
             </ul>
+            <hr style='border: 0.5px solid var(--text-color); opacity: 0.2;'>
+            <b>Step 1: Calculate Pristine Laboratory Crushing Force (Newtons)</b>
+            $$\text{{BCT}} = 1.82 \times {ect_val_t3} \times \sqrt{{{thickness_val_t3} \times {int(box_perimeter_t3)}}} = \mathbf{{{bct_n_t3:.2f}\text{{ Newtons}}}}$$
+            <br>
+            <b>Step 2: Convert to Mass Equivalents (kg) using standard gravity</b>
+            $$\text{{BCT (kg)}} = \frac{{{bct_n_t3:.2f}\text{{ N}}}}{{9.81\text{{ m/s}}^2}} = \mathbf{{{bct_kg_t3}\text{{ kg}}}}$$
+            <br>
+            <b>Step 3: Apply the Combined Safety Factor ({sf_t3}x)</b>
+            $$\text{{Safe Design Capacity}} = \frac{{{bct_kg_t3}\text{{ kg}}}}{{{sf_t3}}} = \mathbf{{{bct_safe_load_t3}\text{{ kg}}}}$$
+            <hr style='border: 0.5px solid var(--text-color); opacity: 0.2;'>
+            <p style='font-size: 11px;'><i>*Calculations have been standardized to metric parameters, correcting any past unit mismatches.</i></p>
         </div>
         """, unsafe_allow_html=True)
 else:
