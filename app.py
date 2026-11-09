@@ -1213,7 +1213,8 @@ if results:
         q_name_t3 = props_t3["name"]
         
         box_perimeter_t3 = 2 * (viz_box_t3["Int. Length [mm]"] + viz_box_t3["Int. Width [mm]"])
-        bct_n_t3 = 5.876 * ect_val_t3 * np.sqrt(thickness_val_t3 * box_perimeter_t3)
+        # 🟢 CORRECTED METRIC FORMULA: Standard metric constant of 1.82 is used for mm inputs
+        bct_n_t3 = 1.82 * ect_val_t3 * np.sqrt(thickness_val_t3 * box_perimeter_t3)
         bct_kg_t3 = round(bct_n_t3 / 9.81, 1) 
         
         # Calculate dynamic Combined Safety Factor (Base multiplier is 1.5)
@@ -1278,7 +1279,7 @@ if results:
         <div class='guide-box'>
             <h5>🧮 How McKee's Formula works under the hood:</h5>
             The Box Compression Test value is calculated using:<br>
-            $$\text{{BCT}} = 5.876 \times \text{{ECT}} \times \sqrt{{t \times P}}$$
+            $$\text{{BCT}} = 1.82 \times \text{{ECT}} \times \sqrt{{t \times P}}$$
             <ul>
                 <li><b>ECT (Edge Crush Test):</b> Standardized strength. For Quality <b>{q_class_t3}</b>, ECT is <b>{ect_val_t3} N/mm</b>.</li>
                 <li><b>t (Thickness):</b> Cardboard thickness. For Quality <b>{q_class_t3}</b>, thickness is <b>{thickness_val_t3} mm</b>.</li>
