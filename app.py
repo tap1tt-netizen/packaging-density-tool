@@ -731,7 +731,7 @@ if results:
                             hoverinfo='skip'
                         ))
                 
-                # 🟢 FIXED: Plotly correctly renders actual face indices (raw_f) instead of hardcoded bounding box indices
+                # 🟢 FIXED: Plots the actual CAD mesh faces (`raw_f`) instead of using hardcoded box indices (0-7)
                 def add_plotly_mesh_part(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz, raw_v, raw_f, text_str):
                     min_v = np.min(raw_v, axis=0)
                     max_v = np.max(raw_v, axis=0)
@@ -919,7 +919,7 @@ if results:
             # Determine the ultimate yield winner
             pcs_vals = [pcs_s, pcs_1, pcs_2, pcs_3]
             labels_map = {
-                pcs_s: (small_name, "Smallest Footprint Box"),
+                pcs_s: (small_name, "Smallest Box (Top 10)"),
                 pcs_1: (top1_name, "Top 1 Best Box"),
                 pcs_2: (top2_name, "Top 2 Best Box"),
                 pcs_3: (top3_name, "Top 3 Best Box")
@@ -935,15 +935,23 @@ if results:
             </div>
             """, unsafe_allow_html=True)
             
-            # 🟢 NEW STYLING: Comparative Matrix Table (With Optimal Packing Orientation included)
+            # Calculate overall prices (Boxes + 8€ EPAL 1 standard pallet fee)
+            price_s = (bt_s * small_row["Box Price (€)"]) + 8.00
+            price_1 = (bt_1 * top1_row["Box Price (€)"]) + 8.00
+            price_2 = (bt_2 * top2_row["Box Price (€)"]) + 8.00 if top2_row is not None else 0.00
+            price_3 = (bt_3 * top3_row["Box Price (€)"]) + 8.00 if top3_row is not None else 0.00
+
+            # Comparative Matrix Table (With Flute Quality and Overall Cost included)
             comp_df = pd.DataFrame([
                 {"Metric Profile": "Box Specification ID", "Smallest Box (Top 10)": small_name, "Top 1 Best Box": top1_name, "Top 2 Best Box": top2_name, "Top 3 Best Box": top3_name},
+                {"Metric Profile": "Cardboard Flute Quality", "Smallest Box (Top 10)": small_row['Quality Class'], "Top 1 Best Box": top1_row['Quality Class'], "Top 2 Best Box": top2_row['Quality Class'] if top2_row is not None else "N/A", "Top 3 Best Box": top3_row['Quality Class'] if top3_row is not None else "N/A"},
                 {"Metric Profile": "External Footprint Dimensions", "Smallest Box (Top 10)": f"{int(small_row['Ext. Length [mm]'])}x{int(small_row['Ext. Width [mm]'])} mm", "Top 1 Best Box": f"{int(top1_row['Ext. Length [mm]'])}x{int(top1_row['Ext. Width [mm]'])} mm", "Top 2 Best Box": f"{int(top2_row['Ext. Length [mm]'])}x{int(top2_row['Ext. Width [mm]'])} mm" if top2_row is not None else "N/A", "Top 3 Best Box": f"{int(top3_row['Ext. Length [mm]'])}x{int(top3_row['Ext. Width [mm]'])} mm" if top3_row is not None else "N/A"},
                 {"Metric Profile": "Optimal Packing Orientation", "Smallest Box (Top 10)": determine_placement_style(prod_l, prod_w, prod_h, small_row["_oz"]), "Top 1 Best Box": determine_placement_style(prod_l, prod_w, prod_h, top1_row["_oz"]), "Top 2 Best Box": determine_placement_style(prod_l, prod_w, prod_h, top2_row["_oz"]) if top2_row is not None else "N/A", "Top 3 Best Box": determine_placement_style(prod_l, prod_w, prod_h, top3_row["_oz"]) if top3_row is not None else "N/A"},
                 {"Metric Profile": "Parts Loaded (Per Box)", "Smallest Box (Top 10)": f"{int(small_row['Number of Parts per Box'])} Pcs", "Top 1 Best Box": f"{int(top1_row['Number of Parts per Box'])} Pcs", "Top 2 Best Box": f"{int(top2_row['Number of Parts per Box'])} Pcs" if top2_row is not None else "N/A", "Top 3 Best Box": f"{int(top3_row['Number of Parts per Box'])} Pcs" if top3_row is not None else "N/A"},
                 {"Metric Profile": "Boxes Loaded (Per Pallet)", "Smallest Box (Top 10)": f"{bt_s} boxes", "Top 1 Best Box": f"{bt_1} boxes", "Top 2 Best Box": f"{bt_2} boxes" if top2_row is not None else "N/A", "Top 3 Best Box": f"{bt_3} boxes" if top3_row is not None else "N/A"},
                 {"Metric Profile": "Total Pieces (Per Pallet)", "Smallest Box (Top 10)": f"{pcs_s} Pcs", "Top 1 Best Box": f"{pcs_1} Pcs", "Top 2 Best Box": f"{pcs_2} Pcs" if top2_row is not None else "N/A", "Top 3 Best Box": f"{pcs_3} Pcs" if top3_row is not None else "N/A"},
-                {"Metric Profile": "Pallet Weight (inc. 23kg Tare)", "Smallest Box (Top 10)": f"{wt_s} kg", "Top 1 Best Box": f"{wt_1} kg", "Top 2 Best Box": f"{wt_2} kg" if top2_row is not None else "N/A", "Top 3 Best Box": f"{wt_3} kg" if top3_row is not None else "N/A"}
+                {"Metric Profile": "Pallet Weight (inc. 23kg Tare)", "Smallest Box (Top 10)": f"{wt_s} kg", "Top 1 Best Box": f"{wt_1} kg", "Top 2 Best Box": f"{wt_2} kg" if top2_row is not None else "N/A", "Top 3 Best Box": f"{wt_3} kg" if top3_row is not None else "N/A"},
+                {"Metric Profile": "Overall Cost (Boxes + 8€ EPAL 1)", "Smallest Box (Top 10)": f"€ {price_s:.2f}", "Top 1 Best Box": f"€ {price_1:.2f}", "Top 2 Best Box": f"€ {price_2:.2f}" if top2_row is not None else "N/A", "Top 3 Best Box": f"€ {price_3:.2f}" if top3_row is not None else "N/A"}
             ])
             st.table(comp_df)
         else:
@@ -1153,7 +1161,7 @@ if results:
             help="Single Pallet checks local column load. Double Stacking adds the entire gross weight of the top pallet onto the bottom boxes."
         )
         
-        # 🟢 NEW DROP-DOWNS: Aligned drop-down metrics from PackagingTools.io standards
+        # 🪵 Load, Environment & Logistics Parameters
         st.markdown("#### 🪵 3. Load, Environment & Logistics Parameters")
         col_moisture, col_spread, col_fragility = st.columns(3)
         with col_moisture:
@@ -1167,14 +1175,14 @@ if results:
         with col_storage:
             storage_sel = st.selectbox("Storage Duration:", ["Short (days)", "Medium (weeks)", "Long (months)"], index=1)
         with col_transport:
-            transport_sel = st.selectbox("Transport Handling / Vibration:", ["LTL/FT FTL Truck", "Parcel shipping", "Air/Sea Cargo"], index=1)
+            transport_sel = st.selectbox("Transport Handling / Vibration:", ["LTL/FTL Truck", "Parcel shipping", "Air/Sea Cargo"], index=1)
 
         # Standard Multiplier Weights corresponding to the PackagingTools.io standards
         f_moisture = {"Dry": 1.0, "Normal": 1.1, "Humid": 1.3, "Wet": 1.6}[moisture_sel]
         f_spread = {"Even": 1.0, "Uneven": 1.2, "Center": 1.35, "Corner": 1.5}[spread_sel]
         f_fragility = {"Low": 1.0, "Medium": 1.15, "High": 1.3}[fragility_sel]
         f_storage = {"Short (days)": 1.0, "Medium (weeks)": 1.25, "Long (months)": 1.5}[storage_sel]
-        f_transport = {"LTL/FT FTL Truck": 1.0, "Parcel shipping": 1.3, "Air/Sea Cargo": 1.4}[transport_sel]
+        f_transport = {"LTL/FTL Truck": 1.0, "Parcel shipping": 1.3, "Air/Sea Cargo": 1.4}[transport_sel]
 
         QUALITY_PROPERTIES = {
             "1.20B": {"ect": 3.0, "thickness": 3.0, "name": "Single Wall - B Flute"},
