@@ -238,19 +238,19 @@ if uploaded_stl is not None:
     try:
         import trimesh
         uploaded_stl.seek(0)
-        
+
         if filename.endswith('.step') or filename.endswith('.stp'):
             import cascadio
             mesh_cad = trimesh.load(uploaded_stl, file_type='step')
         else:
             mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
-        
+
         bounds = mesh_cad.bounding_box.extents
         dims = sorted(bounds)
         auto_h = round(dims[0], 1)
         auto_w = round(dims[1], 1)
         auto_l = round(dims[2], 1)
-        
+
         cad_volume = max(mesh_cad.volume, 0.001)
         is_cm_scale = auto_l < 50.0
         if is_cm_scale:
@@ -258,24 +258,24 @@ if uploaded_stl is not None:
             auto_w *= 10.0
             auto_h *= 10.0
             cad_volume *= 1000.0  
-            
+
         st.sidebar.success(f"Auto-Extracted Dimensions: {auto_l} × {auto_w} × {auto_h} mm")
-        
+
         st.sidebar.markdown("#### 🪵 Material Density Extractor")
         selected_material = st.sidebar.selectbox(
             "Select Part Material:",
             options=["Select Material..."] + list(MATERIAL_DENSITIES.keys()),
             index=0,
-            help="Choose the material to compute exact solid part weight."
+            help="Choose the physical material of this component to calculate its exact solid weight."
         )
-        
+
         if selected_material == "Select Material...":
             material_selected = False
         else:
             density = MATERIAL_DENSITIES[selected_material]
             calculated_weight_kg = round(cad_volume * density * 1e-6, 3)
             st.sidebar.info(f"⚖️ Calculated Solid Weight ({selected_material}): **{calculated_weight_kg} kg**")
-            
+
     except Exception as e_cad:
         st.sidebar.warning(f"Could not auto-extract CAD dimensions: {e_cad}")
 
@@ -320,7 +320,7 @@ if not material_selected:
 def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule):
     dims = sorted([p_l, p_w, p_h])
     h_dim, w_dim, l_dim = dims[0], dims[1], dims[2]
-    
+
     if rule == "Force Flat Packing Only":
         orientations = [(l_dim, w_dim, h_dim), (w_dim, l_dim, h_dim)]
     elif rule == "Force Standing on Edge":
@@ -333,32 +333,32 @@ def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule):
             (p_w, p_l, p_h), (p_w, p_h, p_l),
             (p_h, p_l, p_w), (p_h, p_w, p_l)
         ]
-    
+
     best_qty = 0
     best_config = None
     best_grid_layout = (0, 0, 0)
-    
+
     for px, py, pz in orientations:
         nx = max(0, int((box_int_l - (2 * clear_side) + sep_xy) // (px + sep_xy)))
         ny = max(0, int((box_int_w - (2 * clear_side) + sep_xy) // (py + sep_xy)))
         nz = max(0, int((box_int_h - clear_height + sep_z) // (pz + sep_z)))
-        
+
         total_parts = nx * ny * nz
         if total_parts > best_qty:
             best_qty = total_parts
             best_config = (px, py, pz)
             best_grid_layout = (nx, ny, nz)
-            
+
     return best_qty, best_config, best_grid_layout
 
 def determine_placement_style(p_l, p_w, p_h, oz):
     dims = sorted([p_l, p_w, p_h])
     if int(oz) == int(dims[0]):
-        return "Flat / Horizontal (Resting on wide base, most stable)"
+        return "🟢 Flat / Horizontal (Resting on wide base, most stable)"
     elif int(oz) == int(dims[1]):
-        return "Standing on Side / Edge"
+        return "⚠️ Standing on Side / Edge"
     else:
-        return "Standing Vertical / On End (Prone to tipping)"
+        return "🚨 Standing Vertical / On End (Prone to tipping)"
 
 def estimate_box_weight(ext_l, ext_w, ext_h, quality):
     if pd.isna(ext_l) or pd.isna(ext_w) or pd.isna(ext_h):
@@ -381,37 +381,37 @@ for idx, row in df_inventory.iterrows():
     ext_l = row['Ext. Length [mm]']
     ext_w = row['Ext.Width [mm]']
     ext_h = row['Ext. Height [mm]']
-    
+
     if pd.isna(box_int_l) or pd.isna(box_int_w) or pd.isna(box_int_h):
         continue
-        
+
     parts_count, pack_orient, grid_layout = calculate_packing(
         box_int_l, box_int_w, box_int_h, 
         prod_l, prod_w, prod_h,
         rule=orientation_rule
     )
-    
+
     if parts_count == 0:
         continue
-        
+
     box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row['Quality'])
     total_payload_wt = parts_count * prod_wt
     total_package_weight = total_payload_wt + box_weight
-    
+
     # Safety Check: 15kg limit on manual handling footprint (<=400x300mm)
     dims_footprint = sorted([ext_l, ext_w])
     is_manual_box = (dims_footprint[0] <= 300.0) and (dims_footprint[1] <= 400.0)
     if is_manual_box and total_package_weight > 15.0:
         continue
-        
+
     if total_payload_wt > row['Max. Load [kg]']:
         continue
-        
+
     box_internal_vol = box_int_l * box_int_w * box_int_h
     occupied_volume = parts_count * single_part_vol
     vol_efficiency = (occupied_volume / box_internal_vol) * 100
     air_space_percent = 100.0 - vol_efficiency
-    
+
     results.append({
         "Box ID / Specification": row['BoxSize'],
         "Box Footprint (Ext)": f"{int(ext_l)}×{int(ext_w)} mm",
@@ -443,7 +443,7 @@ for idx, row in df_inventory.iterrows():
 # ==============================================================================
 if results:
     res_df = pd.DataFrame(results)
-    
+
     if sort_criteria == "Volumetric Efficiency (%)":
         sort_by_cols = ["Volumetric Efficiency (%)", "Box Price (€)", "Total Weight (kg)"]
         ascending_rules = [False, True, True]
@@ -453,18 +453,18 @@ if results:
     else:
         sort_by_cols = ["Box Price (€)", "Number of Parts per Box", "Total Weight (kg)"]
         ascending_rules = [True, False, True]
-        
+
     ranked_df = res_df.sort_values(by=sort_by_cols, ascending=ascending_rules).head(10).reset_index(drop=True)
     ranked_df.index = ranked_df.index + 1
     best_box = ranked_df.iloc[0]
-    
+
     # Modern Enterprise Header
     total_pkg_wt = best_box["Total Weight (kg)"]
     ext_l_best = best_box["Ext. Length [mm]"]
     ext_w_best = best_box["Ext. Width [mm]"]
     dims_footprint_best = sorted([ext_l_best, ext_w_best])
     is_manual_best = (dims_footprint_best[0] <= 300.0) and (dims_footprint_best[1] <= 400.0)
-    
+
     if total_pkg_wt > 15.0 and not is_manual_best:
         safety_status_html = f"<span class='badge badge-warning'>⚡ Forklift Transport ({total_pkg_wt} kg)</span>"
     elif total_pkg_wt > 15.0 and is_manual_best:
@@ -483,7 +483,7 @@ if results:
             </div>
         </div>
     """, unsafe_allow_html=True)
-    
+
     # Modern SaaS KPI Metrics Row
     kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
     with kpi1:
@@ -547,7 +547,7 @@ if results:
             "Int. Length [mm]", "Int. Width [mm]", "Int. Height [mm]", 
             "Ext. Length [mm]", "Ext. Width [mm]"
         ])
-        
+
         col_header, col_export = st.columns([7, 3])
         with col_header:
             st.markdown("#### 🏆 Top 10 Optimized Box Recommendations")
@@ -578,7 +578,7 @@ if results:
                     mime="text/csv",
                     use_container_width=True
                 )
-                
+
         st.dataframe(
             display_df,
             column_config={
@@ -598,7 +598,7 @@ if results:
         )
 
         st.markdown("<hr style='margin: 25px 0; border: 0; border-top: 1px solid rgba(148, 163, 184, 0.2);'>", unsafe_allow_html=True)
-        
+
         # Interactive Blueprint Viewer
         st.markdown("#### 📋 Step-by-Step Packing Blueprint & Operator Guide")
         available_boxes = list(ranked_df["Box ID / Specification"].values)
@@ -608,17 +608,17 @@ if results:
             index=0,
             key="blueprint_selector"
         )
-        
+
         viz_box = ranked_df[ranked_df["Box ID / Specification"] == selected_box_spec].iloc[0]
         nx, ny, nz = int(viz_box["_nx"]), int(viz_box["_ny"]), int(viz_box["_nz"])
         ox, oy, oz = int(viz_box["_ox"]), int(viz_box["_oy"]), int(viz_box["_oz"])
         box_l, box_w = viz_box["Int. Length [mm]"], viz_box["Int. Width [mm]"]
         ext_l, ext_w = viz_box["Ext. Length [mm]"], viz_box["Ext. Width [mm]"]
-        
+
         placement_style = determine_placement_style(prod_l, prod_w, prod_h, oz)
-        
+
         col_instr, col_plan, col_elev = st.columns([2.5, 3, 2.5])
-        
+
         with col_instr:
             st.markdown(f"""
             <div class='saas-card'>
@@ -628,46 +628,46 @@ if results:
                 • Length: <b>{ox} mm</b><br>
                 • Width: <b>{oy} mm</b><br>
                 • Height (Up): <b>{oz} mm</b></p>
-                
+
                 <p><b><span class='step-number'>2</span> Floor Grid Layout:</b><br>
                 Place <b>{nx} columns × {ny} rows</b> ({nx * ny} parts per layer).<br>
                 Use {sep_xy} mm partition separators between parts.</p>
-                
+
                 <p><b><span class='step-number'>3</span> Vertical Stacking:</b><br>
                 {"Lay a flat " + str(sep_z) + " mm divider sheet and repeat for <b>" + str(nz) + " layers</b>." if nz > 1 else "Single layer configuration. No tier sheets required."}</p>
-                
+
                 <div style='margin-top:14px; padding-top:10px; border-top:1px solid rgba(148, 163, 184, 0.2);'>
                     <b>Total Unit Load:</b> {viz_box['Total Weight (kg)']} kg
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            
+
         with col_plan:
             st_text_color = '#FFFFFF' if st.get_option('theme.base') == 'dark' else '#1e293b'
             fig, ax = plt.subplots(figsize=(6, 4), facecolor='none')
             ax.set_facecolor('none')
-            
+
             # Box boundary
             ax.add_patch(patches.Rectangle((0, 0), box_l, box_w, fill=False, edgecolor=st_text_color, linewidth=2))
-            
+
             # Clearance zones
             ax.add_patch(patches.Rectangle((0, 0), box_l, clear_side, fill=True, color='#94a3b8', alpha=0.2))
             ax.add_patch(patches.Rectangle((0, box_w - clear_side), box_l, clear_side, fill=True, color='#94a3b8', alpha=0.2))
             ax.add_patch(patches.Rectangle((0, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#94a3b8', alpha=0.2))
             ax.add_patch(patches.Rectangle((box_l - clear_side, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#94a3b8', alpha=0.2))
-            
+
             total_grid_w = nx * ox + (nx - 1) * sep_xy
             total_grid_h = ny * oy + (ny - 1) * sep_xy
             start_x = clear_side + ((box_l - 2 * clear_side) - total_grid_w) / 2
             start_y = clear_side + ((box_w - 2 * clear_side) - total_grid_h) / 2
-            
+
             for r in range(ny):
                 y_pos = start_y + r * (oy + sep_xy)
                 for c in range(nx):
                     x_pos = start_x + c * (ox + sep_xy)
                     ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#60a5fa', edgecolor='#2563eb', linewidth=1.2, alpha=0.85))
                     ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1},{r+1}", ha='center', va='center', fontsize=7, color='#ffffff', fontweight='bold')
-            
+
             ax.set_xlim(-20, box_l + 20)
             ax.set_ylim(-20, box_w + 20)
             ax.set_aspect('equal')
@@ -675,7 +675,7 @@ if results:
             plt.title(f"Floor Plan ({nx}×{ny} Grid)", fontsize=10, fontweight='bold', color=st_text_color)
             st.pyplot(fig)
             plt.close(fig)
-            
+
         with col_elev:
             fig3d = plt.figure(figsize=(4, 3.5), facecolor='none')
             ax3d = fig3d.add_subplot(111, projection='3d', facecolor='none')
@@ -684,7 +684,7 @@ if results:
             h_scale = 30
             z_aspect = max(30, nz * 15)
             ax3d.set_box_aspect((l_scale, w_scale, z_aspect))
-            
+
             for layer in range(nz):
                 z_start = layer * (h_scale + 5)
                 v = np.array([
@@ -698,7 +698,7 @@ if results:
                 poly = Poly3DCollection(faces, facecolors='#38bdf8', edgecolors='#0284c7', linewidths=1.2, alpha=0.7)
                 ax3d.add_collection3d(poly)
                 ax3d.text(-25, 10, z_start + h_scale/2, f"L{layer + 1}", color='#e11d48', fontweight='bold', fontsize=9)
-                
+
             ax3d.set_xlim(-30, l_scale + 10)
             ax3d.set_ylim(-10, w_scale + 10)
             ax3d.set_zlim(0, nz * (h_scale + 5) + 10)
@@ -714,32 +714,32 @@ if results:
     with tab_pallet:
         st.markdown("#### 🚛 Multi-Pallet Transport Layout Engine")
         st.caption("Standard height limit: **1000 mm** | Gross payload cap: **1000 kg** (including 23 kg pallet tare)")
-        
+
         PALLETS = {
             "EPAL 1 (Standard)": {"l": 1200, "w": 800, "tare": 23.0},
             "EPAL 2 (Industrial)": {"l": 1200, "w": 1000, "tare": 23.0}
         }
-        
+
         def calculate_pallet_stacking(pallet_l, pallet_w, ext_l, ext_w, ext_h, box_wt, pcs_box, pallet_tare=23.0, max_h=1000.0, max_wt=1000.0):
             nx_a, ny_a = int(pallet_l // ext_l), int(pallet_w // ext_w)
             layers_a = nx_a * ny_a
             nx_b, ny_b = int(pallet_l // ext_w), int(pallet_w // ext_l)
             layers_b = nx_b * ny_b
-            
+
             best_layer_qty = max(layers_a, layers_b)
             best_orient = "Lengthwise (L-parallel)" if layers_a >= layers_b else "Widthwise (W-parallel)"
             nx_best = nx_a if layers_a >= layers_b else nx_b
             ny_best = ny_a if layers_a >= layers_b else ny_b
-            
+
             nz = max(1, int(max_h // ext_h))
             total_boxes = best_layer_qty * nz
             total_weight = total_boxes * box_wt + pallet_tare
-            
+
             while total_weight > max_wt and nz > 1:
                 nz -= 1
                 total_boxes = best_layer_qty * nz
                 total_weight = total_boxes * box_wt + pallet_tare
-                
+
             total_pcs = total_boxes * pcs_box
             return total_boxes, nz, best_layer_qty, total_pcs, round(total_weight, 2), best_orient, nx_best, ny_best
 
@@ -747,29 +747,43 @@ if results:
         ranked_df_copy = ranked_df.copy()
         ranked_df_copy['Footprint Area'] = ranked_df_copy['Ext. Length [mm]'] * ranked_df_copy['Ext. Width [mm]']
         sorted_by_footprint = ranked_df_copy.sort_values(by='Footprint Area')
-        
+
         small_row = sorted_by_footprint.iloc[0]
         top1_row = ranked_df_copy.iloc[0]
         top2_row = ranked_df_copy.iloc[1] if len(ranked_df_copy) >= 2 else None
         top3_row = ranked_df_copy.iloc[2] if len(ranked_df_copy) >= 3 else None
-        
+
+        # Safe extraction of the Box ID / Specification column (Fixes KeyError)
+        small_name = small_row.get("Box ID / Specification", small_row.get("BoxSize", "Smallest Box"))
+        top1_name = top1_row.get("Box ID / Specification", top1_row.get("BoxSize", "Top 1 Best Box"))
+        top2_name = top2_row.get("Box ID / Specification", top2_row.get("BoxSize", "Top 2 Best Box")) if top2_row is not None else "N/A"
+        top3_name = top3_row.get("Box ID / Specification", top3_row.get("BoxSize", "Top 3 Best Box")) if top3_row is not None else "N/A"
+
         bt_s, _, _, pcs_s, wt_s, _, _, _ = calculate_pallet_stacking(1200, 800, small_row["Ext. Length [mm]"], small_row["Ext. Width [mm]"], small_row["Ext. Height [mm]"], small_row["Total Weight (kg)"], int(small_row["Number of Parts per Box"]))
         bt_1, _, _, pcs_1, wt_1, _, _, _ = calculate_pallet_stacking(1200, 800, top1_row["Ext. Length [mm]"], top1_row["Ext. Width [mm]"], top1_row["Ext. Height [mm]"], top1_row["Total Weight (kg)"], int(top1_row["Number of Parts per Box"]))
-        
-        bt_2, pcs_2, wt_2 = ("N/A", 0, "N/A") if top2_row is None else calculate_pallet_stacking(1200, 800, top2_row["Ext. Length [mm]"], top2_row["Ext. Width [mm]"], top2_row["Ext. Height [mm]"], top2_row["Total Weight (kg)"], int(top2_row["Number of Parts per Box"]))[:5:3] + (calculate_pallet_stacking(1200, 800, top2_row["Ext. Length [mm]"], top2_row["Ext. Width [mm]"], top2_row["Ext. Height [mm]"], top2_row["Total Weight (kg)"], int(top2_row["Number of Parts per Box"]))[4],)
-        
+
+        if top2_row is not None:
+            bt_2, _, _, pcs_2, wt_2, _, _, _ = calculate_pallet_stacking(1200, 800, top2_row["Ext. Length [mm]"], top2_row["Ext. Width [mm]"], top2_row["Ext. Height [mm]"], top2_row["Total Weight (kg)"], int(top2_row["Number of Parts per Box"]))
+        else:
+            bt_2, pcs_2, wt_2 = "N/A", 0, "N/A"
+
+        if top3_row is not None:
+            bt_3, _, _, pcs_3, wt_3, _, _, _ = calculate_pallet_stacking(1200, 800, top3_row["Ext. Length [mm]"], top3_row["Ext. Width [mm]"], top3_row["Ext. Height [mm]"], top3_row["Total Weight (kg)"], int(top3_row["Number of Parts per Box"]))
+        else:
+            bt_3, pcs_3, wt_3 = "N/A", 0, "N/A"
+
         st.markdown("""
             <div class='saas-card'>
                 <div class='saas-card-title'>⚖️ EPAL 1 Pallet Benchmark Comparison</div>
         """, unsafe_allow_html=True)
-        
+
         comp_df = pd.DataFrame([
-            {"Metric": "Box Specification", "Smallest Box": small_row['BoxSize'], "Top 1 Best Box": top1_row['BoxSize']},
-            {"Metric": "Parts / Box", "Smallest Box": f"{int(small_row['Number of Parts per Box'])} pcs", "Top 1 Best Box": f"{int(top1_row['Number of Parts per Box'])} pcs"},
-            {"Metric": "Boxes / EPAL 1", "Smallest Box": f"{bt_s} boxes", "Top 1 Best Box": f"{bt_1} boxes"},
-            {"Metric": "Total Yield / Pallet", "Smallest Box": f"{pcs_s} pcs", "Top 1 Best Box": f"{pcs_1} pcs"},
-            {"Metric": "Pallet Gross Weight", "Smallest Box": f"{wt_s} kg", "Top 1 Best Box": f"{wt_1} kg"},
-            {"Metric": "Pallet Packaging Cost", "Smallest Box": f"€ {(bt_s * small_row['Box Price (€)']) + 8:.2f}", "Top 1 Best Box": f"€ {(bt_1 * top1_row['Box Price (€)']) + 8:.2f}"}
+            {"Metric": "Box Specification", "Smallest Box (Top 10)": small_name, "Top 1 Best Box": top1_name, "Top 2 Best Box": top2_name, "Top 3 Best Box": top3_name},
+            {"Metric": "Parts / Box", "Smallest Box (Top 10)": f"{int(small_row['Number of Parts per Box'])} pcs", "Top 1 Best Box": f"{int(top1_row['Number of Parts per Box'])} pcs", "Top 2 Best Box": f"{int(top2_row['Number of Parts per Box'])} pcs" if top2_row is not None else "N/A", "Top 3 Best Box": f"{int(top3_row['Number of Parts per Box'])} pcs" if top3_row is not None else "N/A"},
+            {"Metric": "Boxes / EPAL 1", "Smallest Box (Top 10)": f"{bt_s} boxes", "Top 1 Best Box": f"{bt_1} boxes", "Top 2 Best Box": f"{bt_2} boxes" if top2_row is not None else "N/A", "Top 3 Best Box": f"{bt_3} boxes" if top3_row is not None else "N/A"},
+            {"Metric": "Total Yield / Pallet", "Smallest Box (Top 10)": f"{pcs_s} pcs", "Top 1 Best Box": f"{pcs_1} pcs", "Top 2 Best Box": f"{pcs_2} pcs" if top2_row is not None else "N/A", "Top 3 Best Box": f"{pcs_3} pcs" if top3_row is not None else "N/A"},
+            {"Metric": "Pallet Gross Weight", "Smallest Box (Top 10)": f"{wt_s} kg", "Top 1 Best Box": f"{wt_1} kg", "Top 2 Best Box": f"{wt_2} kg" if top2_row is not None else "N/A", "Top 3 Best Box": f"{wt_3} kg" if top3_row is not None else "N/A"},
+            {"Metric": "Pallet Packaging Cost", "Smallest Box (Top 10)": f"€ {(bt_s * small_row['Box Price (€)']) + 8:.2f}", "Top 1 Best Box": f"€ {(bt_1 * top1_row['Box Price (€)']) + 8:.2f}", "Top 2 Best Box": f"€ {(bt_2 * top2_row['Box Price (€)']) + 8:.2f}" if top2_row is not None else "N/A", "Top 3 Best Box": f"€ {(bt_3 * top3_row['Box Price (€)']) + 8:.2f}" if top3_row is not None else "N/A"}
         ])
         st.table(comp_df.set_index("Metric"))
         st.markdown("</div>", unsafe_allow_html=True)
@@ -780,7 +794,7 @@ if results:
     with tab_compression:
         st.markdown("#### 🗜️ Corrugated McKee Box Compression Test (BCT)")
         st.caption("Verifies whether bottom boxes can withstand vertical static loading under environmental degradation factors.")
-        
+
         col_stk_opt, col_box_chk = st.columns(2)
         with col_stk_opt:
             stack_style = st.selectbox(
@@ -789,9 +803,9 @@ if results:
             )
         with col_box_chk:
             selected_box_t3 = st.selectbox("Inspect Box Specification:", options=available_boxes, key="box_t3_select")
-            
+
         viz_box_t3 = ranked_df[ranked_df["Box ID / Specification"] == selected_box_t3].iloc[0]
-        
+
         # Environmental sliders / selections
         c_env1, c_env2, c_env3 = st.columns(3)
         with c_env1:
@@ -800,42 +814,42 @@ if results:
             spread_sel = st.selectbox("Load Spread:", ["Even", "Uneven", "Center", "Corner"], index=0)
         with c_env3:
             storage_sel = st.selectbox("Storage Duration:", ["Short (days)", "Medium (weeks)", "Long (months)"], index=1)
-            
+
         f_moisture = {"Dry": 1.0, "Normal": 1.1, "Humid": 1.3, "Wet": 1.6}[moisture_sel]
         f_spread = {"Even": 1.0, "Uneven": 1.2, "Center": 1.35, "Corner": 1.5}[spread_sel]
         f_storage = {"Short (days)": 1.0, "Medium (weeks)": 1.25, "Long (months)": 1.5}[storage_sel]
-        
+
         QUALITY_PROPERTIES = {
             "1.20B": {"ect": 3.0, "thickness": 3.0, "name": "Single Wall - B Flute"},
             "1.20C": {"ect": 3.8, "thickness": 4.0, "name": "Single Wall - C Flute"},
             "2.30EB": {"ect": 5.5, "thickness": 4.5, "name": "Double Wall - EB Flute"},
             "2.30BC": {"ect": 7.5, "thickness": 6.5, "name": "Double Wall - BC Flute"}
         }
-        
+
         q_class = str(viz_box_t3["Quality Class"]).strip()
         props = QUALITY_PROPERTIES.get(q_class, {"ect": 4.0, "thickness": 3.5, "name": "Custom Grade"})
-        
+
         box_perimeter = 2 * (viz_box_t3["Int. Length [mm]"] + viz_box_t3["Int. Width [mm]"])
         bct_n = 1.82 * props["ect"] * np.sqrt(props["thickness"] * box_perimeter)
         bct_kg = round(bct_n / 9.81, 1)
         sf = round(1.5 * f_moisture * f_spread * f_storage, 2)
         safe_capacity = round(bct_kg / sf, 1)
-        
+
         _, z_layers_c, best_l_c, _, p_wt_c, _, _, _ = calculate_pallet_stacking(
             1200, 800, viz_box_t3["Ext. Length [mm]"], viz_box_t3["Ext. Width [mm]"], 
             viz_box_t3["Ext. Height [mm]"], viz_box_t3["Total Weight (kg)"], int(viz_box_t3["Number of Parts per Box"])
         )
-        
+
         actual_load = round(max(0, z_layers_c - 1) * viz_box_t3["Total Weight (kg)"], 1)
         if stack_style == "Double-Stacked Pallets (Pallet-on-Pallet)":
             actual_load += round(p_wt_c / max(1, best_l_c), 1)
-            
+
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Theoretical BCT", f"{bct_kg} kg")
         m2.metric("Safety Factor", f"{sf}x")
         m3.metric("Safe Design Capacity", f"{safe_capacity} kg")
         m4.metric("Actual Bottom Load", f"{actual_load} kg")
-        
+
         if actual_load <= safe_capacity:
             st.markdown(f"""
                 <div style='background-color:rgba(34, 197, 94, 0.12); border-left:4px solid #16a34a; padding:16px; border-radius:10px; margin-top:14px;'>
