@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -858,4 +857,3 @@ if results:
 
 else:
     st.warning("⚠️ No suitable boxes found in database matching active specifications.")
-```
