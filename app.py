@@ -731,7 +731,6 @@ if results:
                             hoverinfo='skip'
                         ))
                 
-                # 🟢 FIXED: Plots the actual CAD mesh faces (`raw_f`) instead of using hardcoded box indices (0-7)
                 def add_plotly_mesh_part(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz, raw_v, raw_f, text_str):
                     min_v = np.min(raw_v, axis=0)
                     max_v = np.max(raw_v, axis=0)
@@ -919,7 +918,7 @@ if results:
             # Determine the ultimate yield winner
             pcs_vals = [pcs_s, pcs_1, pcs_2, pcs_3]
             labels_map = {
-                pcs_s: (small_name, "Smallest Box (Top 10)"),
+                pcs_s: (small_name, "Smallest Footprint Box"),
                 pcs_1: (top1_name, "Top 1 Best Box"),
                 pcs_2: (top2_name, "Top 2 Best Box"),
                 pcs_3: (top3_name, "Top 3 Best Box")
@@ -1153,14 +1152,29 @@ if results:
         st.subheader("🗜️ Corrugated Cardboard McKee Compression Strength Checker")
         st.markdown("Validate if the bottom cardboard box can handle the heavy vertical static loads from the stack above on a 1-meter pallet layout.")
         
-        # --- REQ 1: STACKING METHODOLOGY SELECTOR ---
+        # --- REQ: STACKING METHODOLOGY SELECTOR & BOX SELECTOR ---
         st.markdown("#### ⚙️ Stacking Setup")
-        stack_style = st.selectbox(
-            "Select Pallet Stacking Configuration:",
-            ["Single Pallet Load", "Double-Stacked Pallets (Pallet-on-Pallet)"],
-            help="Single Pallet checks local column load. Double Stacking adds the entire gross weight of the top pallet onto the bottom boxes."
-        )
+        col_setup_1, col_setup_2 = st.columns(2)
         
+        with col_setup_1:
+            stack_style = st.selectbox(
+                "Select Pallet Stacking Configuration:",
+                ["Single Pallet Load", "Double-Stacked Pallets (Pallet-on-Pallet)"],
+                help="Single Pallet checks local column load. Double Stacking adds the entire gross weight of the top pallet onto the bottom boxes."
+            )
+            
+        with col_setup_2:
+            # 🟢 NEW INTERACTIVE BOX SELECTOR IN TAB 3
+            selected_box_t3 = st.selectbox(
+                "Select Box Type to inspect compression strength:",
+                options=available_boxes,
+                index=available_boxes.index(st.session_state["selected_box"]),
+                key="compression_box_selector"
+            )
+            
+        st.session_state["selected_box"] = selected_box_t3
+        viz_box_t3 = ranked_df[ranked_df["Box ID / Specification"] == selected_box_t3].iloc[0]
+
         # 🪵 Load, Environment & Logistics Parameters
         st.markdown("#### 🪵 3. Load, Environment & Logistics Parameters")
         col_moisture, col_spread, col_fragility = st.columns(3)
@@ -1191,61 +1205,67 @@ if results:
             "2.30BC": {"ect": 7.5, "thickness": 6.5, "name": "Double Wall - BC Flute"}
         }
         
-        q_class = str(viz_box["Quality Class"]).strip()
-        props = QUALITY_PROPERTIES.get(q_class, {"ect": 4.0, "thickness": 3.5, "name": "Custom / Unknown Grade"})
+        q_class_t3 = str(viz_box_t3["Quality Class"]).strip()
+        props_t3 = QUALITY_PROPERTIES.get(q_class_t3, {"ect": 4.0, "thickness": 3.5, "name": "Custom / Unknown Grade"})
         
-        ect_val = props["ect"]
-        thickness_val = props["thickness"]
-        q_name = props["name"]
+        ect_val_t3 = props_t3["ect"]
+        thickness_val_t3 = props_t3["thickness"]
+        q_name_t3 = props_t3["name"]
         
-        box_perimeter = 2 * (viz_box["Int. Length [mm]"] + viz_box["Int. Width [mm]"])
-        bct_n = 5.876 * ect_val * np.sqrt(thickness_val * box_perimeter)
-        bct_kg = round(bct_n / 9.81, 1) 
+        box_perimeter_t3 = 2 * (viz_box_t3["Int. Length [mm]"] + viz_box_t3["Int. Width [mm]"])
+        bct_n_t3 = 5.876 * ect_val_t3 * np.sqrt(thickness_val_t3 * box_perimeter_t3)
+        bct_kg_t3 = round(bct_n_t3 / 9.81, 1) 
         
         # Calculate dynamic Combined Safety Factor (Base multiplier is 1.5)
-        sf = round(1.5 * f_moisture * f_spread * f_fragility * f_storage * f_transport, 2)
-        bct_safe_load = round(bct_kg / sf, 1)
+        sf_t3 = round(1.5 * f_moisture * f_spread * f_fragility * f_storage * f_transport, 2)
+        bct_safe_load_t3 = round(bct_kg_t3 / sf_t3, 1)
         
-        # Calculate actual static weight on bottom box
-        _, z_layers_calc, best_layer_qty, _, p_wt_calc, _, _, _ = calculate_pallet_stacking(1200, 800, bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx)
-        boxes_above = max(0, z_layers_calc - 1)
+        # Calculate actual static weight on bottom box using the selected box dimensions
+        bx_ext_l_t3 = viz_box_t3["Ext. Length [mm]"]
+        bx_ext_w_t3 = viz_box_t3["Ext. Width [mm]"]
+        bx_ext_h_t3 = viz_box_t3["Ext. Height [mm]"]
+        bx_wt_t3 = viz_box_t3["Total Weight (kg)"]
+        pcs_per_bx_t3 = int(viz_box_t3["Number of Parts per Box"])
+        
+        _, z_layers_calc_t3, best_layer_qty_t3, _, p_wt_calc_t3, _, _, _ = calculate_pallet_stacking(1200, 800, bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, bx_wt_t3, pcs_per_bx_t3)
+        boxes_above_t3 = max(0, z_layers_calc_t3 - 1)
         
         # Base load from boxes directly above in the stack
-        actual_bottom_load = round(boxes_above * bx_wt, 1)
+        actual_bottom_load_t3 = round(boxes_above_t3 * bx_wt_t3, 1)
         
         # If Double Stacked is toggled, add top pallet gross load spread evenly over bottom pallet surface columns
         if stack_style == "Double-Stacked Pallets (Pallet-on-Pallet)":
-            top_pallet_weight_contribution = round(p_wt_calc / max(1, best_layer_qty), 1)
-            actual_bottom_load = round(actual_bottom_load + top_pallet_weight_contribution, 1)
+            top_pallet_weight_contribution_t3 = round(p_wt_calc_t3 / max(1, best_layer_qty_t3), 1)
+            actual_bottom_load_t3 = round(actual_bottom_load_t3 + top_pallet_weight_contribution_t3, 1)
         
         col_comp_kpis = st.columns(4)
         with col_comp_kpis[0]:
-            st.metric("💪 Theoretical Box BCT Strength", f"{bct_kg} kg", help="Ultimate crushing force of a single box.")
+            st.metric("💪 Theoretical Box BCT Strength", f"{bct_kg_t3} kg", help="Ultimate crushing force of a single box.")
         with col_comp_kpis[1]:
-            st.metric("🛡️ Combined Safety Factor (SF)", f"{sf}x", help="Dynamic stacking margin calculated based on climate, storage, and handling conditions.")
+            st.metric("🛡️ Combined Safety Factor (SF)", f"{sf_t3}x", help="Dynamic stacking margin calculated based on climate, storage, and handling conditions.")
         with col_comp_kpis[2]:
-            st.metric("🔒 Safe Design Capacity", f"{bct_safe_load} kg", help=f"Maximum allowed load applying a {sf}x safety threshold.")
+            st.metric("🔒 Safe Design Capacity", f"{bct_safe_load_t3} kg", help=f"Maximum allowed load applying a {sf_t3}x safety threshold.")
         with col_comp_kpis[3]:
-            st.metric("🏋️ Actual Load on Bottom Box", f"{actual_bottom_load} kg", help="Total static weight supported by the lowest box on the stack.")
+            st.metric("🏋️ Actual Load on Bottom Box", f"{actual_bottom_load_t3} kg", help="Total static weight supported by the lowest box on the stack.")
             
         st.markdown("#### 🔍 Structural Safety Verdict:")
-        if actual_bottom_load == 0:
+        if actual_bottom_load_t3 == 0:
             st.markdown(f"""
             <div class='success-box'>
                 <b>🟢 Safe (Single Layer Stack):</b> There are no other layers stacked above this box on the pallet. Compression failure is mathematically impossible.
             </div>
             """, unsafe_allow_html=True)
-        elif actual_bottom_load <= bct_safe_load:
+        elif actual_bottom_load_t3 <= bct_safe_load_t3:
             st.markdown(f"""
             <div class='success-box'>
-                <b>🟢 Safe Stacking Approved:</b> The actual load of <b>{actual_bottom_load} kg</b> is within the safe limit of <b>{bct_safe_load} kg</b>. 
-                Cardboard quality class <b>{q_class} ({q_name})</b> is structurally sufficient for the bottom layers of this stack under current environment variables!
+                <b>🟢 Safe Stacking Approved:</b> The actual load of <b>{actual_bottom_load_t3} kg</b> is within the safe limit of <b>{bct_safe_load_t3} kg</b>. 
+                Cardboard quality class <b>{q_class_t3} ({q_name_t3})</b> is structurally sufficient for the bottom layers of this stack under current environment variables!
             </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown(f"""
             <div class='danger-box'>
-                <b>🚨 Warning - Structural Failure Risk:</b> The actual load of <b>{actual_bottom_load} kg</b> exceeds the safe stacked design capacity of <b>{bct_safe_load} kg</b> under these environmental conditions!<br>
+                <b>🚨 Warning - Structural Failure Risk:</b> The actual load of <b>{actual_bottom_load_t3} kg</b> exceeds the safe stacked design capacity of <b>{bct_safe_load_t3} kg</b> under these environmental conditions!<br>
                 <b>Recommendation:</b><br>
                 1\. Upgrade the cardboard to a stronger grade (e.g., <b>2.30BC Double-Wall</b>).<br>
                 2\. Decrease the stacking height on the pallet (reduce the number of layers).<br>
@@ -1260,9 +1280,9 @@ if results:
             The Box Compression Test value is calculated using:<br>
             $$\text{{BCT}} = 5.876 \times \text{{ECT}} \times \sqrt{{t \times P}}$$
             <ul>
-                <li><b>ECT (Edge Crush Test):</b> Standardized strength. For Quality <b>{q_class}</b>, ECT is <b>{ect_val} N/mm</b>.</li>
-                <li><b>t (Thickness):</b> Cardboard thickness. For Quality <b>{q_class}</b>, thickness is <b>{thickness_val} mm</b>.</li>
-                <li><b>P (Perimeter):</b> Measured boundary. For this box, perimeter is <b>{int(box_perimeter)} mm</b>.</li>
+                <li><b>ECT (Edge Crush Test):</b> Standardized strength. For Quality <b>{q_class_t3}</b>, ECT is <b>{ect_val_t3} N/mm</b>.</li>
+                <li><b>t (Thickness):</b> Cardboard thickness. For Quality <b>{q_class_t3}</b>, thickness is <b>{thickness_val_t3} mm</b>.</li>
+                <li><b>P (Perimeter):</b> Measured boundary. For this box, perimeter is <b>{int(box_perimeter_t3)} mm</b>.</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
