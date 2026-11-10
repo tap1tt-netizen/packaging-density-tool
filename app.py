@@ -111,15 +111,6 @@ st.markdown("""
         color: var(--text-color);
     }
 
-    /* Filter Bar Container */
-    .filter-panel {
-        background-color: var(--background-color);
-        padding: 14px 18px;
-        border-radius: 10px;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        margin-bottom: 14px;
-    }
-
     /* Tab navigation polish */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
@@ -302,7 +293,7 @@ orientation_rule = st.sidebar.selectbox(
     ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"]
 )
 
-sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Volumetric Efficiency (%)", "Number of Parts per Box", "Box Price (€)"])
+sort_criteria = st.sidebar.selectbox("Rank Box Options By:", ["Ergonomic Color Tier", "Volumetric Efficiency (%)", "Number of Parts per Box", "Box Price (€)"])
 
 if not material_selected:
     st.markdown("""
@@ -413,13 +404,6 @@ for idx, row in df_inventory.iterrows():
     total_payload_wt = parts_count * prod_wt
     total_package_weight = total_payload_wt + box_weight
 
-    # Weight threshold check against User Input Limit (default 13 kg)
-    dims_footprint = sorted([ext_l, ext_w])
-    is_manual_box = (dims_footprint[0] <= 300.0) and (dims_footprint[1] <= 400.0)
-
-    if is_manual_box and total_package_weight > max_box_weight_limit:
-        continue
-
     # Structural Box Load check
     if total_payload_wt > row['Max. Load [kg]']:
         continue
@@ -430,46 +414,45 @@ for idx, row in df_inventory.iterrows():
     vol_efficiency = (occupied_volume / box_internal_vol) * 100
     air_space_percent = 100.0 - vol_efficiency
 
-    # Ergonomic 3-Tier Weight Hierarchy Classification:
-    # 🟢 Green (Light): <= 60% of limit
-    # 🟠 Orange (Moderate): 60% - 90% of limit
-    # 🔴 Light Red (Heavy): > 90% of limit
-    weight_pct = (total_package_weight / max_box_weight_limit) * 100.0
-    if weight_pct <= 60.0:
-        weight_tier = "🟢 Light (≤60%)"
+    # ERGONOMIC COLOR HIERARCHY (EXACT SPECIFICATION):
+    # 🟢 1st: Green (< 13.0 kg - Light / Optimal Directive Standard)
+    # 🟠 2nd: Orange (13.0 kg - 17.0 kg - Moderate / A bit more weight)
+    # 🔴 3rd: Red (> 17.0 kg - Heavy / Forklift Required)
+    if total_package_weight < 13.0:
+        weight_tier = "🟢 1. Green (<13 kg)"
         tier_rank = 1
-    elif weight_pct <= 90.0:
-        weight_tier = "🟠 Moderate (60%-90%)"
+    elif total_package_weight <= 17.0:
+        weight_tier = "🟠 2. Orange (13-17 kg)"
         tier_rank = 2
     else:
-        weight_tier = "🔴 Heavy (>90%)"
+        weight_tier = "🔴 3. Red (>17 kg)"
         tier_rank = 3
 
     q_class = str(row['Quality']).strip()
     box_spec_label = f"{row['BoxSize']} [{q_class}]"
 
     results.append({
+        "Weight Status": weight_tier,
         "Box ID / Specification": box_spec_label,
         "Raw Box ID": row['BoxSize'],
         "Box Footprint (Ext)": f"{int(ext_l)}x{int(ext_w)} mm",
         "Quality Class": q_class,
+        "Total Weight (kg)": round(total_package_weight, 2),
+        "Number of Parts per Box": parts_count,
         "Internal Dimensions": f"{int(box_int_l)}x{int(box_int_w)}x{int(box_int_h)} mm",
+        "Ext. Height [mm]": ext_h,
+        "Max Geometric Fit": raw_max_qty,
+        "Optimal Grid Layout": f"{grid_layout[0]}x{grid_layout[1]}x{grid_layout[2]} (X x Y x Z)",
+        "Optimal Orientation": f"{int(pack_orient[0])}x{int(pack_orient[1])}x{int(pack_orient[2])} mm",
+        "Volumetric Efficiency (%)": round(vol_efficiency, 2),
+        "Remaining Air Space (%)": round(air_space_percent, 1),
+        "Box Price (€)": row['Box Price (€)'],
+        "Tier Rank": tier_rank,
         "Int. Length [mm]": box_int_l,
         "Int. Width [mm]": box_int_w,
         "Int. Height [mm]": box_int_h,
         "Ext. Length [mm]": ext_l,
         "Ext. Width [mm]": ext_w,
-        "Ext. Height [mm]": ext_h,
-        "Number of Parts per Box": parts_count,
-        "Max Geometric Fit": raw_max_qty,
-        "Optimal Grid Layout": f"{grid_layout[0]}x{grid_layout[1]}x{grid_layout[2]} (X x Y x Z)",
-        "Optimal Orientation": f"{int(pack_orient[0])}x{int(pack_orient[1])}x{int(pack_orient[2])} mm",
-        "Total Weight (kg)": round(total_package_weight, 2),
-        "Weight Classification": weight_tier,
-        "Tier Rank": tier_rank,
-        "Remaining Air Space (%)": round(air_space_percent, 1),
-        "Box Price (€)": row['Box Price (€)'],
-        "Volumetric Efficiency (%)": round(vol_efficiency, 2),
         "_nx": grid_layout[0],
         "_ny": grid_layout[1],
         "_nz": grid_layout[2],
@@ -484,16 +467,19 @@ for idx, row in df_inventory.iterrows():
 if results:
     res_df = pd.DataFrame(results)
 
-    # Base Ranking Logic
-    if sort_criteria == "Volumetric Efficiency (%)":
-        sort_by_cols = ["Volumetric Efficiency (%)", "Box Price (€)", "Total Weight (kg)"]
+    # Ranking Logic enforcing Green -> Orange -> Red hierarchy as primary sort
+    if sort_criteria == "Ergonomic Color Tier":
+        sort_by_cols = ["Tier Rank", "Volumetric Efficiency (%)", "Box Price (€)"]
+        ascending_rules = [True, False, True]
+    elif sort_criteria == "Volumetric Efficiency (%)":
+        sort_by_cols = ["Volumetric Efficiency (%)", "Tier Rank", "Box Price (€)"]
         ascending_rules = [False, True, True]
     elif sort_criteria == "Number of Parts per Box":
-        sort_by_cols = ["Number of Parts per Box", "Box Price (€)", "Total Weight (kg)"]
+        sort_by_cols = ["Number of Parts per Box", "Tier Rank", "Box Price (€)"]
         ascending_rules = [False, True, True]
     else:
-        sort_by_cols = ["Box Price (€)", "Number of Parts per Box", "Total Weight (kg)"]
-        ascending_rules = [True, False, True]
+        sort_by_cols = ["Box Price (€)", "Tier Rank", "Number of Parts per Box"]
+        ascending_rules = [True, True, False]
 
     sorted_df = res_df.sort_values(by=sort_by_cols, ascending=ascending_rules).reset_index(drop=True)
     best_box = sorted_df.iloc[0]
@@ -543,29 +529,28 @@ if results:
         dims_footprint = sorted([ext_l, ext_w])
         is_manual_box = (dims_footprint[0] <= 300.0) and (dims_footprint[1] <= 400.0)
 
-        if total_package_weight > max_box_weight_limit:
-            if not is_manual_box:
-                st.markdown(f"""
-                    <div style='background-color:rgba(224, 49, 49, 0.15); border-left:5px solid #e03131; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
-                        <b style='color:#e03131; font-size:16px;'>🚨 Forklift Transport Required</b><br>
-                        <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>{total_package_weight} kg (Bypasses manual limit)</span><br>
-                        <span style='font-size:11px;'>Box footprint <b>{int(ext_l)}x{int(ext_w)} mm</b> exceeds manual threshold. Weight &gt; {max_box_weight_limit} kg is <b>permitted</b>.</span>
-                    </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                    <div style='background-color:rgba(224, 49, 49, 0.15); border-left:5px solid #e03131; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
-                        <b style='color:#e03131; font-size:16px;'>🚨 Overweight Manual Box</b><br>
-                        <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>{total_package_weight} kg (Exceeds {max_box_weight_limit} kg limit)</span><br>
-                        <span style='font-size:11px;'>Box footprint <b>{int(ext_l)}x{int(ext_w)} mm</b> is within manual threshold. Prohibited for manual operator packing!</span>
-                    </div>
-                """, unsafe_allow_html=True)
+        if total_package_weight > 17.0:
+            st.markdown(f"""
+                <div style='background-color:rgba(239, 68, 68, 0.15); border-left:5px solid #ef4444; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
+                    <b style='color:#ef4444; font-size:16px;'>🚨 3. Heavy Load (&gt;17 kg)</b><br>
+                    <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>{total_package_weight} kg (Forklift Required)</span><br>
+                    <span style='font-size:11px;'>Exceeds ergonomic manual limit. Permitted only with mechanical lift aids.</span>
+                </div>
+            """, unsafe_allow_html=True)
+        elif total_package_weight >= 13.0:
+            st.markdown(f"""
+                <div style='background-color:rgba(245, 159, 0, 0.15); border-left:5px solid #f59f00; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
+                    <b style='color:#f59f00; font-size:16px;'>🟠 2. Moderate Weight (13-17 kg)</b><br>
+                    <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>{total_package_weight} kg (Elevated Weight)</span><br>
+                    <span style='font-size:11px;'>Slightly above standard 13 kg manual directive. Two-person lift recommended.</span>
+                </div>
+            """, unsafe_allow_html=True)
         else:
             st.markdown(f"""
-                <div style='background-color:rgba(43, 138, 62, 0.15); border-left:5px solid #2b8a3e; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
-                    <b style='color:#2b8a3e; font-size:16px;'>🟢 Safe Operational Weight</b><br>
+                <div style='background-color:rgba(34, 197, 94, 0.15); border-left:5px solid #22c55e; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
+                    <b style='color:#22c55e; font-size:16px;'>🟢 1. Light / Safe Weight (&lt;13 kg)</b><br>
                     <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>Safe at {total_package_weight} kg</span><br>
-                    <span style='font-size:11px;'>Box footprint <b>{int(ext_l)}x{int(ext_w)} mm</b> conforms to packaging directive (&lt;{max_box_weight_limit} kg). Approved for Manual Handling.</span>
+                    <span style='font-size:11px;'>Conforms strictly to Packaging Directive (&lt;13 kg). Single-operator manual safe.</span>
                 </div>
             """, unsafe_allow_html=True)
 
@@ -604,45 +589,16 @@ if results:
     # TAB 1: BOX RECOMMENDER & INDIVIDUAL LOADING
     # ==========================================================================
     with tab_recommender:
-        # 1. EXCEL-LIKE INTERACTIVE FILTER ROW
         st.subheader("🏆 Recommended Cardboard Boxes")
         st.markdown("""
-            **Ergonomic Color Hierarchy:** 
-            🟢 **Light (≤60% weight)** &nbsp;|&nbsp; 
-            🟠 **Moderate (60%-90% weight)** &nbsp;|&nbsp; 
-            🔴 **Heavy (>90% weight)**
+            **Color Hierarchy based on Weight:** &nbsp;
+            🟢 **1st: Green (< 13.0 kg)** &nbsp;|&nbsp; 
+            🟠 **2nd: Orange (13.0 - 17.0 kg)** &nbsp;|&nbsp; 
+            🔴 **3rd: Red (> 17.0 kg)**
         """)
 
-        with st.expander("🔍 Filter & Search Table Options (Excel-like Filtering)", expanded=False):
-            col_f1, col_f2, col_f3, col_f4 = st.columns(4)
-            with col_f1:
-                all_flutes_list = sorted(list(sorted_df["Quality Class"].dropna().unique()))
-                filter_flutes = st.multiselect("Filter Flute Grade:", options=all_flutes_list, default=all_flutes_list)
-            with col_f2:
-                all_tiers = ["🟢 Light (≤60%)", "🟠 Moderate (60%-90%)", "🔴 Heavy (>90%)"]
-                filter_tiers = st.multiselect("Filter Weight Tier:", options=all_tiers, default=all_tiers)
-            with col_f3:
-                all_fps = sorted(list(sorted_df["Box Footprint (Ext)"].dropna().unique()))
-                filter_footprints = st.multiselect("Filter Footprint:", options=all_fps, default=all_fps)
-            with col_f4:
-                search_query = st.text_input("Search Box Name:", placeholder="e.g. 600x400")
-
-        # Apply In-Table Filters
-        working_df = sorted_df.copy()
-        if filter_flutes:
-            working_df = working_df[working_df["Quality Class"].isin(filter_flutes)]
-        if filter_tiers:
-            working_df = working_df[working_df["Weight Classification"].isin(filter_tiers)]
-        if filter_footprints:
-            working_df = working_df[working_df["Box Footprint (Ext)"].isin(filter_footprints)]
-        if search_query:
-            working_df = working_df[working_df["Box ID / Specification"].str.contains(search_query, case=False, na=False)]
-
-        if working_df.empty:
-            st.warning("No boxes match the applied table filters. Please broaden your selection.")
-            st.stop()
-
-        display_df = working_df.drop(columns=[
+        # Clean display table with full built-in interactive column filters
+        display_df = sorted_df.drop(columns=[
             "_nx", "_ny", "_nz", "_ox", "_oy", "_oz", 
             "Raw Box ID", "Int. Length [mm]", "Int. Width [mm]", "Int. Height [mm]", 
             "Ext. Length [mm]", "Ext. Width [mm]", "Tier Rank"
@@ -651,7 +607,7 @@ if results:
 
         col_header_sub, col_export_hub = st.columns([7, 3])
         with col_header_sub:
-            st.caption(f"Showing **{len(display_df)}** qualified boxes matching your criteria.")
+            st.caption(f"Showing **{len(display_df)}** qualified boxes. Use the column headers below to sort, filter, or pin.")
 
         with col_export_hub:
             export_format = st.selectbox(
@@ -684,25 +640,39 @@ if results:
                     use_container_width=True
                 )
 
-        # Crisp High-Contrast Table Styling (High contrast text, soft tinted badge highlights)
-        def highlight_weight_tier_clean(row):
-            tier = str(row["Weight Classification"])
-            if "Light" in tier or "🟢" in tier:
-                bg = "background-color: rgba(34, 197, 94, 0.12);"
-            elif "Moderate" in tier or "🟠" in tier:
-                bg = "background-color: rgba(245, 159, 0, 0.12);"
+        # High-Contrast Row Styling strictly matching the 3 color tiers
+        def highlight_exact_weight_hierarchy(row):
+            wt = float(row["Total Weight (kg)"])
+            if wt < 13.0:
+                bg = "background-color: rgba(34, 197, 94, 0.16);"   # 1st Green
+            elif wt <= 17.0:
+                bg = "background-color: rgba(245, 159, 0, 0.16);"   # 2nd Orange
             else:
-                bg = "background-color: rgba(239, 68, 68, 0.12);"
+                bg = "background-color: rgba(239, 68, 68, 0.16);"   # 3rd Red
             return [f"{bg} color: var(--text-color); font-weight: 500;"] * len(row)
 
-        styled_df = display_df.style.apply(highlight_weight_tier_clean, axis=1).format({
+        styled_df = display_df.style.apply(highlight_exact_weight_hierarchy, axis=1).format({
             "Box Price (€)": "€ {:.2f}",
             "Volumetric Efficiency (%)": "{:.2f}%",
             "Remaining Air Space (%)": "{:.1f}%",
             "Total Weight (kg)": "{:.2f} kg"
         })
 
-        st.dataframe(styled_df, use_container_width=True)
+        # Native Streamlit Dataframe with Excel-like column sorting, filtering, and search enabled
+        st.dataframe(
+            styled_df, 
+            use_container_width=True,
+            column_config={
+                "Weight Status": st.column_config.TextColumn("Weight Status", width="medium"),
+                "Volumetric Efficiency (%)": st.column_config.ProgressColumn(
+                    "Volumetric Efficiency (%)",
+                    format="%.2f%%",
+                    min_value=0,
+                    max_value=100
+                ),
+                "Box Price (€)": st.column_config.NumberColumn("Box Price (€)", format="€ %.2f")
+            }
+        )
 
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
@@ -732,7 +702,6 @@ if results:
         max_possible_parts = int(viz_box["Max Geometric Fit"])
         default_packed_parts = int(viz_box["Number of Parts per Box"])
 
-        # Retain fine-tuned quantity across session state
         qty_state_key = f"manual_qty_{st.session_state['global_selected_box']}"
         if qty_state_key not in st.session_state:
             st.session_state[qty_state_key] = default_packed_parts
@@ -813,20 +782,16 @@ if results:
                     <br>Seal the box and apply the mandatory single box label!
                     """, unsafe_allow_html=True)
 
-                dims_footprint_sel = sorted([ext_l, ext_w])
-                is_manual_box_sel = (dims_footprint_sel[0] <= 300.0) and (dims_footprint_sel[1] <= 400.0)
-
-                if override_weight > max_box_weight_limit:
-                    if not is_manual_box_sel:
-                        st.markdown(f"<p style='color:#2b8a3e; font-weight:bold; margin-top:10px;'>🟢 Operational Weight: {override_weight} kg (Permitted: Box footprint {int(ext_l)}x{int(ext_w)} mm exceeds manual threshold)</p>", unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"<p style='color:#e03131; font-weight:bold; margin-top:10px;'>🚨 Operational Weight: {override_weight} kg (Overweight manual packing error! Exceeds {max_box_weight_limit} kg directive)</p>", unsafe_allow_html=True)
+                if override_weight > 17.0:
+                    st.markdown(f"<p style='color:#ef4444; font-weight:bold; margin-top:10px;'>🔴 Operational Weight: {override_weight} kg (Heavy Load - Forklift Required)</p>", unsafe_allow_html=True)
+                elif override_weight >= 13.0:
+                    st.markdown(f"<p style='color:#f59f00; font-weight:bold; margin-top:10px;'>🟠 Operational Weight: {override_weight} kg (Moderate Load - Manual Handling Caution)</p>", unsafe_allow_html=True)
                 else:
-                    st.markdown(f"<p style='color:#2b8a3e; font-weight:bold; margin-top:10px;'>🟢 Operational Weight: Safe at {override_weight} kg (Conforms to &lt;{max_box_weight_limit} kg limit)</p>", unsafe_allow_html=True)
+                    st.markdown(f"<p style='color:#22c55e; font-weight:bold; margin-top:10px;'>🟢 Operational Weight: Safe at {override_weight} kg (Conforms to &lt;13.0 kg limit)</p>", unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with col_flat:
-                # DYNAMIC 2D FLOOR GRID PLAN: Reflects manual quantity fine-tuning!
+                # DYNAMIC 2D FLOOR GRID PLAN (Crash-proof color definitions)
                 st_text_color = '#FFFFFF' if st.get_option('theme.base') == 'dark' else '#212529'
                 fig, ax = plt.subplots(figsize=(6, 4), facecolor='none')
                 ax.set_facecolor('none')
@@ -845,8 +810,6 @@ if results:
                 start_x_offset = clear_side + (leftover_x / 2)
                 start_y_offset = clear_side + (leftover_y / 2)
 
-                # Visual tracking of active vs empty slots based on active_quantity
-                # Parts fill bottom-up: layer 1 takes min(active_quantity, nx*ny)
                 layer1_filled = min(active_quantity, nx * ny)
 
                 slot_counter = 0
@@ -856,13 +819,13 @@ if results:
                         x_pos = start_x_offset + c * (ox + sep_xy)
                         slot_counter += 1
                         if slot_counter <= layer1_filled:
-                            # Populated compartment
+                            # Active populated compartment
                             ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#a5d8ff', edgecolor='#1971c2', linewidth=1.2))
                             ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1}, {r+1}", ha='center', va='center', fontsize=8, color='#0f4c81', fontweight='bold')
                         else:
-                            # Empty / Unfilled compartment due to operator reduction
-                            ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='rgba(200,200,200,0.15)', edgecolor='#94a3b8', linewidth=1.0, linestyle='--'))
-                            ax.text(x_pos + ox/2, y_pos + oy/2, "Empty", ha='center', va='center', fontsize=7, color='#94a3b8', fontstyle='italic')
+                            # Empty / Unfilled compartment (CRASH-PROOF MATPLOTLIB COLOR FORMAT)
+                            ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#e2e8f0', edgecolor='#94a3b8', linewidth=1.0, linestyle='--', alpha=0.35))
+                            ax.text(x_pos + ox/2, y_pos + oy/2, "Empty", ha='center', va='center', fontsize=7, color='#64748b', fontstyle='italic')
 
                 ax.annotate('', xy=(0, -25), xytext=(box_l, -25), arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
                 ax.text(box_l/2, -45, f"{int(ext_l)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center')
@@ -880,7 +843,7 @@ if results:
                 plt.close(fig)
 
             with col_stack:
-                # DYNAMIC 3D VERTICAL STACKING BLUEPRINT: Reflects active layers based on quantity!
+                # DYNAMIC 3D VERTICAL STACKING BLUEPRINT
                 fig3d = plt.figure(figsize=(4, 3.5), facecolor='none')
                 ax3d = fig3d.add_subplot(111, projection='3d', facecolor='none')
                 w_scale = 100
@@ -964,7 +927,7 @@ if results:
                         [x_pos, y_pos, z_pos], [x_pos + dx, y_pos, z_pos],
                         [x_pos + dx, y_pos + dy, z_pos], [x_pos, y_pos + dy, z_pos],
                         [x_pos, y_pos, z_pos + dz], [x_pos + dx, y_pos, z_pos + dz],
-                        [x_pos + dx, y_pos, z_pos + dz], [x_pos, y_pos + dy, z_pos + dz]
+                        [x_pos + dx, y_pos + dy, z_pos + dz], [x_pos, y_pos + dy, z_pos + dz]
                     ])
                     edges_c = [
                         (0, 1), (1, 2), (2, 3), (3, 0),
@@ -1024,7 +987,6 @@ if results:
                 start_x_offset = clear_side + (leftover_x / 2)
                 start_y_offset = clear_side + (leftover_y / 2)
 
-                # Dynamically fill 3D CAD parts according to active_quantity
                 parts_placed = 0
                 for layer in range(active_layers):
                     z_pos = layer * (oz + sep_z)
@@ -1035,7 +997,7 @@ if results:
                                 break
                             x_pos = start_x_offset + c * (ox + sep_xy)
                             add_wireframe_compartment(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz)
-                            if mesh_cad is not None and parts_placed < 10:  # Render up to 10 solid mesh models for high framerate
+                            if mesh_cad is not None and parts_placed < 10:
                                 add_plotly_mesh_part(
                                     fig_pack, x_pos, y_pos, z_pos, ox, oy, oz, 
                                     mesh_cad.vertices, mesh_cad.faces, 
@@ -1198,7 +1160,6 @@ if results:
         bx_ext_w = viz_box_t2["Ext. Width [mm]"]
         bx_ext_h = viz_box_t2["Ext. Height [mm]"]
 
-        # Dynamically pull the operator fine-tuned box weight and parts count!
         t2_qty_key = f"manual_qty_{st.session_state['global_selected_box']}"
         active_t2_pcs = int(st.session_state.get(t2_qty_key, viz_box_t2["Number of Parts per Box"]))
         active_t2_wt = round((active_t2_pcs * prod_wt) + estimate_box_weight(bx_ext_l, bx_ext_w, bx_ext_h, viz_box_t2["Quality Class"]), 2)
@@ -1437,7 +1398,6 @@ if results:
         bx_ext_w_t3 = viz_box_t3["Ext. Width [mm]"]
         bx_ext_h_t3 = viz_box_t3["Ext. Height [mm]"]
 
-        # Pull operator fine-tuned box weight for McKee compression check!
         t3_qty_key = f"manual_qty_{st.session_state['global_selected_box']}"
         active_t3_pcs = int(st.session_state.get(t3_qty_key, viz_box_t3["Number of Parts per Box"]))
         active_t3_wt = round((active_t3_pcs * prod_wt) + estimate_box_weight(bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, viz_box_t3["Quality Class"]), 2)
@@ -1485,7 +1445,7 @@ if results:
             </div>
             """, unsafe_allow_html=True)
 
-        # RESTORED STEP-BY-STEP MATHEMATICAL WORKINGS (MCKEE STANDARD)
+        # STEP-BY-STEP MATHEMATICAL WORKINGS (MCKEE STANDARD)
         st.markdown("<div class='guide-box'><h5>🧮 Step-by-Step Mathematical Workings (McKee Metric Standard):</h5>"
                     "The Box Compression Test (BCT) is computed dynamically using metric units:</div>", unsafe_allow_html=True)
 
