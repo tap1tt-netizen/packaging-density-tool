@@ -111,6 +111,15 @@ st.markdown("""
         color: var(--text-color);
     }
 
+    /* Filter Bar Container */
+    .filter-panel {
+        background-color: var(--background-color);
+        padding: 14px 18px;
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        margin-bottom: 14px;
+    }
+
     /* Tab navigation polish */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
@@ -421,15 +430,20 @@ for idx, row in df_inventory.iterrows():
     vol_efficiency = (occupied_volume / box_internal_vol) * 100
     air_space_percent = 100.0 - vol_efficiency
 
-    # Ergonomic 3-Tier Weight Hierarchy Classification
-    # Green: <= 60% of limit | Orange: 60% - 90% of limit | Red: > 90% of limit
+    # Ergonomic 3-Tier Weight Hierarchy Classification:
+    # 🟢 Green (Light): <= 60% of limit
+    # 🟠 Orange (Moderate): 60% - 90% of limit
+    # 🔴 Light Red (Heavy): > 90% of limit
     weight_pct = (total_package_weight / max_box_weight_limit) * 100.0
     if weight_pct <= 60.0:
-        weight_tier = "🟢 Under Weight (Light)"
+        weight_tier = "🟢 Light (≤60%)"
+        tier_rank = 1
     elif weight_pct <= 90.0:
-        weight_tier = "🟠 Moderate Weight (<90%)"
+        weight_tier = "🟠 Moderate (60%-90%)"
+        tier_rank = 2
     else:
-        weight_tier = "🔴 Heavy Weight (>90%)"
+        weight_tier = "🔴 Heavy (>90%)"
+        tier_rank = 3
 
     q_class = str(row['Quality']).strip()
     box_spec_label = f"{row['BoxSize']} [{q_class}]"
@@ -452,6 +466,7 @@ for idx, row in df_inventory.iterrows():
         "Optimal Orientation": f"{int(pack_orient[0])}x{int(pack_orient[1])}x{int(pack_orient[2])} mm",
         "Total Weight (kg)": round(total_package_weight, 2),
         "Weight Classification": weight_tier,
+        "Tier Rank": tier_rank,
         "Remaining Air Space (%)": round(air_space_percent, 1),
         "Box Price (€)": row['Box Price (€)'],
         "Volumetric Efficiency (%)": round(vol_efficiency, 2),
@@ -469,22 +484,7 @@ for idx, row in df_inventory.iterrows():
 if results:
     res_df = pd.DataFrame(results)
 
-    # Flute Filter & View Options
-    all_flutes = ["All Flutes"] + sorted(list(res_df["Quality Class"].unique()))
-    col_filter_1, col_filter_2 = st.columns([1, 1])
-    with col_filter_1:
-        selected_flute_filter = st.selectbox("🏷️ Filter Boxes by Corrugated Flute Type:", options=all_flutes, index=0)
-    with col_filter_2:
-        view_mode = st.radio("Display Scope:", options=["Top 10 Recommendations", "All Qualified Boxes"], horizontal=True)
-
-    filtered_df = res_df.copy()
-    if selected_flute_filter != "All Flutes":
-        filtered_df = filtered_df[filtered_df["Quality Class"] == selected_flute_filter]
-
-    if filtered_df.empty:
-        st.warning(f"No boxes match the selected flute quality '{selected_flute_filter}'.")
-        st.stop()
-
+    # Base Ranking Logic
     if sort_criteria == "Volumetric Efficiency (%)":
         sort_by_cols = ["Volumetric Efficiency (%)", "Box Price (€)", "Total Weight (kg)"]
         ascending_rules = [False, True, True]
@@ -495,20 +495,14 @@ if results:
         sort_by_cols = ["Box Price (€)", "Number of Parts per Box", "Total Weight (kg)"]
         ascending_rules = [True, False, True]
 
-    if view_mode == "Top 10 Recommendations":
-        ranked_df = filtered_df.sort_values(by=sort_by_cols, ascending=ascending_rules).head(10).reset_index(drop=True)
-    else:
-        ranked_df = filtered_df.sort_values(by=sort_by_cols, ascending=ascending_rules).reset_index(drop=True)
-
-    ranked_df.index = ranked_df.index + 1
-    best_box = ranked_df.iloc[0]
+    sorted_df = res_df.sort_values(by=sort_by_cols, ascending=ascending_rules).reset_index(drop=True)
+    best_box = sorted_df.iloc[0]
 
     # Universal Session State Synchronization across Tabs 1, 2, and 3
-    available_boxes = list(ranked_df["Box ID / Specification"].values)
+    available_boxes = list(sorted_df["Box ID / Specification"].values)
     if "global_selected_box" not in st.session_state or st.session_state["global_selected_box"] not in available_boxes:
         st.session_state["global_selected_box"] = available_boxes[0]
 
-    # Explicit bidirectional callbacks so changes in any tab reflect across all tabs instantly
     def sync_from_tab1():
         val = st.session_state["tab1_box_selector"]
         st.session_state["global_selected_box"] = val
@@ -575,7 +569,7 @@ if results:
                 </div>
             """, unsafe_allow_html=True)
 
-    st.success(f"Connected to Cardboard Database: `{filename_loaded}` | Qualifying Options: {len(ranked_df)}")
+    st.success(f"Connected to Cardboard Database: `{filename_loaded}` | Qualifying Options: {len(sorted_df)}")
 
     st.subheader("💡 Best Matched Packing Insights")
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -610,20 +604,58 @@ if results:
     # TAB 1: BOX RECOMMENDER & INDIVIDUAL LOADING
     # ==========================================================================
     with tab_recommender:
-        display_df = ranked_df.drop(columns=[
+        # 1. EXCEL-LIKE INTERACTIVE FILTER ROW
+        st.subheader("🏆 Recommended Cardboard Boxes")
+        st.markdown("""
+            **Ergonomic Color Hierarchy:** 
+            🟢 **Light (≤60% weight)** &nbsp;|&nbsp; 
+            🟠 **Moderate (60%-90% weight)** &nbsp;|&nbsp; 
+            🔴 **Heavy (>90% weight)**
+        """)
+
+        with st.expander("🔍 Filter & Search Table Options (Excel-like Filtering)", expanded=False):
+            col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+            with col_f1:
+                all_flutes_list = sorted(list(sorted_df["Quality Class"].dropna().unique()))
+                filter_flutes = st.multiselect("Filter Flute Grade:", options=all_flutes_list, default=all_flutes_list)
+            with col_f2:
+                all_tiers = ["🟢 Light (≤60%)", "🟠 Moderate (60%-90%)", "🔴 Heavy (>90%)"]
+                filter_tiers = st.multiselect("Filter Weight Tier:", options=all_tiers, default=all_tiers)
+            with col_f3:
+                all_fps = sorted(list(sorted_df["Box Footprint (Ext)"].dropna().unique()))
+                filter_footprints = st.multiselect("Filter Footprint:", options=all_fps, default=all_fps)
+            with col_f4:
+                search_query = st.text_input("Search Box Name:", placeholder="e.g. 600x400")
+
+        # Apply In-Table Filters
+        working_df = sorted_df.copy()
+        if filter_flutes:
+            working_df = working_df[working_df["Quality Class"].isin(filter_flutes)]
+        if filter_tiers:
+            working_df = working_df[working_df["Weight Classification"].isin(filter_tiers)]
+        if filter_footprints:
+            working_df = working_df[working_df["Box Footprint (Ext)"].isin(filter_footprints)]
+        if search_query:
+            working_df = working_df[working_df["Box ID / Specification"].str.contains(search_query, case=False, na=False)]
+
+        if working_df.empty:
+            st.warning("No boxes match the applied table filters. Please broaden your selection.")
+            st.stop()
+
+        display_df = working_df.drop(columns=[
             "_nx", "_ny", "_nz", "_ox", "_oy", "_oz", 
             "Raw Box ID", "Int. Length [mm]", "Int. Width [mm]", "Int. Height [mm]", 
-            "Ext. Length [mm]", "Ext. Width [mm]"
-        ])
+            "Ext. Length [mm]", "Ext. Width [mm]", "Tier Rank"
+        ]).reset_index(drop=True)
+        display_df.index = display_df.index + 1
 
-        col_header, col_export_hub = st.columns([7, 3])
-        with col_header:
-            st.subheader(f"🏆 Recommended Cardboard Boxes ({view_mode})")
-            st.markdown("Color-coded weight classification: 🟢 **&le;60%** (Light) | 🟠 **60%-90%** (Moderate) | 🔴 **&gt;90%** (Heavy)")
+        col_header_sub, col_export_hub = st.columns([7, 3])
+        with col_header_sub:
+            st.caption(f"Showing **{len(display_df)}** qualified boxes matching your criteria.")
 
         with col_export_hub:
             export_format = st.selectbox(
-                "📥 Select Export Format...",
+                "📥 Export Table Data...",
                 ["-- Choose Format --", "Export to Excel (.xlsx)", "Export to CSV (.csv)"],
                 index=0,
                 key="export_selector_hub",
@@ -652,18 +684,18 @@ if results:
                     use_container_width=True
                 )
 
-        # In-table Color Styling applied to all rows based on ergonomic weight classification
-        def highlight_weight_tier(row):
+        # Crisp High-Contrast Table Styling (High contrast text, soft tinted badge highlights)
+        def highlight_weight_tier_clean(row):
             tier = str(row["Weight Classification"])
             if "Light" in tier or "🟢" in tier:
-                color = "background-color: rgba(34, 197, 94, 0.16); color: var(--text-color);"
+                bg = "background-color: rgba(34, 197, 94, 0.12);"
             elif "Moderate" in tier or "🟠" in tier:
-                color = "background-color: rgba(245, 159, 0, 0.16); color: var(--text-color);"
+                bg = "background-color: rgba(245, 159, 0, 0.12);"
             else:
-                color = "background-color: rgba(239, 68, 68, 0.16); color: var(--text-color);"
-            return [color] * len(row)
+                bg = "background-color: rgba(239, 68, 68, 0.12);"
+            return [f"{bg} color: var(--text-color); font-weight: 500;"] * len(row)
 
-        styled_df = display_df.style.apply(highlight_weight_tier, axis=1).format({
+        styled_df = display_df.style.apply(highlight_weight_tier_clean, axis=1).format({
             "Box Price (€)": "€ {:.2f}",
             "Volumetric Efficiency (%)": "{:.2f}%",
             "Remaining Air Space (%)": "{:.1f}%",
@@ -675,7 +707,7 @@ if results:
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
 
-        # Fully Synchronized Box Selection Dropdown
+        # Synchronized Box Selection Dropdown
         selected_box_tab1 = st.selectbox(
             "Select a Cardboard Box to inspect its loading blueprints & 3D models (Synchronized):",
             options=available_boxes,
@@ -683,7 +715,7 @@ if results:
             on_change=sync_from_tab1
         )
         st.session_state["global_selected_box"] = selected_box_tab1
-        viz_box = ranked_df[ranked_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
+        viz_box = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
 
         nx = int(viz_box["_nx"])
         ny = int(viz_box["_ny"])
@@ -700,21 +732,29 @@ if results:
         max_possible_parts = int(viz_box["Max Geometric Fit"])
         default_packed_parts = int(viz_box["Number of Parts per Box"])
 
-        st.markdown("##### 🎛️ Operator Quantity Fine-Tuning")
+        # Retain fine-tuned quantity across session state
+        qty_state_key = f"manual_qty_{st.session_state['global_selected_box']}"
+        if qty_state_key not in st.session_state:
+            st.session_state[qty_state_key] = default_packed_parts
+
+        st.markdown("##### 🎛️ Operator Quantity Fine-Tuning (Updates Diagrams & Pallet Calculations)")
         col_adj_1, col_adj_2 = st.columns([1, 2])
         with col_adj_1:
             active_quantity = st.number_input(
                 f"Loaded Parts per Box (Max Geometric: {max_possible_parts})",
                 min_value=1,
                 max_value=max_possible_parts,
-                value=default_packed_parts,
+                value=int(st.session_state[qty_state_key]),
                 step=1,
-                help="Fine-tune or override the number of parts to pack in this box."
+                key=f"input_{qty_state_key}",
+                help="Fine-tune or override the number of parts. All 2D floor plans, 3D views, and pallet weights adapt automatically."
             )
+            st.session_state[qty_state_key] = active_quantity
+
         with col_adj_2:
             override_weight = round((active_quantity * prod_wt) + estimate_box_weight(ext_l, ext_w, viz_box["Ext. Height [mm]"], viz_box["Quality Class"]), 2)
             override_efficiency = round(((active_quantity * single_part_vol) / (box_l * box_w * viz_box["Int. Height [mm]"])) * 100, 2)
-            st.info(f"⚡ Live Recalculated Package Weight: **{override_weight} kg** | Volumetric Efficiency: **{override_efficiency}%**")
+            st.info(f"⚡ Live Recalculated Package Weight: **{override_weight} kg** | Volumetric Efficiency: **{override_efficiency}%** | Loaded: **{active_quantity} / {max_possible_parts} parts**")
 
         placement_style = determine_placement_style(prod_l, prod_w, prod_h, oz)
         is_standing = oz > min(prod_l, prod_w, prod_h)
@@ -745,28 +785,31 @@ if results:
                 </ul>
                 """, unsafe_allow_html=True)
 
+                parts_per_layer = nx * ny
+                active_layers = int(np.ceil(active_quantity / parts_per_layer)) if parts_per_layer > 0 else 1
+
                 st.markdown(f"""
                 <b>Step 2: Arrange the Floor Grid</b><br>
-                Lay down a grid of <b>{nx} columns</b> and <b>{ny} rows</b> of parts on the floor of the box. 
+                Lay down a grid of <b>{nx} columns</b> and <b>{ny} rows</b>.
                 <ul>
-                    <li>This accommodates up to <b>{nx * ny} parts</b> per layer.</li>
-                    <li>Place the {sep_xy}mm partition grids between each part.</li>
+                    <li>Capacity per complete layer: <b>{parts_per_layer} parts</b>.</li>
+                    <li>Active layer count: <b>{active_layers} layer(s)</b>.</li>
+                    <li>Place {sep_xy}mm partition grids between parts.</li>
                 </ul>
                 """, unsafe_allow_html=True)
 
-                if nz > 1:
+                if active_layers > 1:
                     st.markdown(f"""
                     <b>Step 3: Stacking Vertical Layers</b><br>
                     <ul>
-                        <li>Lay down a flat {sep_z}mm cardboard divider sheet on top of your completed layer.</li>
-                        <li>Repeat the same grid layout on top.</li>
-                        <li>Build a total of <b>{nz} vertical layers</b> (reaching <b>{active_quantity} pieces</b> loaded in total).</li>
+                        <li>Place a flat {sep_z}mm divider sheet over completed layers.</li>
+                        <li>Build a total of <b>{active_layers} vertical layers</b> (reaching <b>{active_quantity} loaded parts</b>).</li>
                     </ul>
                     """, unsafe_allow_html=True)
                 else:
                     st.markdown(f"""
                     <b>Step 3: Finish Packing</b><br>
-                    All <b>{active_quantity} parts</b> fit in <b>1 single floor layer</b>. No vertical shelf dividers are needed. 
+                    All <b>{active_quantity} parts</b> fit into <b>1 single floor layer</b>. No vertical shelf dividers are needed. 
                     <br>Seal the box and apply the mandatory single box label!
                     """, unsafe_allow_html=True)
 
@@ -783,6 +826,7 @@ if results:
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with col_flat:
+                # DYNAMIC 2D FLOOR GRID PLAN: Reflects manual quantity fine-tuning!
                 st_text_color = '#FFFFFF' if st.get_option('theme.base') == 'dark' else '#212529'
                 fig, ax = plt.subplots(figsize=(6, 4), facecolor='none')
                 ax.set_facecolor('none')
@@ -801,12 +845,24 @@ if results:
                 start_x_offset = clear_side + (leftover_x / 2)
                 start_y_offset = clear_side + (leftover_y / 2)
 
+                # Visual tracking of active vs empty slots based on active_quantity
+                # Parts fill bottom-up: layer 1 takes min(active_quantity, nx*ny)
+                layer1_filled = min(active_quantity, nx * ny)
+
+                slot_counter = 0
                 for r in range(ny):
                     y_pos = start_y_offset + r * (oy + sep_xy)
                     for c in range(nx):
                         x_pos = start_x_offset + c * (ox + sep_xy)
-                        ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#a5d8ff', edgecolor='#1971c2', linewidth=1.2))
-                        ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1}, {r+1}", ha='center', va='center', fontsize=8, color='#0f4c81', fontweight='bold')
+                        slot_counter += 1
+                        if slot_counter <= layer1_filled:
+                            # Populated compartment
+                            ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#a5d8ff', edgecolor='#1971c2', linewidth=1.2))
+                            ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1}, {r+1}", ha='center', va='center', fontsize=8, color='#0f4c81', fontweight='bold')
+                        else:
+                            # Empty / Unfilled compartment due to operator reduction
+                            ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='rgba(200,200,200,0.15)', edgecolor='#94a3b8', linewidth=1.0, linestyle='--'))
+                            ax.text(x_pos + ox/2, y_pos + oy/2, "Empty", ha='center', va='center', fontsize=7, color='#94a3b8', fontstyle='italic')
 
                 ax.annotate('', xy=(0, -25), xytext=(box_l, -25), arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
                 ax.text(box_l/2, -45, f"{int(ext_l)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center')
@@ -814,7 +870,7 @@ if results:
                 ax.annotate('', xy=(box_l + 25, 0), xytext=(box_l + 25, box_w), arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
                 ax.text(box_l + 45, box_w/2, f"{int(ext_w)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center', va='center', rotation=-90)
 
-                ax.text(box_l/2, box_w + 15, f"Layers: {nz} Vertical", color='#dc3545', fontsize=14, fontweight='bold', ha='center')
+                ax.text(box_l/2, box_w + 15, f"Floor Grid: {nx}x{ny} | Active Layers: {active_layers}", color='#dc3545', fontsize=12, fontweight='bold', ha='center')
 
                 ax.set_xlim(-40, box_l + 80)
                 ax.set_ylim(-60, box_w + 35)
@@ -824,16 +880,17 @@ if results:
                 plt.close(fig)
 
             with col_stack:
+                # DYNAMIC 3D VERTICAL STACKING BLUEPRINT: Reflects active layers based on quantity!
                 fig3d = plt.figure(figsize=(4, 3.5), facecolor='none')
                 ax3d = fig3d.add_subplot(111, projection='3d', facecolor='none')
                 w_scale = 100
                 l_scale = w_scale * (box_l / box_w)
                 h_scale = 30
-                z_aspect = max(30, nz * 15)
+                z_aspect = max(30, active_layers * 15)
                 ax3d.set_box_aspect((l_scale, w_scale, z_aspect))
-                lbl_font = 9 if nz > 6 else 12
+                lbl_font = 9 if active_layers > 6 else 12
 
-                for layer in range(nz):
+                for layer in range(active_layers):
                     z_start = layer * (h_scale + 5)
                     v = np.array([
                         [0, 0, z_start], [l_scale, 0, z_start], [l_scale, w_scale, z_start], [0, w_scale, z_start],
@@ -843,7 +900,7 @@ if results:
                         [v[0], v[1], v[5], v[4]], [v[1], v[2], v[6], v[5]], [v[2], v[3], v[7], v[6]],
                         [v[3], v[0], v[4], v[7]], [v[4], v[5], v[6], v[7]], [v[0], v[1], v[2], v[3]]
                     ]
-                    color = '#a5d8ff' if layer < nz - 1 else '#74c0fc'
+                    color = '#a5d8ff' if layer < active_layers - 1 else '#74c0fc'
                     poly = Poly3DCollection(faces, facecolors=color, edgecolors='#1971c2', linewidths=1.5, alpha=0.8)
                     ax3d.add_collection3d(poly)
 
@@ -852,11 +909,11 @@ if results:
 
                 ax3d.set_xlim(-50, l_scale + 10)
                 ax3d.set_ylim(-20, w_scale + 10)
-                ax3d.set_zlim(0, nz * (h_scale + 5) + 10)
+                ax3d.set_zlim(0, active_layers * (h_scale + 5) + 10)
                 ax3d.view_init(elev=22, azim=-65)
                 ax3d.axis('off')
 
-                plt.title("Vertical Stacking Blueprint", fontsize=11, fontweight='bold', color=st_text_color, pad=10)
+                plt.title(f"Vertical Blueprint ({active_layers} Layers)", fontsize=11, fontweight='bold', color=st_text_color, pad=10)
                 st.pyplot(fig3d)
                 plt.close(fig3d)
 
@@ -907,7 +964,7 @@ if results:
                         [x_pos, y_pos, z_pos], [x_pos + dx, y_pos, z_pos],
                         [x_pos + dx, y_pos + dy, z_pos], [x_pos, y_pos + dy, z_pos],
                         [x_pos, y_pos, z_pos + dz], [x_pos + dx, y_pos, z_pos + dz],
-                        [x_pos + dx, y_pos + dy, z_pos + dz], [x_pos, y_pos + dy, z_pos + dz]
+                        [x_pos + dx, y_pos, z_pos + dz], [x_pos, y_pos + dy, z_pos + dz]
                     ])
                     edges_c = [
                         (0, 1), (1, 2), (2, 3), (3, 0),
@@ -967,25 +1024,24 @@ if results:
                 start_x_offset = clear_side + (leftover_x / 2)
                 start_y_offset = clear_side + (leftover_y / 2)
 
-                selected_cells = []
-                for l in range(nz):
-                    c_diag = int(round(l * (nx - 1) / (nz - 1))) if nz > 1 else 0
-                    r_diag = int(round(l * (ny - 1) / (nz - 1))) if nz > 1 else 0
-                    selected_cells.append((c_diag, r_diag, l))
-
-                for layer in range(nz):
+                # Dynamically fill 3D CAD parts according to active_quantity
+                parts_placed = 0
+                for layer in range(active_layers):
                     z_pos = layer * (oz + sep_z)
                     for r in range(ny):
                         y_pos = start_y_offset + r * (oy + sep_xy)
                         for c in range(nx):
+                            if parts_placed >= active_quantity:
+                                break
                             x_pos = start_x_offset + c * (ox + sep_xy)
                             add_wireframe_compartment(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz)
-                            if (c, r, layer) in selected_cells and mesh_cad is not None:
+                            if mesh_cad is not None and parts_placed < 10:  # Render up to 10 solid mesh models for high framerate
                                 add_plotly_mesh_part(
                                     fig_pack, x_pos, y_pos, z_pos, ox, oy, oz, 
                                     mesh_cad.vertices, mesh_cad.faces, 
-                                    f"Part @ Col {c+1}, Row {r+1}, Layer {layer+1}"
+                                    f"Part #{parts_placed+1} @ Layer {layer+1}"
                                 )
+                            parts_placed += 1
 
                 box_v = np.array([
                     [0, 0, 0], [box_l, 0, 0], [box_l, box_w, 0], [0, box_w, 0],
@@ -1060,7 +1116,7 @@ if results:
         st.markdown("### ⚖️ Automated Stacking Comparison")
         st.markdown(f"This matrix compares options on a standard EPAL 1 Pallet under the active **{max_pallet_weight_limit} kg** and **{max_pallet_height_limit} mm** constraints:")
 
-        ranked_df_copy = ranked_df.copy()
+        ranked_df_copy = sorted_df.copy()
         ranked_df_copy['Footprint Area'] = ranked_df_copy['Ext. Length [mm]'] * ranked_df_copy['Ext. Width [mm]']
         sorted_by_footprint = ranked_df_copy.sort_values(by='Footprint Area')
 
@@ -1129,7 +1185,6 @@ if results:
         # 2. INDIVIDUAL STACKING REPORT & INTERACTIVE 3D PALLETIZER
         st.markdown(f"### 📦 Palletization Report & Interactive 3D Stacking Model")
 
-        # Fully Synchronized Box Selection Dropdown
         selected_box_t2 = st.selectbox(
             "Select any Cardboard Box to inspect its detailed pallet loading report & rotatable 3D stack (Synchronized):",
             options=available_boxes,
@@ -1138,24 +1193,29 @@ if results:
         )
         st.session_state["global_selected_box"] = selected_box_t2
 
-        viz_box_t2 = ranked_df[ranked_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
+        viz_box_t2 = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
         bx_ext_l = viz_box_t2["Ext. Length [mm]"]
         bx_ext_w = viz_box_t2["Ext. Width [mm]"]
         bx_ext_h = viz_box_t2["Ext. Height [mm]"]
-        bx_wt = viz_box_t2["Total Weight (kg)"]
-        pcs_per_bx = int(viz_box_t2["Number of Parts per Box"])
+
+        # Dynamically pull the operator fine-tuned box weight and parts count!
+        t2_qty_key = f"manual_qty_{st.session_state['global_selected_box']}"
+        active_t2_pcs = int(st.session_state.get(t2_qty_key, viz_box_t2["Number of Parts per Box"]))
+        active_t2_wt = round((active_t2_pcs * prod_wt) + estimate_box_weight(bx_ext_l, bx_ext_w, bx_ext_h, viz_box_t2["Quality Class"]), 2)
 
         col_metrics, col_plotly_pallet = st.columns([4, 6])
 
         with col_metrics:
             st.markdown(f"#### 📋 Stacking Report for **{st.session_state['global_selected_box']}**")
+            st.caption(f"Calculations reflect active configuration: **{active_t2_pcs} pcs/box** @ **{active_t2_wt} kg/box**")
+
             b_total_1, z_layers_1, _, p_pcs_1, p_wt_1, orient_1, nx_1, ny_1 = calculate_pallet_stacking(
                 PALLETS["EPAL 1 (Standard)"]["l"], PALLETS["EPAL 1 (Standard)"]["w"],
-                bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx, PALLETS["EPAL 1 (Standard)"]["tare"]
+                bx_ext_l, bx_ext_w, bx_ext_h, active_t2_wt, active_t2_pcs, PALLETS["EPAL 1 (Standard)"]["tare"]
             )
             b_total_2, z_layers_2, _, p_pcs_2, p_wt_2, orient_2, nx_2, ny_2 = calculate_pallet_stacking(
                 PALLETS["EPAL 2 (Industrial)"]["l"], PALLETS["EPAL 2 (Industrial)"]["w"],
-                bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx, PALLETS["EPAL 2 (Industrial)"]["tare"]
+                bx_ext_l, bx_ext_w, bx_ext_h, active_t2_wt, active_t2_pcs, PALLETS["EPAL 2 (Industrial)"]["tare"]
             )
 
             st.markdown(f"""
@@ -1189,7 +1249,7 @@ if results:
 
             p_boxes, p_layers, p_l_qty, _, _, p_orient, nx_act, ny_act = calculate_pallet_stacking(
                 active_p_spec["l"], active_p_spec["w"],
-                bx_ext_l, bx_ext_w, bx_ext_h, bx_wt, pcs_per_bx, active_p_spec["tare"]
+                bx_ext_l, bx_ext_w, bx_ext_h, active_t2_wt, active_t2_pcs, active_p_spec["tare"]
             )
 
             try:
@@ -1321,7 +1381,6 @@ if results:
             )
 
         with col_setup_2:
-            # Fully Synchronized Box Selection Dropdown
             selected_box_t3 = st.selectbox(
                 "Select Box Type to inspect compression strength (Synchronized):",
                 options=available_boxes,
@@ -1330,7 +1389,7 @@ if results:
             )
             st.session_state["global_selected_box"] = selected_box_t3
 
-        viz_box_t3 = ranked_df[ranked_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
+        viz_box_t3 = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
 
         st.markdown("#### 🪵 3. Load, Environment & Logistics Parameters")
         col_moisture, col_spread, col_fragility = st.columns(3)
@@ -1377,12 +1436,15 @@ if results:
         bx_ext_l_t3 = viz_box_t3["Ext. Length [mm]"]
         bx_ext_w_t3 = viz_box_t3["Ext. Width [mm]"]
         bx_ext_h_t3 = viz_box_t3["Ext. Height [mm]"]
-        bx_wt_t3 = viz_box_t3["Total Weight (kg)"]
-        pcs_per_bx_t3 = int(viz_box_t3["Number of Parts per Box"])
 
-        _, z_layers_calc_t3, best_layer_qty_t3, _, p_wt_calc_t3, _, _, _ = calculate_pallet_stacking(1200, 800, bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, bx_wt_t3, pcs_per_bx_t3)
+        # Pull operator fine-tuned box weight for McKee compression check!
+        t3_qty_key = f"manual_qty_{st.session_state['global_selected_box']}"
+        active_t3_pcs = int(st.session_state.get(t3_qty_key, viz_box_t3["Number of Parts per Box"]))
+        active_t3_wt = round((active_t3_pcs * prod_wt) + estimate_box_weight(bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, viz_box_t3["Quality Class"]), 2)
+
+        _, z_layers_calc_t3, best_layer_qty_t3, _, p_wt_calc_t3, _, _, _ = calculate_pallet_stacking(1200, 800, bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, active_t3_wt, active_t3_pcs)
         boxes_above_t3 = max(0, z_layers_calc_t3 - 1)
-        actual_bottom_load_t3 = round(boxes_above_t3 * bx_wt_t3, 1)
+        actual_bottom_load_t3 = round(boxes_above_t3 * active_t3_wt, 1)
 
         if stack_style == "Double-Stacked Pallets (Pallet-on-Pallet)":
             top_pallet_weight_contribution_t3 = round(p_wt_calc_t3 / max(1, best_layer_qty_t3), 1)
