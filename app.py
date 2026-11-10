@@ -417,16 +417,16 @@ for idx, row in df_inventory.iterrows():
 
     # EXACT REQUESTED COLOR HIERARCHY BASED ON WEIGHT:
     # 🟢 1st: Green (< 13.0 kg - Light / Optimal Directive Standard)
-    # 🟠 2nd: Orange / Light Yellow (13.0 kg - 17.0 kg - Moderate / A bit more weight)
-    # 🔴 3rd: Red (> 17.0 kg - Heavy / Forklift Required)
+    # 🟠 2nd: Orange / Light Yellow (13.0 kg - 15.0 kg - Moderate / A bit more weight)
+    # 🔴 3rd: Red (> 15.0 kg - Heavy / Forklift Required)
     if total_package_weight < 13.0:
         weight_tier = "🟢 1. Green (<13 kg)"
         tier_rank = 1
     elif total_package_weight <= 17.0:
-        weight_tier = "🟠 2. Orange (13-17 kg)"
+        weight_tier = "🟠 2. Orange (13-15 kg)"
         tier_rank = 2
     else:
-        weight_tier = "🔴 3. Red (>17 kg)"
+        weight_tier = "🔴 3. Red (>15 kg)"
         tier_rank = 3
 
     q_class = str(row['Quality']).strip()
@@ -594,8 +594,8 @@ if results:
         st.markdown("""
             **Color Hierarchy strictly based on Weight:** &nbsp;
             🟢 **1st: Green (< 13.0 kg)** &nbsp;|&nbsp; 
-            🟠 **2nd: Orange / Light Yellow (13.0 - 17.0 kg)** &nbsp;|&nbsp; 
-            🔴 **3rd: Red (> 17.0 kg)**
+            🟠 **2nd: Orange / Light Yellow (13.0 - 15.0 kg)** &nbsp;|&nbsp; 
+            🔴 **3rd: Red (> 15.0 kg)**
         """)
 
         # 🟢 EXCEL-LIKE DROPDOWN FILTER MENU (Identical to your Excel screenshot)
