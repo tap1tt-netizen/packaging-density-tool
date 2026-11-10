@@ -111,34 +111,6 @@ st.markdown("""
         color: var(--text-color);
     }
 
-    .badge-green {
-        background-color: rgba(34, 197, 94, 0.15);
-        color: #16a34a;
-        padding: 3px 8px;
-        border-radius: 6px;
-        font-weight: 700;
-        font-size: 11px;
-        border: 1px solid rgba(34, 197, 94, 0.3);
-    }
-    .badge-orange {
-        background-color: rgba(245, 159, 0, 0.15);
-        color: #d97706;
-        padding: 3px 8px;
-        border-radius: 6px;
-        font-weight: 700;
-        font-size: 11px;
-        border: 1px solid rgba(245, 159, 0, 0.3);
-    }
-    .badge-red {
-        background-color: rgba(239, 68, 68, 0.15);
-        color: #dc2626;
-        padding: 3px 8px;
-        border-radius: 6px;
-        font-weight: 700;
-        font-size: 11px;
-        border: 1px solid rgba(239, 68, 68, 0.3);
-    }
-
     /* Tab navigation polish */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
@@ -454,13 +426,10 @@ for idx, row in df_inventory.iterrows():
     weight_pct = (total_package_weight / max_box_weight_limit) * 100.0
     if weight_pct <= 60.0:
         weight_tier = "🟢 Under Weight (Light)"
-        tier_color = "badge-green"
     elif weight_pct <= 90.0:
         weight_tier = "🟠 Moderate Weight (<90%)"
-        tier_color = "badge-orange"
     else:
         weight_tier = "🔴 Heavy Weight (>90%)"
-        tier_color = "badge-red"
 
     q_class = str(row['Quality']).strip()
     box_spec_label = f"{row['BoxSize']} [{q_class}]"
@@ -534,13 +503,33 @@ if results:
     ranked_df.index = ranked_df.index + 1
     best_box = ranked_df.iloc[0]
 
-    # Universal Session State Synchronization
+    # Universal Session State Synchronization across Tabs 1, 2, and 3
     available_boxes = list(ranked_df["Box ID / Specification"].values)
     if "global_selected_box" not in st.session_state or st.session_state["global_selected_box"] not in available_boxes:
         st.session_state["global_selected_box"] = available_boxes[0]
 
-    def sync_box_selection(widget_key):
-        st.session_state["global_selected_box"] = st.session_state[widget_key]
+    # Explicit bidirectional callbacks so changes in any tab reflect across all tabs instantly
+    def sync_from_tab1():
+        val = st.session_state["tab1_box_selector"]
+        st.session_state["global_selected_box"] = val
+        st.session_state["tab2_box_selector"] = val
+        st.session_state["tab3_box_selector"] = val
+
+    def sync_from_tab2():
+        val = st.session_state["tab2_box_selector"]
+        st.session_state["global_selected_box"] = val
+        st.session_state["tab1_box_selector"] = val
+        st.session_state["tab3_box_selector"] = val
+
+    def sync_from_tab3():
+        val = st.session_state["tab3_box_selector"]
+        st.session_state["global_selected_box"] = val
+        st.session_state["tab1_box_selector"] = val
+        st.session_state["tab2_box_selector"] = val
+
+    for key in ["tab1_box_selector", "tab2_box_selector", "tab3_box_selector"]:
+        if key not in st.session_state or st.session_state[key] not in available_boxes:
+            st.session_state[key] = st.session_state["global_selected_box"]
 
     # Top Header Safety Badge Layout
     col_title, col_safety_header = st.columns([7, 3])
@@ -663,39 +652,35 @@ if results:
                     use_container_width=True
                 )
 
-        st.dataframe(
-            display_df,
-            column_config={
-                "Volumetric Efficiency (%)": st.column_config.ProgressColumn(
-                    "Volumetric Efficiency (%)",
-                    format="%.2f%%",
-                    min_value=0,
-                    max_value=100,
-                    color="blue"
-                ),
-                "Box Price (€)": st.column_config.NumberColumn(
-                    "Box Price (€)",
-                    format="€ %.2f"
-                ),
-                "Weight Classification": st.column_config.TextColumn(
-                    "Ergonomic Weight Tier"
-                )
-            },
-            use_container_width=True
-        )
+        # In-table Color Styling applied to all rows based on ergonomic weight classification
+        def highlight_weight_tier(row):
+            tier = str(row["Weight Classification"])
+            if "Light" in tier or "🟢" in tier:
+                color = "background-color: rgba(34, 197, 94, 0.16); color: var(--text-color);"
+            elif "Moderate" in tier or "🟠" in tier:
+                color = "background-color: rgba(245, 159, 0, 0.16); color: var(--text-color);"
+            else:
+                color = "background-color: rgba(239, 68, 68, 0.16); color: var(--text-color);"
+            return [color] * len(row)
+
+        styled_df = display_df.style.apply(highlight_weight_tier, axis=1).format({
+            "Box Price (€)": "€ {:.2f}",
+            "Volumetric Efficiency (%)": "{:.2f}%",
+            "Remaining Air Space (%)": "{:.1f}%",
+            "Total Weight (kg)": "{:.2f} kg"
+        })
+
+        st.dataframe(styled_df, use_container_width=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
 
-        # Synchronized Box Selection Dropdown with Flute Quality
-        current_idx = available_boxes.index(st.session_state["global_selected_box"])
+        # Fully Synchronized Box Selection Dropdown
         selected_box_tab1 = st.selectbox(
             "Select a Cardboard Box to inspect its loading blueprints & 3D models (Synchronized):",
             options=available_boxes,
-            index=current_idx,
             key="tab1_box_selector",
-            on_change=sync_box_selection,
-            args=("tab1_box_selector",)
+            on_change=sync_from_tab1
         )
         st.session_state["global_selected_box"] = selected_box_tab1
         viz_box = ranked_df[ranked_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
@@ -1144,15 +1129,12 @@ if results:
         # 2. INDIVIDUAL STACKING REPORT & INTERACTIVE 3D PALLETIZER
         st.markdown(f"### 📦 Palletization Report & Interactive 3D Stacking Model")
 
-        # Synchronized Box Selection Dropdown with Flute Quality
-        current_idx_t2 = available_boxes.index(st.session_state["global_selected_box"])
+        # Fully Synchronized Box Selection Dropdown
         selected_box_t2 = st.selectbox(
             "Select any Cardboard Box to inspect its detailed pallet loading report & rotatable 3D stack (Synchronized):",
             options=available_boxes,
-            index=current_idx_t2,
             key="tab2_box_selector",
-            on_change=sync_box_selection,
-            args=("tab2_box_selector",)
+            on_change=sync_from_tab2
         )
         st.session_state["global_selected_box"] = selected_box_t2
 
@@ -1339,14 +1321,12 @@ if results:
             )
 
         with col_setup_2:
-            current_idx_t3 = available_boxes.index(st.session_state["global_selected_box"])
+            # Fully Synchronized Box Selection Dropdown
             selected_box_t3 = st.selectbox(
                 "Select Box Type to inspect compression strength (Synchronized):",
                 options=available_boxes,
-                index=current_idx_t3,
                 key="tab3_box_selector",
-                on_change=sync_box_selection,
-                args=("tab3_box_selector",)
+                on_change=sync_from_tab3
             )
             st.session_state["global_selected_box"] = selected_box_t3
 
