@@ -453,7 +453,6 @@ for idx, row in df_inventory.iterrows():
     q_class = str(row['Quality']).strip()
     box_spec_label = f"{row['BoxSize']} [{q_class}]"
     
-    # RESOLVED #1: Explicitly populate the key as "No of Parts per Box" to avoid data layout dropping
     results.append({
         "Weight Status": weight_tier,
         "Box ID / Specification": box_spec_label,
@@ -527,35 +526,25 @@ if results:
     sorted_df = res_df.sort_values(by=sort_by_cols, ascending=ascending_rules).reset_index(drop=True)
     available_boxes = list(sorted_df["Box ID / Specification"].values)
     
-    # RESOLVED #2: Forced State Synchronization & Snapping Mechanism
-    # Detect if the state of configuration has changed (LOT multiple, Spacers etc.)
+    # RESOLVED #2: Complete Dropdown Synchronization and Auto-Snapping Mechanism
     current_best_box = available_boxes[0] if available_boxes else None
     
-    # If the user toggled sidebar parameters and previous selection is no longer valid, 
-    # OR if we don't have a state recorded yet, FORCE snap state directly to the Top 1 Recommended Box.
+    # If a state recalculation occurred and the stale box is no longer available in the filtered list,
+    # OR if there is no selection set, force-sync the session state directly to the Top 1 Best Box.
     if "global_selected_box" not in st.session_state or st.session_state["global_selected_box"] not in available_boxes:
         st.session_state["global_selected_box"] = current_best_box
 
-    best_box = sorted_df.iloc[0] if not sorted_df.empty else None
+    best_box = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0] if st.session_state["global_selected_box"] else sorted_df.iloc[0]
     
-    # Clean Direct Callback Sync Functions (Tab 1, Tab 2, and Tab 3 dropdowns)
+    # Unified State Sync Callbacks
     def sync_from_tab1():
-        val = st.session_state["tab1_box_selector"]
-        st.session_state["global_selected_box"] = val
-        st.session_state["tab2_box_selector"] = val
-        st.session_state["tab3_box_selector"] = val
+        st.session_state["global_selected_box"] = st.session_state["tab1_box_selector"]
     def sync_from_tab2():
-        val = st.session_state["tab2_box_selector"]
-        st.session_state["global_selected_box"] = val
-        st.session_state["tab1_box_selector"] = val
-        st.session_state["tab3_box_selector"] = val
+        st.session_state["global_selected_box"] = st.session_state["tab2_box_selector"]
     def sync_from_tab3():
-        val = st.session_state["tab3_box_selector"]
-        st.session_state["global_selected_box"] = val
-        st.session_state["tab1_box_selector"] = val
-        st.session_state["tab2_box_selector"] = val
+        st.session_state["global_selected_box"] = st.session_state["tab3_box_selector"]
 
-    # Hard force-sync state values on frame run to prevent stale mismatches
+    # Hard-link session keys dynamically
     st.session_state["tab1_box_selector"] = st.session_state["global_selected_box"]
     st.session_state["tab2_box_selector"] = st.session_state["global_selected_box"]
     st.session_state["tab3_box_selector"] = st.session_state["global_selected_box"]
@@ -650,7 +639,7 @@ if results:
         else:
             filtered_df = sorted_df.copy()
             
-        # RESOLVED #1: Adjusted column key name matching display rules exactly
+        # RESOLVED #3: Clean formatted columns displaying "No of Parts per Box" next to Total Weight
         keep_columns = [
             "Box ID / Specification",
             "Box Footprint (Ext)",
@@ -711,7 +700,7 @@ if results:
             "Total Weight (kg)": "{:.2f} kg"
         })
         
-        # MANAGER UPDATE #3: Explicitly set structural column sizes to avoid truncation
+        # Streamlit DataFrame layout configuration
         st.dataframe(
             styled_df, 
             use_container_width=True,
@@ -736,13 +725,15 @@ if results:
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
         
-        # RESOLVED #2: High-reliability key linking mechanism
+        # RESOLVED #2: Dropdown selector indexes correctly mapped using available indexes
         selected_box_tab1 = st.selectbox(
             "Select a Cardboard Box to inspect its loading blueprints & 3D models (Synchronized):",
             options=available_boxes,
+            index=available_boxes.index(st.session_state["global_selected_box"]),
             key="tab1_box_selector",
             on_change=sync_from_tab1
         )
+        st.session_state["global_selected_box"] = selected_box_tab1
         viz_box = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
         
         nx = int(viz_box["_nx"])
@@ -1183,10 +1174,11 @@ if results:
         st.markdown("<hr style='margin:25px 0; border:0; border-top:1px solid rgba(148,163,184,0.2);'>", unsafe_allow_html=True)
         st.markdown(f"### 📦 Palletization Report & Interactive 3D Stacking Model")
         
-        # RESOLVED #2: High-reliability key linking mechanism
+        # RESOLVED #2: Dropdown selector indexes correctly mapped using available indexes
         selected_box_t2 = st.selectbox(
             "Select any Cardboard Box to inspect its detailed pallet loading report & rotatable 3D stack (Synchronized):",
             options=available_boxes,
+            index=available_boxes.index(st.session_state["global_selected_box"]),
             key="tab2_box_selector",
             on_change=sync_from_tab2
         )
@@ -1356,10 +1348,11 @@ if results:
                 help="Single Pallet checks local column load. Double Stacking adds the entire gross weight of the top pallet onto the bottom boxes."
             )
         with col_setup_2:
-            # RESOLVED #2: Forced Dropdown Sync Link
+            # RESOLVED #2: Dropdown selector indexes correctly mapped using available indexes
             selected_box_t3 = st.selectbox(
                 "Select Box Type to inspect compression strength (Synchronized):",
                 options=available_boxes,
+                index=available_boxes.index(st.session_state["global_selected_box"]),
                 key="tab3_box_selector",
                 on_change=sync_from_tab3
             )
@@ -1404,7 +1397,7 @@ if results:
         bct_safe_load_t3 = round(bct_kg_t3 / sf_t3, 1)
         
         bx_ext_l_t3 = viz_box_t3["Ext. Length [mm]"]
-        bx_ext_w_t3 = viz_box_t3["Ext. Width [mm]"]
+        bx_ext_w_t3 = viz_box_t3["Ext.Width [mm]"]
         bx_ext_h_t3 = viz_box_t3["Ext. Height [mm]"]
         t3_qty_key = f"manual_qty_{st.session_state['global_selected_box']}"
         active_t3_pcs = int(st.session_state.get(t3_qty_key, viz_box_t3["No of Parts per Box"]))
