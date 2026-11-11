@@ -526,14 +526,21 @@ if results:
     sorted_df = res_df.sort_values(by=sort_by_cols, ascending=ascending_rules).reset_index(drop=True)
     available_boxes = list(sorted_df["Box ID / Specification"].values)
     
-    # RESOLVED #2: Defensively check the dynamic list ranges to avoid ValueError Index crashes
+    # RESOLVED #2: Fail-safe Dynamic Index Locator (Ensures we never trigger ValueError)
+    def get_safe_index(available_list, selected_val):
+        try:
+            return available_list.index(selected_val)
+        except (ValueError, KeyError):
+            return 0  # Dynamic Snapping Fallback to Top 1 box
+
     current_best_box = available_boxes[0] if available_boxes else None
     
-    # Force-sync selection if it's out of range or empty
     if "global_selected_box" not in st.session_state or st.session_state["global_selected_box"] not in available_boxes:
         st.session_state["global_selected_box"] = current_best_box
 
-    # Direct State Sync Callbacks
+    best_box = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0] if st.session_state["global_selected_box"] else sorted_df.iloc[0]
+    
+    # Session callbacks
     def sync_from_tab1():
         st.session_state["global_selected_box"] = st.session_state["tab1_box_selector"]
     def sync_from_tab2():
@@ -541,12 +548,11 @@ if results:
     def sync_from_tab3():
         st.session_state["global_selected_box"] = st.session_state["tab3_box_selector"]
 
-    # Lock selection keys
+    # Explicitly overrides session state keys so frame elements cannot hold stale data
     st.session_state["tab1_box_selector"] = st.session_state["global_selected_box"]
     st.session_state["tab2_box_selector"] = st.session_state["global_selected_box"]
     st.session_state["tab3_box_selector"] = st.session_state["global_selected_box"]
 
-    # Safely select the active box from the complete dataset to protect mathematical lookups
     viz_box = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0] if not sorted_df.empty else None
             
     col_title, col_safety_header = st.columns([7, 3])
@@ -725,8 +731,8 @@ if results:
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
         
-        # Safe Dropdown selector key mapping
-        safe_index_t1 = available_boxes.index(st.session_state["global_selected_box"]) if st.session_state["global_selected_box"] in available_boxes else 0
+        # RESOLVED #2: Fail-safe dynamic index locator prevents list ValueErrors
+        safe_index_t1 = get_safe_index(available_boxes, st.session_state["global_selected_box"])
         selected_box_tab1 = st.selectbox(
             "Select a Cardboard Box to inspect its loading blueprints & 3D models (Synchronized):",
             options=available_boxes,
@@ -967,7 +973,7 @@ if results:
                     cv = np.array([
                         [x_pos, y_pos, z_pos], [x_pos + dx, y_pos, z_pos],
                         [x_pos + dx, y_pos + dy, z_pos], [x_pos, y_pos + dy, z_pos],
-                        [x_pos, y_pos, z_pos + dz], [x_pos + dx, y_pos, z_pos + dz],
+                        [x_pos, y_pos, z_pos + dz], [x_pos + dx, y_pos + dz, z_pos + dz],
                         [x_pos + dx, y_pos + dy, z_pos + dz], [x_pos, y_pos + dy, z_pos + dz]
                     ])
                     edges_c = [
@@ -1171,11 +1177,11 @@ if results:
         else:
             st.info("💡 Multiple unique box sizes are required in the inventory database to generate a comparative analysis.")
             
-        st.markdown("<hr style='margin:25px 0; border:0; border-top:1px solid rgba(148,163,184,0.2);'>", unsafe_allow_html=True)
+        st.markdown("<hr style='margin:25px 0; border; border-top:1px solid rgba(148,163,184,0.2);'>", unsafe_allow_html=True)
         st.markdown(f"### 📦 Palletization Report & Interactive 3D Stacking Model")
         
-        # RESOLVED #2: Dropdown selector index checks
-        safe_index_t2 = available_boxes.index(st.session_state["global_selected_box"]) if st.session_state["global_selected_box"] in available_boxes else 0
+        # RESOLVED #2: Fail-safe Dynamic Index Locator
+        safe_index_t2 = get_safe_index(available_boxes, st.session_state["global_selected_box"])
         selected_box_t2 = st.selectbox(
             "Select any Cardboard Box to inspect its detailed pallet loading report & rotatable 3D stack (Synchronized):",
             options=available_boxes,
@@ -1349,8 +1355,8 @@ if results:
                 help="Single Pallet checks local column load. Double Stacking adds the entire gross weight of the top pallet onto the bottom boxes."
             )
         with col_setup_2:
-            # RESOLVED #2: Dropdown index checks
-            safe_index_t3 = available_boxes.index(st.session_state["global_selected_box"]) if st.session_state["global_selected_box"] in available_boxes else 0
+            # RESOLVED #2: Fail-safe Dynamic Index Locator
+            safe_index_t3 = get_safe_index(available_boxes, st.session_state["global_selected_box"])
             selected_box_t3 = st.selectbox(
                 "Select Box Type to inspect compression strength (Synchronized):",
                 options=available_boxes,
