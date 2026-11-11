@@ -526,21 +526,14 @@ if results:
     sorted_df = res_df.sort_values(by=sort_by_cols, ascending=ascending_rules).reset_index(drop=True)
     available_boxes = list(sorted_df["Box ID / Specification"].values)
     
-    # RESOLVED #2: Fail-safe Dynamic Index Locator (Ensures we never trigger ValueError)
-    def get_safe_index(available_list, selected_val):
-        try:
-            return available_list.index(selected_val)
-        except (ValueError, KeyError):
-            return 0  # Dynamic Snapping Fallback to Top 1 box
-
+    # 🛡️ Dynamic Snapping Boundary Guard (Run BEFORE we index or define selectboxes)
+    # If settings change and previous selection is filtered out, reset session state to Top 1 box cleanly
     current_best_box = available_boxes[0] if available_boxes else None
     
     if "global_selected_box" not in st.session_state or st.session_state["global_selected_box"] not in available_boxes:
         st.session_state["global_selected_box"] = current_best_box
 
-    best_box = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0] if st.session_state["global_selected_box"] else sorted_df.iloc[0]
-    
-    # Session callbacks
+    # Unified Sync Callbacks
     def sync_from_tab1():
         st.session_state["global_selected_box"] = st.session_state["tab1_box_selector"]
     def sync_from_tab2():
@@ -548,10 +541,17 @@ if results:
     def sync_from_tab3():
         st.session_state["global_selected_box"] = st.session_state["tab3_box_selector"]
 
-    # Explicitly overrides session state keys so frame elements cannot hold stale data
+    # Hard force-sync state values on frame run to prevent stale mismatches
     st.session_state["tab1_box_selector"] = st.session_state["global_selected_box"]
     st.session_state["tab2_box_selector"] = st.session_state["global_selected_box"]
     st.session_state["tab3_box_selector"] = st.session_state["global_selected_box"]
+
+    # Safe index helper function
+    def get_safe_index(available_list, selected_val):
+        try:
+            return available_list.index(selected_val)
+        except (ValueError, KeyError):
+            return 0  # Fail-safe snap back to first available recommended box
 
     viz_box = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0] if not sorted_df.empty else None
             
@@ -731,7 +731,7 @@ if results:
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
         
-        # RESOLVED #2: Fail-safe dynamic index locator prevents list ValueErrors
+        # Safe Dropdown selector index mapping using safe locator function
         safe_index_t1 = get_safe_index(available_boxes, st.session_state["global_selected_box"])
         selected_box_tab1 = st.selectbox(
             "Select a Cardboard Box to inspect its loading blueprints & 3D models (Synchronized):",
@@ -1177,7 +1177,7 @@ if results:
         else:
             st.info("💡 Multiple unique box sizes are required in the inventory database to generate a comparative analysis.")
             
-        st.markdown("<hr style='margin:25px 0; border; border-top:1px solid rgba(148,163,184,0.2);'>", unsafe_allow_html=True)
+        st.markdown("<hr style='margin:25px 0; border:0; border-top:1px solid rgba(148,163,184,0.2);'>", unsafe_allow_html=True)
         st.markdown(f"### 📦 Palletization Report & Interactive 3D Stacking Model")
         
         # RESOLVED #2: Fail-safe Dynamic Index Locator
