@@ -256,12 +256,13 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
     
     st.markdown("#### Weight (kg)")
     if assembly_mode:
-        # MANAGER UPDATE #1: Proactive Action Required callout and manual weight input
-        st.warning("⚠️ **Action Required: Assembly Mode Activated**\nPlease enter the total assembly weight manually below.")
-        prod_wt = st.number_input("Total Assembly Weight (kg)", min_value=0.01, value=1.50, step=0.10)
+        # MANAGER UPDATE #1: Defaulting to 0.0 kg and halt check warning
+        st.warning("⚠️ **Action Required: Input Assembly Weight**\nEnter weight manually below to trigger calculations.")
+        prod_wt = st.number_input("Total Assembly Weight (kg)", min_value=0.0, value=0.0, step=0.1)
     else:
         prod_wt = st.number_input("Weight per Part (kg)", min_value=0.01, value=float(calculated_weight_kg), step=0.05)
     
+    # MANAGER UPDATE #2: Relocated orientation selector inside expander so it is permanently visible
     orientation_rule = st.selectbox(
         "Select Packing Orientation:",
         ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"]
@@ -289,7 +290,7 @@ with st.sidebar.expander("📂 Packaging Directives & Tolerances", expanded=Fals
     )
     if enforce_box_dim_cap:
         limit_l = st.number_input("Max External Length (mm)", min_value=100.0, max_value=2000.0, value=600.0, step=10.0)
-        limit_w = st.number_input("Max External Width (mm)", min_value=100.0, max_value=2000.0, value=400.0, step=10.0)
+        limit_w = st.number_input("Max External Width (mm)", min_value=100.0, max_value=400.0, value=400.0, step=10.0)
         limit_h = st.number_input("Max External Height (mm)", min_value=50.0, max_value=2000.0, value=270.0, step=10.0)
 
     st.markdown("#### 🏭 Production LOT Alignment")
@@ -299,7 +300,8 @@ with st.sidebar.expander("📂 Packaging Directives & Tolerances", expanded=Fals
     )
     lot_step = 24
     if lot_alignment_enabled:
-        lot_step = st.selectbox("Select Production LOT Multiplier:", options=[24, 48, 12], index=0)
+        # MANAGER UPDATE #3: Restructured dropdown choices (removed 12, added 72)
+        lot_step = st.selectbox("Select Production LOT Multiplier:", options=[24, 48, 72], index=0)
 
     st.markdown("#### 📏 Clearance Spacers")
     clear_side = st.slider("Sides Buffer (mm)", min_value=0, max_value=20, value=2)
@@ -307,14 +309,15 @@ with st.sidebar.expander("📂 Packaging Directives & Tolerances", expanded=Fals
     sep_xy = st.slider("Separator X/Y (mm)", min_value=0, max_value=10, value=2)
     sep_z = st.slider("Separator Z (mm)", min_value=0, max_value=10, value=4)
 
-if not material_selected:
+# Stop calculations entirely if in Assembly Mode and weight is 0.0
+if assembly_mode and prod_wt == 0.0:
     st.markdown("""
         <div class='app-header'>
             <h1>📦 BSH Packaging Density & Box Recommender</h1>
             <p>Grid-Based Product Accommodation, Packaging Directive Compliance & Multi-Pallet Optimizer</p>
         </div>
     """, unsafe_allow_html=True)
-    st.warning("⚠️ **Please select a part material** in the accordion to recommend boxes.")
+    st.warning("⚠️ **Assembly Weight Required:** Please enter the total assembly weight in the sidebar to proceed with calculations.")
     st.stop()
 
 # ==============================================================================
@@ -499,12 +502,14 @@ if results:
         ascending_rules = [True, False, True]
         
     sorted_df = res_df.sort_values(by=sort_by_cols, ascending=ascending_rules).reset_index(drop=True)
-    best_box = sorted_df.iloc[0]
-    
     available_boxes = list(sorted_df["Box ID / Specification"].values)
+    
+    # MANAGER UPDATE #4: Auto-reset active box if it becomes invalid/outdated
     if "global_selected_box" not in st.session_state or st.session_state["global_selected_box"] not in available_boxes:
-        st.session_state["global_selected_box"] = available_boxes[0]
+        st.session_state["global_selected_box"] = available_boxes[0] if available_boxes else None
         
+    best_box = sorted_df.iloc[0] if not sorted_df.empty else None
+    
     def sync_from_tab1():
         val = st.session_state["tab1_box_selector"]
         st.session_state["global_selected_box"] = val
@@ -521,6 +526,7 @@ if results:
         st.session_state["tab1_box_selector"] = val
         st.session_state["tab2_box_selector"] = val
         
+    # Sync states after a complete calculation reset
     for key in ["tab1_box_selector", "tab2_box_selector", "tab3_box_selector"]:
         if key not in st.session_state or st.session_state[key] not in available_boxes:
             st.session_state[key] = st.session_state["global_selected_box"]
@@ -801,7 +807,6 @@ if results:
                     st.markdown(f"<p style='color:#22c55e; font-weight:bold; margin-top:10px;'>🟢 Handheld Weight: Safe at {override_weight} kg (Conforms to &lt;{max_box_weight_limit} kg limit)</p>", unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
             with col_flat:
-                # MANAGER UPDATE #2: High-Contrast, Auto-Spacing 2D Matplotlib layout
                 st_text_color = '#FFFFFF' if st.get_option('theme.base') == 'dark' else '#212529'
                 fig, ax = plt.subplots(figsize=(6, 4), facecolor='none')
                 ax.set_facecolor('none')
@@ -1009,7 +1014,6 @@ if results:
                             x_pos = start_x_offset + c * (ox + sep_xy)
                             add_wireframe_compartment(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz)
                             
-                            # MANAGER UPDATE #2: Render exactly 1 part per layer (rendered at row 1, col 1)
                             if mesh_cad is not None and r == 0 and c == 0:
                                 try:
                                     add_plotly_mesh_part(
