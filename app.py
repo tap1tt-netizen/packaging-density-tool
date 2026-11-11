@@ -1192,7 +1192,7 @@ if results:
         viz_box_t2 = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
         
         bx_ext_l = viz_box_t2["Ext. Length [mm]"]
-        bx_ext_w = viz_box_t2["Ext.Width [mm]"]
+        bx_ext_w = viz_box_t2["Ext. Width [mm]"]
         bx_ext_h = viz_box_t2["Ext. Height [mm]"]
         t2_qty_key = f"manual_qty_{st.session_state['global_selected_box']}"
         active_t2_pcs = int(st.session_state.get(t2_qty_key, viz_box_t2["No of Parts per Box"]))
@@ -1405,7 +1405,7 @@ if results:
         bct_safe_load_t3 = round(bct_kg_t3 / sf_t3, 1)
         
         bx_ext_l_t3 = viz_box_t3["Ext. Length [mm]"]
-        bx_ext_w_t3 = viz_box_t3["Ext.Width [mm]"]
+        bx_ext_w_t3 = viz_box_t3["Ext. Width [mm]"]
         bx_ext_h_t3 = viz_box_t3["Ext. Height [mm]"]
         t3_qty_key = f"manual_qty_{st.session_state['global_selected_box']}"
         active_t3_pcs = int(st.session_state.get(t3_qty_key, viz_box_t3["No of Parts per Box"]))
