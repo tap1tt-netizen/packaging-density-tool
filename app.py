@@ -380,7 +380,7 @@ for idx, row in df_inventory.iterrows():
     parts_count, pack_orient, grid_layout, raw_max_qty = calculate_packing(
         box_int_l, box_int_w, box_int_h,
         prod_l, prod_w, prod_h,
-        orientation_rule,      # <--- Passed positionally to match 'rule' parameter
+        orientation_rule,
         enforce_lot=lot_alignment_enabled,
         lot_multiplier=lot_step
     )
