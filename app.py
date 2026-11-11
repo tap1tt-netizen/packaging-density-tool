@@ -526,10 +526,20 @@ if results:
     sorted_df = res_df.sort_values(by=sort_by_cols, ascending=ascending_rules).reset_index(drop=True)
     available_boxes = list(sorted_df["Box ID / Specification"].values)
     
-    # 🛡️ Dynamic Snapping Boundary Guard (Run BEFORE we index or define selectboxes)
-    # If settings change and previous selection is filtered out, reset session state to Top 1 box cleanly
     current_best_box = available_boxes[0] if available_boxes else None
     
+    # 🛡️ Dynamic Snap-to-Best Guard: 
+    # If a filter/dimension change yields a NEW #1 top recommended box,
+    # automatically reset the session state selection to match the new Top 1 box.
+    if "previous_best_box" not in st.session_state:
+        st.session_state["previous_best_box"] = current_best_box
+        st.session_state["global_selected_box"] = current_best_box
+    elif st.session_state["previous_best_box"] != current_best_box:
+        # The top recommendation has changed! Snap the selected box to the new #1
+        st.session_state["global_selected_box"] = current_best_box
+        st.session_state["previous_best_box"] = current_best_box
+
+    # Standard fallback guard
     if "global_selected_box" not in st.session_state or st.session_state["global_selected_box"] not in available_boxes:
         st.session_state["global_selected_box"] = current_best_box
 
