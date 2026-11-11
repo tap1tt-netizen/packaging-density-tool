@@ -526,17 +526,14 @@ if results:
     sorted_df = res_df.sort_values(by=sort_by_cols, ascending=ascending_rules).reset_index(drop=True)
     available_boxes = list(sorted_df["Box ID / Specification"].values)
     
-    # RESOLVED #2: Complete Dropdown Synchronization and Auto-Snapping Mechanism
+    # RESOLVED #2: Defensively check the dynamic list ranges to avoid ValueError Index crashes
     current_best_box = available_boxes[0] if available_boxes else None
     
-    # If a state recalculation occurred and the stale box is no longer available in the filtered list,
-    # OR if there is no selection set, force-sync the session state directly to the Top 1 Best Box.
+    # Force-sync selection if it's out of range or empty
     if "global_selected_box" not in st.session_state or st.session_state["global_selected_box"] not in available_boxes:
         st.session_state["global_selected_box"] = current_best_box
 
-    best_box = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0] if st.session_state["global_selected_box"] else sorted_df.iloc[0]
-    
-    # Unified State Sync Callbacks
+    # Direct State Sync Callbacks
     def sync_from_tab1():
         st.session_state["global_selected_box"] = st.session_state["tab1_box_selector"]
     def sync_from_tab2():
@@ -544,10 +541,13 @@ if results:
     def sync_from_tab3():
         st.session_state["global_selected_box"] = st.session_state["tab3_box_selector"]
 
-    # Hard-link session keys dynamically
+    # Lock selection keys
     st.session_state["tab1_box_selector"] = st.session_state["global_selected_box"]
     st.session_state["tab2_box_selector"] = st.session_state["global_selected_box"]
     st.session_state["tab3_box_selector"] = st.session_state["global_selected_box"]
+
+    # Safely select the active box from the complete dataset to protect mathematical lookups
+    viz_box = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0] if not sorted_df.empty else None
             
     col_title, col_safety_header = st.columns([7, 3])
     with col_title:
@@ -558,33 +558,34 @@ if results:
             </div>
         """, unsafe_allow_html=True)
     with col_safety_header:
-        total_package_weight = best_box["Total Weight (kg)"]
-        ext_l = best_box["Ext. Length [mm]"]
-        ext_w = best_box["Ext. Width [mm]"]
-        if total_package_weight > 17.0:
-            st.markdown(f"""
-                <div style='background-color:rgba(239, 68, 68, 0.15); border-left:5px solid #ef4444; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
-                    <b style='color:#ef4444; font-size:16px;'>🚨 3. Heavy Load (&gt;17 kg)</b><br>
-                    <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>{total_package_weight} kg (Forklift Required)</span><br>
-                    <span style='font-size:11px;'>Exceeds ergonomic manual limit. Permitted only with mechanical lift aids.</span>
-                </div>
-            """, unsafe_allow_html=True)
-        elif total_package_weight >= max_box_weight_limit:
-            st.markdown(f"""
-                <div style='background-color:rgba(245, 159, 0, 0.15); border-left:5px solid #f59f00; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
-                    <b style='color:#f59f00; font-size:16px;'>🟠 2. Moderate Weight ({max_box_weight_limit}-17 kg)</b><br>
-                    <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>{total_package_weight} kg (Elevated Weight)</span><br>
-                    <span style='font-size:11px;'>Slightly above standard {max_box_weight_limit} kg manual directive. Two-person lift recommended.</span>
-                </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-                <div style='background-color:rgba(34, 197, 94, 0.15); border-left:5px solid #22c55e; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
-                    <b style='color:#22c55e; font-size:16px;'>🟢 1. Light / Safe Weight (&lt;{max_box_weight_limit} kg)</b><br>
-                    <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>Safe at {total_package_weight} kg</span><br>
-                    <span style='font-size:11px;'>Conforms strictly to Packaging Directive (&lt;{max_box_weight_limit} kg). Single-operator manual safe.</span>
-                </div>
-            """, unsafe_allow_html=True)
+        if viz_box is not None:
+            total_package_weight = viz_box["Total Weight (kg)"]
+            ext_l = viz_box["Ext. Length [mm]"]
+            ext_w = viz_box["Ext. Width [mm]"]
+            if total_package_weight > 17.0:
+                st.markdown(f"""
+                    <div style='background-color:rgba(239, 68, 68, 0.15); border-left:5px solid #ef4444; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
+                        <b style='color:#ef4444; font-size:16px;'>🚨 3. Heavy Load (&gt;17 kg)</b><br>
+                        <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>{total_package_weight} kg (Forklift Required)</span><br>
+                        <span style='font-size:11px;'>Exceeds ergonomic manual limit. Permitted only with mechanical lift aids.</span>
+                    </div>
+                """, unsafe_allow_html=True)
+            elif total_package_weight >= max_box_weight_limit:
+                st.markdown(f"""
+                    <div style='background-color:rgba(245, 159, 0, 0.15); border-left:5px solid #f59f00; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
+                        <b style='color:#f59f00; font-size:16px;'>🟠 2. Moderate Weight ({max_box_weight_limit}-17 kg)</b><br>
+                        <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>{total_package_weight} kg (Elevated Weight)</span><br>
+                        <span style='font-size:11px;'>Slightly above standard {max_box_weight_limit} kg manual directive. Two-person lift recommended.</span>
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                    <div style='background-color:rgba(34, 197, 94, 0.15); border-left:5px solid #22c55e; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
+                        <b style='color:#22c55e; font-size:16px;'>🟢 1. Light / Safe Weight (&lt;{max_box_weight_limit} kg)</b><br>
+                        <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>Safe at {total_package_weight} kg</span><br>
+                        <span style='font-size:11px;'>Conforms strictly to Packaging Directive (&lt;{max_box_weight_limit} kg). Single-operator manual safe.</span>
+                    </div>
+                """, unsafe_allow_html=True)
             
     st.success(f"Connected to Cardboard Database: `{filename_loaded}` | Qualifying Options: {len(sorted_df)}")
     st.subheader("💡 Best Matched Packing Insights")
@@ -594,19 +595,19 @@ if results:
             <div class='metric-box'>
                 <b>👑 Best Recommendation</b><br>
                 <span style='font-size:11px; font-weight:bold; color:#0056b3;'>
-                    {best_box['Box ID / Specification']}<br>
-                    <span style='color:#dc3545;'>[Flute: {best_box['Flute Type']}]</span>
+                    {viz_box['Box ID / Specification']}<br>
+                    <span style='color:#dc3545;'>[Flute: {viz_box['Flute Type']}]</span>
                 </span>
             </div>
         """, unsafe_allow_html=True)
     with col2:
-        st.markdown(f"<div class='metric-box'><b>📦 Max Parts Fitted</b><br><span style='font-size:24px; font-weight:bold; color:#28a745;'>{int(best_box['No of Parts per Box'])} Pcs</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-box'><b>📦 Max Parts Fitted</b><br><span style='font-size:24px; font-weight:bold; color:#28a745;'>{int(viz_box['No of Parts per Box'])} Pcs</span></div>", unsafe_allow_html=True)
     with col3:
-        st.markdown(f"<div class='metric-box'><b>📊 Vol. Efficiency</b><br><span style='font-size:24px; font-weight:bold; color:#ffc107;'>{best_box['Volumetric Efficiency (%)']}%</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-box'><b>📊 Vol. Efficiency</b><br><span style='font-size:24px; font-weight:bold; color:#ffc107;'>{viz_box['Volumetric Efficiency (%)']}%</span></div>", unsafe_allow_html=True)
     with col4:
-        st.markdown(f"<div class='metric-box'><b>⚖️ Total Weight</b><br><span style='font-size:24px; font-weight:bold; color:#17a2b8;'>{best_box['Total Weight (kg)']} kg</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-box'><b>⚖️ Total Weight</b><br><span style='font-size:24px; font-weight:bold; color:#17a2b8;'>{viz_box['Total Weight (kg)']} kg</span></div>", unsafe_allow_html=True)
     with col5:
-        st.markdown(f"<div class='metric-box'><b>💰 Box Price</b><br><span style='font-size:24px; font-weight:bold; color:#e83e8c;'>€ {best_box['Box Price (€)']:.2f}</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-box'><b>💰 Box Price</b><br><span style='font-size:24px; font-weight:bold; color:#e83e8c;'>€ {viz_box['Box Price (€)']:.2f}</span></div>", unsafe_allow_html=True)
         
     st.markdown("<br>", unsafe_allow_html=True)
     tab_recommender, tab_pallet, tab_compression = st.tabs([
@@ -639,7 +640,6 @@ if results:
         else:
             filtered_df = sorted_df.copy()
             
-        # RESOLVED #3: Clean formatted columns displaying "No of Parts per Box" next to Total Weight
         keep_columns = [
             "Box ID / Specification",
             "Box Footprint (Ext)",
@@ -700,7 +700,7 @@ if results:
             "Total Weight (kg)": "{:.2f} kg"
         })
         
-        # Streamlit DataFrame layout configuration
+        # Set structured column sizes to avoid truncation
         st.dataframe(
             styled_df, 
             use_container_width=True,
@@ -725,16 +725,15 @@ if results:
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
         
-        # RESOLVED #2: Dropdown selector indexes correctly mapped using available indexes
+        # Safe Dropdown selector key mapping
+        safe_index_t1 = available_boxes.index(st.session_state["global_selected_box"]) if st.session_state["global_selected_box"] in available_boxes else 0
         selected_box_tab1 = st.selectbox(
             "Select a Cardboard Box to inspect its loading blueprints & 3D models (Synchronized):",
             options=available_boxes,
-            index=available_boxes.index(st.session_state["global_selected_box"]),
+            index=safe_index_t1,
             key="tab1_box_selector",
             on_change=sync_from_tab1
         )
-        st.session_state["global_selected_box"] = selected_box_tab1
-        viz_box = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
         
         nx = int(viz_box["_nx"])
         ny = int(viz_box["_ny"])
@@ -876,6 +875,7 @@ if results:
                 ax.annotate('', xy=(0, -35), xytext=(box_l, -35), arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
                 ax.text(box_l/2, -60, f"{int(ext_l)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center')
                 
+                # Bounds check annotation
                 ax.annotate('', xy=(box_l + 35, 0), xytext=(box_l + 35, box_w), arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
                 ax.text(box_l + 60, box_w/2, f"{int(ext_w)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center', va='center', rotation=-90)
                 
@@ -1174,11 +1174,12 @@ if results:
         st.markdown("<hr style='margin:25px 0; border:0; border-top:1px solid rgba(148,163,184,0.2);'>", unsafe_allow_html=True)
         st.markdown(f"### 📦 Palletization Report & Interactive 3D Stacking Model")
         
-        # RESOLVED #2: Dropdown selector indexes correctly mapped using available indexes
+        # RESOLVED #2: Dropdown selector index checks
+        safe_index_t2 = available_boxes.index(st.session_state["global_selected_box"]) if st.session_state["global_selected_box"] in available_boxes else 0
         selected_box_t2 = st.selectbox(
             "Select any Cardboard Box to inspect its detailed pallet loading report & rotatable 3D stack (Synchronized):",
             options=available_boxes,
-            index=available_boxes.index(st.session_state["global_selected_box"]),
+            index=safe_index_t2,
             key="tab2_box_selector",
             on_change=sync_from_tab2
         )
@@ -1348,11 +1349,12 @@ if results:
                 help="Single Pallet checks local column load. Double Stacking adds the entire gross weight of the top pallet onto the bottom boxes."
             )
         with col_setup_2:
-            # RESOLVED #2: Dropdown selector indexes correctly mapped using available indexes
+            # RESOLVED #2: Dropdown index checks
+            safe_index_t3 = available_boxes.index(st.session_state["global_selected_box"]) if st.session_state["global_selected_box"] in available_boxes else 0
             selected_box_t3 = st.selectbox(
                 "Select Box Type to inspect compression strength (Synchronized):",
                 options=available_boxes,
-                index=available_boxes.index(st.session_state["global_selected_box"]),
+                index=safe_index_t3,
                 key="tab3_box_selector",
                 on_change=sync_from_tab3
             )
