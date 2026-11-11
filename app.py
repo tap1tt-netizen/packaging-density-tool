@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import os
 import io
+import hashlib
 import math
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -248,6 +249,21 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
                 st.error("Uploaded file has invalid mesh geometry.")
         except Exception as e_cad:
             st.warning(f"Extracted default placeholders: {e_cad}")
+    else:
+        # If no file is uploaded yet, we default to standard material selection flow
+        st.markdown("#### 🪵 Material Weight Extractor")
+        selected_material = st.selectbox(
+            "Select Part Material:",
+            options=["Select Material..."] + list(MATERIAL_DENSITIES.keys()),
+            index=0
+        )
+        if selected_material == "Select Material...":
+            material_selected = False
+        elif selected_material == "Assembly (Multi-Material/Manual Weight)":
+            assembly_mode = True
+        else:
+            density = MATERIAL_DENSITIES[selected_material]
+            calculated_weight_kg = round(auto_l * auto_w * auto_h * 1e-6 * density, 3)
 
     st.markdown("#### Dimensions (mm)")
     prod_l = st.number_input("Part Length (mm)", min_value=1.0, value=float(auto_l), step=1.0)
@@ -256,13 +272,11 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
     
     st.markdown("#### Weight (kg)")
     if assembly_mode:
-        # MANAGER UPDATE #1: Defaulting to 0.0 kg and halt check warning
         st.warning("⚠️ **Action Required: Input Assembly Weight**\nEnter weight manually below to trigger calculations.")
         prod_wt = st.number_input("Total Assembly Weight (kg)", min_value=0.0, value=0.0, step=0.1)
     else:
         prod_wt = st.number_input("Weight per Part (kg)", min_value=0.01, value=float(calculated_weight_kg), step=0.05)
     
-    # MANAGER UPDATE #2: Relocated orientation selector inside expander so it is permanently visible
     orientation_rule = st.selectbox(
         "Select Packing Orientation:",
         ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"]
@@ -300,7 +314,6 @@ with st.sidebar.expander("📂 Packaging Directives & Tolerances", expanded=Fals
     )
     lot_step = 24
     if lot_alignment_enabled:
-        # MANAGER UPDATE #3: Restructured dropdown choices (removed 12, added 72)
         lot_step = st.selectbox("Select Production LOT Multiplier:", options=[24, 48, 72], index=0)
 
     st.markdown("#### 📏 Clearance Spacers")
@@ -309,7 +322,17 @@ with st.sidebar.expander("📂 Packaging Directives & Tolerances", expanded=Fals
     sep_xy = st.slider("Separator X/Y (mm)", min_value=0, max_value=10, value=2)
     sep_z = st.slider("Separator Z (mm)", min_value=0, max_value=10, value=4)
 
-# Stop calculations entirely if in Assembly Mode and weight is 0.0
+# BSH AIM DESIGN PROTOCOL #1: Immediate halts for missing setup selections
+if uploaded_stl is not None and not material_selected and not assembly_mode:
+    st.markdown("""
+        <div class='app-header'>
+            <h1>📦 BSH Packaging Density & Box Recommender</h1>
+            <p>Grid-Based Product Accommodation, Packaging Directive Compliance & Multi-Pallet Optimizer</p>
+        </div>
+    """, unsafe_allow_html=True)
+    st.warning("⚠️ **Material Selection Required:** Please select a material type in the Product Specifications accordion to proceed.")
+    st.stop()
+
 if assembly_mode and prod_wt == 0.0:
     st.markdown("""
         <div class='app-header'>
@@ -441,7 +464,7 @@ for idx, row in df_inventory.iterrows():
         "Total Weight (kg)": round(total_package_weight, 2),
         "Internal Dimensions": f"{int(box_int_l)}x{int(box_int_w)}x{int(box_int_h)} mm",
         "Ext. Height [mm]": ext_h,
-        "Number of Parts per Box": parts_count,
+        "No of Parts per Box": parts_count,  # MANAGER UPDATE #3: Shortened heading key
         "Max Geometric Fit": raw_max_qty,
         "Optimal Grid Layout": f"{grid_layout[0]}x{grid_layout[1]}x{grid_layout[2]} (X x Y x Z)",
         "Optimal Orientation": f"{int(pack_orient[0])}x{int(pack_orient[1])}x{int(pack_orient[2])} mm",
@@ -469,7 +492,7 @@ if results:
     res_df = pd.DataFrame(results)
     
     max_vol = res_df["Volumetric Efficiency (%)"].max() if res_df["Volumetric Efficiency (%)"].max() > 0 else 1
-    max_qty = res_df["Number of Parts per Box"].max() if res_df["Number of Parts per Box"].max() > 0 else 1
+    max_qty = res_df["No of Parts per Box"].max() if res_df["No of Parts per Box"].max() > 0 else 1
     
     def calculate_priority_score(row):
         v_score = row["Volumetric Efficiency (%)"] / max_vol
@@ -480,7 +503,7 @@ if results:
             w_score = 0.6  
         else:
             w_score = 0.1  
-        q_score = row["Number of Parts per Box"] / max_qty
+        q_score = row["No of Parts per Box"] / max_qty
         return (0.60 * v_score) + (0.25 * w_score) + (0.15 * q_score)
         
     res_df["Priority Score"] = res_df.apply(calculate_priority_score, axis=1)
@@ -492,10 +515,10 @@ if results:
         sort_by_cols = ["Volumetric Efficiency (%)", "Tier Rank", "Box Price (€)"]
         ascending_rules = [False, True, True]
     elif sort_criteria == "Number of Parts per Box":
-        sort_by_cols = ["Number of Parts per Box", "Tier Rank", "Box Price (€)"]
+        sort_by_cols = ["No of Parts per Box", "Tier Rank", "Box Price (€)"]
         ascending_rules = [False, True, True]
     elif sort_criteria == "Box Price (€)":
-        sort_by_cols = ["Box Price (€)", "Tier Rank", "Number of Parts per Box"]
+        sort_by_cols = ["Box Price (€)", "Tier Rank", "No of Parts per Box"]
         ascending_rules = [True, True, False]
     else:  
         sort_by_cols = ["Tier Rank", "Volumetric Efficiency (%)", "Box Price (€)"]
@@ -504,32 +527,30 @@ if results:
     sorted_df = res_df.sort_values(by=sort_by_cols, ascending=ascending_rules).reset_index(drop=True)
     available_boxes = list(sorted_df["Box ID / Specification"].values)
     
-    # MANAGER UPDATE #4: Auto-reset active box if it becomes invalid/outdated
+    # MANAGER UPDATE #2: Force Dropdown synchronization and clean key resets
+    # Calculate a unique data signature hash representing current database settings
+    data_signature = hashlib.md5(f"{sort_criteria}_{lot_alignment_enabled}_{lot_step}_{clear_side}_{clear_height}_{sep_xy}_{sep_z}".encode()).hexdigest()[:8]
+    
+    # Session state initialization with hard fallback resets
     if "global_selected_box" not in st.session_state or st.session_state["global_selected_box"] not in available_boxes:
         st.session_state["global_selected_box"] = available_boxes[0] if available_boxes else None
         
     best_box = sorted_df.iloc[0] if not sorted_df.empty else None
     
     def sync_from_tab1():
-        val = st.session_state["tab1_box_selector"]
+        val = st.session_state[f"tab1_box_selector_{data_signature}"]
         st.session_state["global_selected_box"] = val
-        st.session_state["tab2_box_selector"] = val
-        st.session_state["tab3_box_selector"] = val
     def sync_from_tab2():
-        val = st.session_state["tab2_box_selector"]
+        val = st.session_state[f"tab2_box_selector_{data_signature}"]
         st.session_state["global_selected_box"] = val
-        st.session_state["tab1_box_selector"] = val
-        st.session_state["tab3_box_selector"] = val
     def sync_from_tab3():
-        val = st.session_state["tab3_box_selector"]
+        val = st.session_state[f"tab3_box_selector_{data_signature}"]
         st.session_state["global_selected_box"] = val
-        st.session_state["tab1_box_selector"] = val
-        st.session_state["tab2_box_selector"] = val
         
-    # Sync states after a complete calculation reset
-    for key in ["tab1_box_selector", "tab2_box_selector", "tab3_box_selector"]:
-        if key not in st.session_state or st.session_state[key] not in available_boxes:
-            st.session_state[key] = st.session_state["global_selected_box"]
+    # Synchronize default dropdown keys
+    st.session_state["tab1_box_selector"] = st.session_state["global_selected_box"]
+    st.session_state["tab2_box_selector"] = st.session_state["global_selected_box"]
+    st.session_state["tab3_box_selector"] = st.session_state["global_selected_box"]
             
     col_title, col_safety_header = st.columns([7, 3])
     with col_title:
@@ -582,7 +603,7 @@ if results:
             </div>
         """, unsafe_allow_html=True)
     with col2:
-        st.markdown(f"<div class='metric-box'><b>📦 Max Parts Fitted</b><br><span style='font-size:24px; font-weight:bold; color:#28a745;'>{int(best_box['Number of Parts per Box'])} Pcs</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-box'><b>📦 Max Parts Fitted</b><br><span style='font-size:24px; font-weight:bold; color:#28a745;'>{int(best_box['No of Parts per Box'])} Pcs</span></div>", unsafe_allow_html=True)
     with col3:
         st.markdown(f"<div class='metric-box'><b>📊 Vol. Efficiency</b><br><span style='font-size:24px; font-weight:bold; color:#ffc107;'>{best_box['Volumetric Efficiency (%)']}%</span></div>", unsafe_allow_html=True)
     with col4:
@@ -626,7 +647,7 @@ if results:
             "Box Footprint (Ext)",
             "Flute Type",
             "Total Weight (kg)",
-            "Number of Parts per Box",
+            "No of Parts per Box", # MANAGER UPDATE #3: Clean renamed column key
             "Volumetric Efficiency (%)",
             "Remaining Air Space (%)",
             "Box Price (€)"
@@ -681,33 +702,37 @@ if results:
             "Total Weight (kg)": "{:.2f} kg"
         })
         
+        # MANAGER UPDATE #3: Explicitly set structural column sizes to avoid truncation
         st.dataframe(
             styled_df, 
             use_container_width=True,
             height=450,
             column_config={
-                "Box ID / Specification": st.column_config.TextColumn("Box ID / Specification", width="medium"),
-                "Box Footprint (Ext)": st.column_config.TextColumn("Box Footprint (Ext)", width="small"),
+                "Box ID / Specification": st.column_config.TextColumn("Box ID / Specification", width="large"),
+                "Box Footprint (Ext)": st.column_config.TextColumn("Box Footprint (Ext)", width="medium"),
                 "Flute Type": st.column_config.TextColumn("Flute Type", width="small"),
                 "Total Weight (kg)": st.column_config.TextColumn("Total Weight (kg)", width="small"),
-                "Number of Parts per Box": st.column_config.NumberColumn("Number of Parts per Box", width="small"),
+                "No of Parts per Box": st.column_config.NumberColumn("No of Parts per Box", width="small"),
                 "Volumetric Efficiency (%)": st.column_config.ProgressColumn(
                     "Volumetric Efficiency (%)",
                     format="%.2f%%",
                     min_value=0,
-                    max_value=100
+                    max_value=100,
+                    width="medium"
                 ),
                 "Remaining Air Space (%)": st.column_config.TextColumn("Remaining Air Space (%)", width="small"),
-                "Box Price (€)": st.column_config.NumberColumn("Box Price (€)", format="€ %.2f")
+                "Box Price (€)": st.column_config.NumberColumn("Box Price (€)", format="€ %.2f", width="small")
             }
         )
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
         
+        # MANAGER UPDATE #2: Synced selection dropdown forced to render using dynamic hash-key
         selected_box_tab1 = st.selectbox(
             "Select a Cardboard Box to inspect its loading blueprints & 3D models (Synchronized):",
             options=available_boxes,
-            key="tab1_box_selector",
+            index=available_boxes.index(st.session_state["global_selected_box"]) if st.session_state["global_selected_box"] in available_boxes else 0,
+            key=f"tab1_box_selector_{data_signature}",
             on_change=sync_from_tab1
         )
         st.session_state["global_selected_box"] = selected_box_tab1
@@ -725,7 +750,7 @@ if results:
         ext_w = viz_box["Ext. Width [mm]"]
         
         max_possible_parts = int(viz_box["Max Geometric Fit"])
-        default_packed_parts = int(viz_box["Number of Parts per Box"])
+        default_packed_parts = int(viz_box["No of Parts per Box"])
         qty_state_key = f"manual_qty_{st.session_state['global_selected_box']}"
         if qty_state_key not in st.session_state:
             st.session_state[qty_state_key] = default_packed_parts
@@ -1014,6 +1039,7 @@ if results:
                             x_pos = start_x_offset + c * (ox + sep_xy)
                             add_wireframe_compartment(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz)
                             
+                            # MANAGER UPDATE #2: Render exactly 1 part per layer (rendered at row 1, col 1)
                             if mesh_cad is not None and r == 0 and c == 0:
                                 try:
                                     add_plotly_mesh_part(
@@ -1099,14 +1125,14 @@ if results:
             top3_row = ranked_df_copy.iloc[2] if len(ranked_df_copy) >= 3 else None
             top3_name = top3_row["Box ID / Specification"] if top3_row is not None else "N/A"
             
-            bt_s, _, _, pcs_s, wt_s, _, _, _ = calculate_pallet_stacking(1200, 800, small_row["Ext. Length [mm]"], small_row["Ext. Width [mm]"], small_row["Ext. Height [mm]"], small_row["Total Weight (kg)"], int(small_row["Number of Parts per Box"]))
-            bt_1, _, _, pcs_1, wt_1, _, _, _ = calculate_pallet_stacking(1200, 800, top1_row["Ext. Length [mm]"], top1_row["Ext. Width [mm]"], top1_row["Ext. Height [mm]"], top1_row["Total Weight (kg)"], int(top1_row["Number of Parts per Box"]))
+            bt_s, _, _, pcs_s, wt_s, _, _, _ = calculate_pallet_stacking(1200, 800, small_row["Ext. Length [mm]"], small_row["Ext. Width [mm]"], small_row["Ext. Height [mm]"], small_row["Total Weight (kg)"], int(small_row["No of Parts per Box"]))
+            bt_1, _, _, pcs_1, wt_1, _, _, _ = calculate_pallet_stacking(1200, 800, top1_row["Ext. Length [mm]"], top1_row["Ext. Width [mm]"], top1_row["Ext. Height [mm]"], top1_row["Total Weight (kg)"], int(top1_row["No of Parts per Box"]))
             if top2_row is not None:
-                bt_2, _, _, pcs_2, wt_2, _, _, _ = calculate_pallet_stacking(1200, 800, top2_row["Ext. Length [mm]"], top2_row["Ext. Width [mm]"], top2_row["Ext. Height [mm]"], top2_row["Total Weight (kg)"], int(top2_row["Number of Parts per Box"]))
+                bt_2, _, _, pcs_2, wt_2, _, _, _ = calculate_pallet_stacking(1200, 800, top2_row["Ext. Length [mm]"], top2_row["Ext. Width [mm]"], top2_row["Ext. Height [mm]"], top2_row["Total Weight (kg)"], int(top2_row["No of Parts per Box"]))
             else:
                 bt_2, pcs_2, wt_2 = "N/A", 0, "N/A"
             if top3_row is not None:
-                bt_3, _, _, pcs_3, wt_3, _, _, _ = calculate_pallet_stacking(1200, 800, top3_row["Ext. Length [mm]"], top3_row["Ext. Width [mm]"], top3_row["Ext. Height [mm]"], top3_row["Total Weight (kg)"], int(top3_row["Number of Parts per Box"]))
+                bt_3, _, _, pcs_3, wt_3, _, _, _ = calculate_pallet_stacking(1200, 800, top3_row["Ext. Length [mm]"], top3_row["Ext. Width [mm]"], top3_row["Ext. Height [mm]"], top3_row["Total Weight (kg)"], int(top3_row["No of Parts per Box"]))
             else:
                 bt_3, pcs_3, wt_3 = "N/A", 0, "N/A"
                 
@@ -1137,7 +1163,7 @@ if results:
                 {"Metric Profile": "Cardboard Flute Quality", "Smallest Box (Top 10)": small_row['Quality Class'], "Top 1 Best Box": top1_row['Quality Class'], "Top 2 Best Box": top2_row['Quality Class'] if top2_row is not None else "N/A", "Top 3 Best Box": top3_row['Quality Class'] if top3_row is not None else "N/A"},
                 {"Metric Profile": "External Footprint Dimensions", "Smallest Box (Top 10)": f"{int(small_row['Ext. Length [mm]'])}x{int(small_row['Ext. Width [mm]'])} mm", "Top 1 Best Box": f"{int(top1_row['Ext. Length [mm]'])}x{int(top1_row['Ext. Width [mm]'])} mm", "Top 2 Best Box": f"{int(top2_row['Ext. Length [mm]'])}x{int(top2_row['Ext. Width [mm]'])} mm" if top2_row is not None else "N/A", "Top 3 Best Box": f"{int(top3_row['Ext. Length [mm]'])}x{int(top3_row['Ext. Width [mm]'])} mm" if top3_row is not None else "N/A"},
                 {"Metric Profile": "Optimal Packing Orientation", "Smallest Box (Top 10)": determine_placement_style(prod_l, prod_w, prod_h, small_row["_oz"]), "Top 1 Best Box": determine_placement_style(prod_l, prod_w, prod_h, top1_row["_oz"]), "Top 2 Best Box": determine_placement_style(prod_l, prod_w, prod_h, top2_row["_oz"]) if top2_row is not None else "N/A", "Top 3 Best Box": determine_placement_style(prod_l, prod_w, prod_h, top3_row["_oz"]) if top3_row is not None else "N/A"},
-                {"Metric Profile": "Parts Loaded (Per Box)", "Smallest Box (Top 10)": f"{int(small_row['Number of Parts per Box'])} Pcs", "Top 1 Best Box": f"{int(top1_row['Number of Parts per Box'])} Pcs", "Top 2 Best Box": f"{int(top2_row['Number of Parts per Box'])} Pcs" if top2_row is not None else "N/A", "Top 3 Best Box": f"{int(top3_row['Number of Parts per Box'])} Pcs" if top3_row is not None else "N/A"},
+                {"Metric Profile": "Parts Loaded (Per Box)", "Smallest Box (Top 10)": f"{int(small_row['No of Parts per Box'])} Pcs", "Top 1 Best Box": f"{int(top1_row['No of Parts per Box'])} Pcs", "Top 2 Best Box": f"{int(top2_row['No of Parts per Box'])} Pcs" if top2_row is not None else "N/A", "Top 3 Best Box": f"{int(top3_row['No of Parts per Box'])} Pcs" if top3_row is not None else "N/A"},
                 {"Metric Profile": "Boxes Loaded (Per Pallet)", "Smallest Box (Top 10)": f"{bt_s} boxes", "Top 1 Best Box": f"{bt_1} boxes", "Top 2 Best Box": f"{bt_2} boxes" if top2_row is not None else "N/A", "Top 3 Best Box": f"{bt_3} boxes" if top3_row is not None else "N/A"},
                 {"Metric Profile": "Total Pieces (Per Pallet)", "Smallest Box (Top 10)": f"{pcs_s} Pcs", "Top 1 Best Box": f"{pcs_1} Pcs", "Top 2 Best Box": f"{pcs_2} Pcs" if top2_row is not None else "N/A", "Top 3 Best Box": f"{pcs_3} Pcs" if top3_row is not None else "N/A"},
                 {"Metric Profile": "Pallet Weight (inc. 23kg Tare)", "Smallest Box (Top 10)": f"{wt_s} kg", "Top 1 Best Box": f"{wt_1} kg", "Top 2 Best Box": f"{wt_2} kg" if top2_row is not None else "N/A", "Top 3 Best Box": f"{wt_3} kg" if top3_row is not None else "N/A"},
@@ -1150,10 +1176,12 @@ if results:
         st.markdown("<hr style='margin:25px 0; border:0; border-top:1px solid rgba(148,163,184,0.2);'>", unsafe_allow_html=True)
         st.markdown(f"### 📦 Palletization Report & Interactive 3D Stacking Model")
         
+        # MANAGER UPDATE #2: Synced selection dropdown forced to render using dynamic hash-key
         selected_box_t2 = st.selectbox(
             "Select any Cardboard Box to inspect its detailed pallet loading report & rotatable 3D stack (Synchronized):",
             options=available_boxes,
-            key="tab2_box_selector",
+            index=available_boxes.index(st.session_state["global_selected_box"]) if st.session_state["global_selected_box"] in available_boxes else 0,
+            key=f"tab2_box_selector_{data_signature}",
             on_change=sync_from_tab2
         )
         st.session_state["global_selected_box"] = selected_box_t2
@@ -1163,7 +1191,7 @@ if results:
         bx_ext_w = viz_box_t2["Ext. Width [mm]"]
         bx_ext_h = viz_box_t2["Ext. Height [mm]"]
         t2_qty_key = f"manual_qty_{st.session_state['global_selected_box']}"
-        active_t2_pcs = int(st.session_state.get(t2_qty_key, viz_box_t2["Number of Parts per Box"]))
+        active_t2_pcs = int(st.session_state.get(t2_qty_key, viz_box_t2["No of Parts per Box"]))
         active_t2_wt = round((active_t2_pcs * prod_wt) + estimate_box_weight(bx_ext_l, bx_ext_w, bx_ext_h, viz_box_t2["Quality Class"]), 2)
         
         col_metrics, col_plotly_pallet = st.columns([4, 6])
@@ -1323,10 +1351,12 @@ if results:
                 help="Single Pallet checks local column load. Double Stacking adds the entire gross weight of the top pallet onto the bottom boxes."
             )
         with col_setup_2:
+            # MANAGER UPDATE #2: Synced selection dropdown forced to render using dynamic hash-key
             selected_box_t3 = st.selectbox(
                 "Select Box Type to inspect compression strength (Synchronized):",
                 options=available_boxes,
-                key="tab3_box_selector",
+                index=available_boxes.index(st.session_state["global_selected_box"]) if st.session_state["global_selected_box"] in available_boxes else 0,
+                key=f"tab3_box_selector_{data_signature}",
                 on_change=sync_from_tab3
             )
             st.session_state["global_selected_box"] = selected_box_t3
@@ -1373,7 +1403,7 @@ if results:
         bx_ext_w_t3 = viz_box_t3["Ext. Width [mm]"]
         bx_ext_h_t3 = viz_box_t3["Ext. Height [mm]"]
         t3_qty_key = f"manual_qty_{st.session_state['global_selected_box']}"
-        active_t3_pcs = int(st.session_state.get(t3_qty_key, viz_box_t3["Number of Parts per Box"]))
+        active_t3_pcs = int(st.session_state.get(t3_qty_key, viz_box_t3["No of Parts per Box"]))
         active_t3_wt = round((active_t3_pcs * prod_wt) + estimate_box_weight(bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, viz_box_t3["Quality Class"]), 2)
         
         _, z_layers_calc_t3, best_layer_qty_t3, _, p_wt_calc_t3, _, _, _ = calculate_pallet_stacking(1200, 800, bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, active_t3_wt, active_t3_pcs)
