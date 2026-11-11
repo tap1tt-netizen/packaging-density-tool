@@ -1462,16 +1462,21 @@ if results:
             )
             try:
                 fig_pallet_3d = go.Figure()
+                pallet_h = active_p_spec["pallet_h"] # 144.0 mm
+
+                # 1. Top Deck Boards (Drawn from Z = 122 to 144)
                 fig_pallet_3d.add_trace(go.Mesh3d(
                     x=[0, active_p_spec["l"], active_p_spec["l"], 0, 0, active_p_spec["l"], active_p_spec["l"], 0],
                     y=[0, 0, active_p_spec["w"], active_p_spec["w"], 0, 0, active_p_spec["w"], active_p_spec["w"]],
-                    z=[-22, -22, -22, -22, 0, 0, 0, 0],
+                    z=[122, 122, 122, 122, 144, 144, 144, 144],
                     i=[0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1],
                     j=[1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6],
                     k=[2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5],
                     color='#d2b48c', opacity=0.95, name="Top Deck Boards",
                     flatshading=True, lighting=dict(ambient=0.6, diffuse=0.8, specular=0.1)
                 ))
+
+                # 2. Runner Blocks (Drawn from Z = 22 to 122)
                 runners_y = [
                     (0, 100),
                     (active_p_spec["w"]/2 - 50, active_p_spec["w"]/2 + 50),
@@ -1481,23 +1486,27 @@ if results:
                     fig_pallet_3d.add_trace(go.Mesh3d(
                         x=[0, active_p_spec["l"], active_p_spec["l"], 0, 0, active_p_spec["l"], active_p_spec["l"], 0],
                         y=[y0, y0, y1, y1, y0, y0, y1, y1],
-                        z=[-122, -122, -122, -122, -22, -22, -22, -22],
+                        z=[22, 22, 22, 22, 122, 122, 122, 122],
                         i=[0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1],
                         j=[1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6],
                         k=[2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5],
                         color='#cd853f', opacity=0.95, name=f"Runner {r_idx+1}",
                         flatshading=True, lighting=dict(ambient=0.6, diffuse=0.8, specular=0.1)
                     ))
+
+                # 3. Bottom Base Boards (Drawn from Z = 0 to 22)
                 fig_pallet_3d.add_trace(go.Mesh3d(
                     x=[0, active_p_spec["l"], active_p_spec["l"], 0, 0, active_p_spec["l"], active_p_spec["l"], 0],
                     y=[0, 0, active_p_spec["w"], active_p_spec["w"], 0, 0, active_p_spec["w"], active_p_spec["w"]],
-                    z=[-144, -144, -144, -144, -122, -122, -122, -122],
+                    z=[0, 0, 0, 0, 22, 22, 22, 22],
                     i=[0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1],
                     j=[1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6],
                     k=[2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5],
                     color='#d2b48c', opacity=0.95, name="Bottom Boards",
                     flatshading=True, lighting=dict(ambient=0.6, diffuse=0.8, specular=0.1)
                 ))
+
+                # 4. Box Drawing (Shifted up to start at Z = 144)
                 bx_dx = bx_ext_l if p_orient == "Lengthwise (L-parallel)" else bx_ext_w
                 bx_dy = bx_ext_w if p_orient == "Lengthwise (L-parallel)" else bx_ext_l
                 bx_dz = bx_ext_h
@@ -1505,8 +1514,9 @@ if results:
                 start_y = (active_p_spec["w"] - ny_act * bx_dy) / 2
                 line_x, line_y, line_z = [], [], []
                 colors_gradient = ["#1c7ed6", "#228be6", "#339af0", "#4dabf7", "#74c0fc", "#a5d8ff"]
+                
                 for layer in range(p_layers):
-                    z0 = layer * bx_dz
+                    z0 = layer * bx_dz + pallet_h # Start at 144mm instead of 0
                     z1 = z0 + bx_dz
                     color = colors_gradient[layer % len(colors_gradient)]
                     for r in range(ny_act):
@@ -1540,15 +1550,14 @@ if results:
                             ))
                 fig_pallet_3d.add_trace(go.Scatter3d(
                     x=line_x, y=line_y, z=line_z,
-                    mode='lines',
-                    line=dict(color='#1864ab', width=2),
+                    mode='lines', line=dict(color='#1864ab', width=2),
                     name="Cardboard Boxes"
                 ))
                 fig_pallet_3d.update_layout(
                     scene=dict(
                         xaxis=dict(title="Length (mm)", range=[-50, active_p_spec["l"]+50], gridcolor='lightgray'),
                         yaxis=dict(title="Width (mm)", range=[-50, active_p_spec["w"]+50], gridcolor='lightgray'),
-                        zaxis=dict(title="Height (mm)", range=[-150, 1100], gridcolor='lightgray'),
+                        zaxis=dict(title="Height (mm)", range=[0, 1100], gridcolor='lightgray'), # Axis starts at 0!
                         aspectmode='data',
                         camera=dict(eye=dict(x=1.6, y=1.6, z=1.2))
                     ),
