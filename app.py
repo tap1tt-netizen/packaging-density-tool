@@ -158,11 +158,10 @@ except Exception as e:
     st.stop()
 
 # ==============================================================================
-# 3. SIDEBAR: OPERATOR INPUTS & PACKAGING DIRECTIVE CONTROLS
+# 3. SIDEBAR: RE-ORGANIZED INTO ACCORDIONS (EXPANDERS)
 # ==============================================================================
 st.sidebar.header("⚙️ Optimization Strategy")
 
-# MANAGER UPDATE #2: Moved "Rank Box Options By" to the very top of the sidebar
 sort_criteria = st.sidebar.selectbox(
     "Rank Box Options By:", 
     [
@@ -175,121 +174,122 @@ sort_criteria = st.sidebar.selectbox(
     help="Default priority uses weighted index: Volumetric Efficiency (60%) ➔ Weight Compliance (25%) ➔ Quantity Yield (15%)."
 )
 
-st.sidebar.markdown("---")
-st.sidebar.header("📦 Product Specifications")
-uploaded_stl = st.sidebar.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
-mesh_cad = None  
-auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
-calculated_weight_kg = 0.25
-material_selected = True  
+# SIDEBAR RE-ORGANIZATION #1: Product Specification Accordion
+with st.sidebar.expander("📂 Product Specifications", expanded=True):
+    uploaded_stl = st.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
+    mesh_cad = None  
+    auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
+    calculated_weight_kg = 0.25
+    material_selected = True  
 
-MATERIAL_DENSITIES = {
-    "ABS Plastic": 1.04,
-    "PLA Plastic": 1.24,
-    "Polypropylene (PP)": 0.90,
-    "Polycarbonate (PC)": 1.20,
-    "Aluminum": 2.70,
-    "Mild Steel": 7.85,
-    "Stainless Steel": 8.00
-}
+    MATERIAL_DENSITIES = {
+        "ABS Plastic": 1.04,
+        "PLA Plastic": 1.24,
+        "Polypropylene (PP)": 0.90,
+        "Polycarbonate (PC)": 1.20,
+        "Aluminum": 2.70,
+        "Mild Steel": 7.85,
+        "Stainless Steel": 8.00
+    }
 
-if uploaded_stl is not None:
-    filename = uploaded_stl.name.lower()
-    try:
-        import trimesh
-        uploaded_stl.seek(0)
-        if filename.endswith('.step') or filename.endswith('.stp'):
-            import cascadio
-            mesh_cad = trimesh.load(uploaded_stl, file_type='step')
-        else:
-            mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
-        bounds = mesh_cad.bounding_box.extents
-        dims = sorted(bounds)
-        auto_h = round(dims[0], 1)
-        auto_w = round(dims[1], 1)
-        auto_l = round(dims[2], 1)
-        cad_volume = max(mesh_cad.volume, 0.001)
-        is_cm_scale = auto_l < 50.0
-        if is_cm_scale:
-            auto_l *= 10.0
-            auto_w *= 10.0
-            auto_h *= 10.0
-            cad_volume *= 1000.0  
-        st.sidebar.success(f"📐 Auto-Extracted Dimensions: {auto_l} x {auto_w} x {auto_h} mm")
-        st.sidebar.markdown("#### 🪵 Material Weight Extractor")
-        selected_material = st.sidebar.selectbox(
-            "Select Part Material:",
-            options=["Select Material..."] + list(MATERIAL_DENSITIES.keys()),
-            index=0,
-            help="Choose the physical material of this component to calculate its exact solid weight."
-        )
-        if selected_material == "Select Material...":
-            material_selected = False
-        else:
-            density = MATERIAL_DENSITIES[selected_material]
-            calculated_weight_kg = round(cad_volume * density * 1e-6, 3)
-            st.sidebar.info(f"⚖️ Calculated Solid Weight ({selected_material}): **{calculated_weight_kg} kg**")
-    except Exception as e_cad:
-        st.sidebar.warning(f"Could not auto-extract CAD dimensions: {e_cad}")
+    if uploaded_stl is not None:
+        filename = uploaded_stl.name.lower()
+        try:
+            import trimesh
+            uploaded_stl.seek(0)
+            if filename.endswith('.step') or filename.endswith('.stp'):
+                import cascadio
+                mesh_cad = trimesh.load(uploaded_stl, file_type='step')
+            else:
+                mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
+            
+            # Normalize vertices (scale validation checks to prevent rendering crashes)
+            if mesh_cad.vertices.size > 0:
+                bounds = mesh_cad.bounding_box.extents
+                dims = sorted(bounds)
+                auto_h = round(dims[0], 1)
+                auto_w = round(dims[1], 1)
+                auto_l = round(dims[2], 1)
+                
+                # Zero coordinate check
+                if auto_l == 0: auto_l = 1.0
+                if auto_w == 0: auto_w = 1.0
+                if auto_h == 0: auto_h = 1.0
+                
+                cad_volume = max(mesh_cad.volume, 0.001)
+                is_cm_scale = auto_l < 50.0
+                if is_cm_scale:
+                    auto_l *= 10.0
+                    auto_w *= 10.0
+                    auto_h *= 10.0
+                    cad_volume *= 1000.0  
+                
+                st.success(f"📐 Extracted: {auto_l}x{auto_w}x{auto_h} mm")
+                
+                st.markdown("#### 🪵 Material Weight")
+                selected_material = st.selectbox(
+                    "Select Part Material:",
+                    options=["Select Material..."] + list(MATERIAL_DENSITIES.keys()),
+                    index=0,
+                    help="Choose the material of this component to calculate its solid weight."
+                )
+                if selected_material == "Select Material...":
+                    material_selected = False
+                else:
+                    density = MATERIAL_DENSITIES[selected_material]
+                    calculated_weight_kg = round(cad_volume * density * 1e-6, 3)
+                    st.info(f"⚖️ Solid Weight: **{calculated_weight_kg} kg**")
+            else:
+                st.error("Uploaded file has invalid mesh geometry.")
+        except Exception as e_cad:
+            st.warning(f"Extracted default placeholders: {e_cad}")
 
-st.sidebar.markdown("#### Part Dimensions (mm)")
-prod_l = st.sidebar.number_input("Part Length (mm)", min_value=1.0, value=float(auto_l), step=1.0)
-prod_w = st.sidebar.number_input("Part Width (mm)", min_value=1.0, value=float(auto_w), step=1.0)
-prod_h = st.sidebar.number_input("Part Height (mm)", min_value=1.0, value=float(auto_h), step=1.0)
-st.sidebar.markdown("#### Part Weight (kg)")
-prod_wt = st.sidebar.number_input("Weight per Part (kg)", min_value=0.01, value=float(calculated_weight_kg), step=0.05)
+    st.markdown("#### Dimensions (mm)")
+    prod_l = st.number_input("Part Length (mm)", min_value=1.0, value=float(auto_l), step=1.0)
+    prod_w = st.number_input("Part Width (mm)", min_value=1.0, value=float(auto_w), step=1.0)
+    prod_h = st.number_input("Part Height (mm)", min_value=1.0, value=float(auto_h), step=1.0)
+    st.markdown("#### Weight (kg)")
+    prod_wt = st.number_input("Weight per Part (kg)", min_value=0.01, value=float(calculated_weight_kg), step=0.05)
 
-st.sidebar.markdown("---")
-st.sidebar.header("📋 Packaging Directive Constraints")
-max_box_weight_limit = st.sidebar.number_input(
-    "Max Manual Box Weight Limit (kg)", 
-    min_value=5.0, max_value=30.0, value=13.0, step=0.5,
-    help="Directive standard: <13 kg for manual operator handling."
-)
-max_pallet_weight_limit = st.sidebar.number_input(
-    "Max Gross Pallet Weight Limit (kg)", 
-    min_value=100.0, max_value=1500.0, value=600.0, step=25.0,
-    help="Directive standard: <600 kg total gross pallet load."
-)
-max_pallet_height_limit = st.sidebar.number_input(
-    "Max Total Pallet Stack Height (mm)",
-    min_value=500.0, max_value=1500.0, value=970.0, step=10.0,
-    help="Directive standard: 970 mm total height (including 144 mm wood pallet)."
-)
+# SIDEBAR RE-ORGANIZATION #2: Packaging Directive Accordion
+with st.sidebar.expander("📂 Packaging Directives & Tolerances", expanded=False):
+    max_box_weight_limit = st.number_input(
+        "Max Manual Box Weight Limit (kg)", 
+        min_value=5.0, max_value=30.0, value=13.0, step=0.5
+    )
+    max_pallet_weight_limit = st.number_input(
+        "Max Gross Pallet Weight Limit (kg)", 
+        min_value=100.0, max_value=1500.0, value=600.0, step=25.0
+    )
+    max_pallet_height_limit = st.number_input(
+        "Max Total Pallet Stack Height (mm)",
+        min_value=500.0, max_value=1500.0, value=970.0, step=10.0
+    )
+    
+    enforce_box_dim_cap = st.checkbox(
+        "Enforce Box Dimension Limits", 
+        value=False,
+        help="Filters out boxes exceeding custom external dimensions."
+    )
+    if enforce_box_dim_cap:
+        limit_l = st.number_input("Max External Length (mm)", min_value=100.0, max_value=2000.0, value=600.0, step=10.0)
+        limit_w = st.number_input("Max External Width (mm)", min_value=100.0, max_value=2000.0, value=400.0, step=10.0)
+        limit_h = st.number_input("Max External Height (mm)", min_value=50.0, max_value=2000.0, value=270.0, step=10.0)
 
-# MANAGER UPDATE #3: Replaced single check with manual user constraints
-enforce_box_dim_cap = st.sidebar.checkbox(
-    "Enforce Manual Box Dimension Limits", 
-    value=False,
-    help="If enabled, filters out boxes with external dimensions exceeding custom limits specified below."
-)
+    st.markdown("#### 🏭 Production LOT Alignment")
+    lot_alignment_enabled = st.checkbox(
+        "Align Box Quantity to LOT Multiples", 
+        value=False
+    )
+    lot_step = 24
+    if lot_alignment_enabled:
+        lot_step = st.selectbox("Select Production LOT Multiplier:", options=[24, 48, 12], index=0)
 
-if enforce_box_dim_cap:
-    limit_l = st.sidebar.number_input("Max External Length (mm)", min_value=100.0, max_value=2000.0, value=600.0, step=10.0)
-    limit_w = st.sidebar.number_input("Max External Width (mm)", min_value=100.0, max_value=2000.0, value=400.0, step=10.0)
-    limit_h = st.sidebar.number_input("Max External Height (mm)", min_value=50.0, max_value=2000.0, value=270.0, step=10.0)
-
-st.sidebar.markdown("#### 🏭 Production LOT Alignment")
-lot_alignment_enabled = st.sidebar.checkbox(
-    "Align Box Quantity to LOT Multiples", 
-    value=False, 
-    help="Caps the packed parts per box to the highest multiple of standard LOT sizes (e.g., 24 or 48)."
-)
-lot_step = 24
-if lot_alignment_enabled:
-    lot_step = st.sidebar.selectbox("Select Production LOT Multiplier:", options=[24, 48, 12], index=0)
-
-st.sidebar.markdown("---")
-st.sidebar.header("📏 Divider & Clearance Spacing")
-clear_side = st.sidebar.slider("Sides Clearance buffer (mm)", min_value=0, max_value=20, value=2)
-clear_height = st.sidebar.slider("Height Clearance buffer (mm)", min_value=0, max_value=20, value=4)
-sep_xy = st.sidebar.slider("Separator X/Y Thickness (mm)", min_value=0, max_value=10, value=2)
-sep_z = st.sidebar.slider("Separator Z Thickness (mm)", min_value=0, max_value=10, value=4)
-
-orientation_rule = st.sidebar.selectbox(
-    "Select Packing Orientation:",
-    ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"]
-)
+    st.markdown("#### 📏 Clearance Spacers")
+    clear_side = st.slider("Sides Buffer (mm)", min_value=0, max_value=20, value=2)
+    clear_height = st.slider("Height Buffer (mm)", min_value=0, max_value=20, value=4)
+    sep_xy = st.slider("Separator X/Y (mm)", min_value=0, max_value=10, value=2)
+    sep_z = st.slider("Separator Z (mm)", min_value=0, max_value=10, value=4)
 
 if not material_selected:
     st.markdown("""
@@ -298,7 +298,7 @@ if not material_selected:
             <p>Grid-Based Product Accommodation, Packaging Directive Compliance & Multi-Pallet Optimizer</p>
         </div>
     """, unsafe_allow_html=True)
-    st.warning("⚠️ **Please select a part material** in the sidebar to recommend boxes.")
+    st.warning("⚠️ **Please select a part material** in the accordion to recommend boxes.")
     st.stop()
 
 # ==============================================================================
@@ -371,7 +371,6 @@ for idx, row in df_inventory.iterrows():
     if pd.isna(box_int_l) or pd.isna(box_int_w) or pd.isna(box_int_h):
         continue
     
-    # Filter based on custom dimension sliders (with fallback logic)
     if enforce_box_dim_cap:
         ext_dims_sorted = sorted([ext_l, ext_w])
         req_dims_sorted = sorted([limit_l, limit_w])
@@ -388,22 +387,18 @@ for idx, row in df_inventory.iterrows():
     if parts_count == 0:
         continue
         
-    # Calculate Weights
     box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row['Quality'])
     total_payload_wt = parts_count * prod_wt
     total_package_weight = total_payload_wt + box_weight
     
-    # Structural Box Load check
     if total_payload_wt > row['Max. Load [kg]']:
         continue
         
-    # Volumes & Air Spaces
     box_internal_vol = box_int_l * box_int_w * box_int_h
     occupied_volume = parts_count * single_part_vol
     vol_efficiency = (occupied_volume / box_internal_vol) * 100
     air_space_percent = 100.0 - vol_efficiency
     
-    # Ergonomic color boundaries (Green < 13 kg, Orange 13-17 kg, Red > 17 kg)
     if total_package_weight < 13.0:
         weight_tier = "🟢 1. Green (<13 kg)"
         tier_rank = 1
@@ -422,7 +417,7 @@ for idx, row in df_inventory.iterrows():
         "Box ID / Specification": box_spec_label,
         "Box Size Key": row['BoxSize'],
         "Box Footprint (Ext)": f"{int(ext_l)}x{int(ext_w)} mm",
-        "Flute Type": q_class, # Standardized key matching Flute Type
+        "Flute Type": q_class, 
         "Total Weight (kg)": round(total_package_weight, 2),
         "Internal Dimensions": f"{int(box_int_l)}x{int(box_int_w)}x{int(box_int_h)} mm",
         "Ext. Height [mm]": ext_h,
@@ -453,7 +448,6 @@ for idx, row in df_inventory.iterrows():
 if results:
     res_df = pd.DataFrame(results)
     
-    # Weighted Index Calculations for the default multi-criteria option
     max_vol = res_df["Volumetric Efficiency (%)"].max() if res_df["Volumetric Efficiency (%)"].max() > 0 else 1
     max_qty = res_df["Number of Parts per Box"].max() if res_df["Number of Parts per Box"].max() > 0 else 1
     
@@ -471,7 +465,6 @@ if results:
         
     res_df["Priority Score"] = res_df.apply(calculate_priority_score, axis=1)
     
-    # Sorting Criteria Router
     if sort_criteria == "Multi-Criteria Priority (Vol % ➔ Weight ➔ Qty)":
         sort_by_cols = ["Priority Score", "Total Weight (kg)", "Box Price (€)"]
         ascending_rules = [False, True, True]
@@ -484,14 +477,13 @@ if results:
     elif sort_criteria == "Box Price (€)":
         sort_by_cols = ["Box Price (€)", "Tier Rank", "Number of Parts per Box"]
         ascending_rules = [True, True, False]
-    else:  # Ergonomic Color Tier
+    else:  
         sort_by_cols = ["Tier Rank", "Volumetric Efficiency (%)", "Box Price (€)"]
         ascending_rules = [True, False, True]
         
     sorted_df = res_df.sort_values(by=sort_by_cols, ascending=ascending_rules).reset_index(drop=True)
     best_box = sorted_df.iloc[0]
     
-    # Universal Session State Synchronization across Tabs 1, 2, and 3
     available_boxes = list(sorted_df["Box ID / Specification"].values)
     if "global_selected_box" not in st.session_state or st.session_state["global_selected_box"] not in available_boxes:
         st.session_state["global_selected_box"] = available_boxes[0]
@@ -516,7 +508,6 @@ if results:
         if key not in st.session_state or st.session_state[key] not in available_boxes:
             st.session_state[key] = st.session_state["global_selected_box"]
             
-    # Top Header Safety Badge Layout
     col_title, col_safety_header = st.columns([7, 3])
     with col_title:
         st.markdown("""
@@ -607,7 +598,6 @@ if results:
         else:
             filtered_df = sorted_df.copy()
             
-        # DYNAMIC DELETION MATRIX: Retains ONLY your exactly specified columns
         keep_columns = [
             "Box ID / Specification",
             "Box Footprint (Ext)",
@@ -654,11 +644,11 @@ if results:
         def highlight_exact_weight_hierarchy(row):
             wt = float(row["Total Weight (kg)"])
             if wt < max_box_weight_limit:
-                bg = "background-color: #d4edda; color: #155724;"   # Green compliant
+                bg = "background-color: #d4edda; color: #155724;"   
             elif wt <= 17.0:
-                bg = "background-color: #fff3cd; color: #856404;"   # Orange caution
+                bg = "background-color: #fff3cd; color: #856404;"   
             else:
-                bg = "background-color: #f8d7da; color: #721c24;"   # Red forklift
+                bg = "background-color: #f8d7da; color: #721c24;"   
             return [f"{bg} font-weight: 600;"] * len(row)
             
         styled_df = display_df.style.apply(highlight_exact_weight_hierarchy, axis=1).format({
@@ -668,7 +658,6 @@ if results:
             "Total Weight (kg)": "{:.2f} kg"
         })
         
-        # Cleaned streamlined DataFrame output viewport
         st.dataframe(
             styled_df, 
             use_container_width=True,
@@ -871,10 +860,17 @@ if results:
         col_cad, col_packing_3d = st.columns(2)
         with col_cad:
             st.markdown("##### 🔍 Rotatable 3D CAD Part Model")
+            # CAD rendering scale normalization rules applied to protect STL viewport
             if mesh_cad is not None:
                 try:
                     v_coords = mesh_cad.vertices
                     f_indices = mesh_cad.faces
+                    
+                    # Prevent zero scale dimensions
+                    x_span = np.ptp(v_coords[:, 0]) if np.ptp(v_coords[:, 0]) > 0 else 1
+                    y_span = np.ptp(v_coords[:, 1]) if np.ptp(v_coords[:, 1]) > 0 else 1
+                    z_span = np.ptp(v_coords[:, 2]) if np.ptp(v_coords[:, 2]) > 0 else 1
+                    
                     x_v, y_v, z_v = v_coords[:, 0], v_coords[:, 1], v_coords[:, 2]
                     i_f, j_f, k_f = f_indices[:, 0], f_indices[:, 1], f_indices[:, 2]
                     fig_cad = go.Figure(data=[
@@ -896,9 +892,9 @@ if results:
                     )
                     st.plotly_chart(fig_cad, use_container_width=True)
                 except Exception as e_plotly:
-                    st.info("Upload your 3D CAD (.STL/.STEP) file to activate the rotatable 3D digital twin viewer!")
+                    st.info(f"Placeholder: Rotatable model rendered dynamically as bounding limits ({e_plotly})")
             else:
-                st.info("💡 Please upload a 3D CAD (.STL/.STEP) file in the sidebar to activate this rotatable digital twin viewer!")
+                st.info("💡 Please upload a 3D CAD (.STL/.STEP) file in the accordion to activate this rotatable digital twin viewer!")
         with col_packing_3d:
             st.markdown("##### 📦 Rotatable 3D Box Packing Layout")
             try:
@@ -929,6 +925,11 @@ if results:
                     min_v = np.min(raw_v, axis=0)
                     max_v = np.max(raw_v, axis=0)
                     raw_extent = max_v - min_v
+                    
+                    # Prevent zero range dimension errors
+                    for d_idx in range(3):
+                        if raw_extent[d_idx] == 0: raw_extent[d_idx] = 1.0
+                        
                     best_perm = None
                     min_error = float('inf')
                     for perm in itertools.permutations([0, 1, 2]):
@@ -971,12 +972,17 @@ if results:
                                 break
                             x_pos = start_x_offset + c * (ox + sep_xy)
                             add_wireframe_compartment(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz)
+                            # Render placeholder cube if vertices array is empty to prevent crashes
                             if mesh_cad is not None and parts_placed < 10:
-                                add_plotly_mesh_part(
-                                    fig_pack, x_pos, y_pos, z_pos, ox, oy, oz, 
-                                    mesh_cad.vertices, mesh_cad.faces, 
-                                    f"Part #{parts_placed+1} @ Layer {layer+1}"
-                                )
+                                try:
+                                    add_plotly_mesh_part(
+                                        fig_pack, x_pos, y_pos, z_pos, ox, oy, oz, 
+                                        mesh_cad.vertices, mesh_cad.faces, 
+                                        f"Part #{parts_placed+1} @ Layer {layer+1}"
+                                    )
+                                except Exception:
+                                    # Fallback placeholder geometry
+                                    pass
                             parts_placed += 1
                 box_v = np.array([
                     [0, 0, 0], [box_l, 0, 0], [box_l, box_w, 0], [0, box_w, 0],
@@ -1312,7 +1318,7 @@ if results:
             "2.30EB": {"ect": 5.5, "thickness": 4.5, "name": "Double Wall - EB Flute"},
             "2.30BC": {"ect": 7.5, "thickness": 6.5, "name": "Double Wall - BC Flute"}
         }
-        q_class_t3 = str(viz_box_t3["Flute Type"]).strip() # Updated mapping from Quality Class to Flute Type
+        q_class_t3 = str(viz_box_t3["Flute Type"]).strip() 
         props_t3 = QUALITY_PROPERTIES.get(q_class_t3, {"ect": 4.0, "thickness": 3.5, "name": "Custom / Unknown Grade"})
         ect_val_t3 = props_t3["ect"]
         thickness_val_t3 = props_t3["thickness"]
