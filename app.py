@@ -158,7 +158,7 @@ except Exception as e:
     st.stop()
 
 # ==============================================================================
-# 3. SIDEBAR: RE-ORGANIZED INTO ACCORDIONS (EXPANDERS)
+# 3. SIDEBAR: OPERATOR INPUTS & PACKAGING DIRECTIVE CONTROLS
 # ==============================================================================
 st.sidebar.header("⚙️ Optimization Strategy")
 
@@ -250,6 +250,12 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
     prod_h = st.number_input("Part Height (mm)", min_value=1.0, value=float(auto_h), step=1.0)
     st.markdown("#### Weight (kg)")
     prod_wt = st.number_input("Weight per Part (kg)", min_value=0.01, value=float(calculated_weight_kg), step=0.05)
+    
+    # RESOLVED NAME-ERROR: Created selectbox orientation inside the first expander
+    orientation_rule = st.selectbox(
+        "Select Packing Orientation:",
+        ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"]
+    )
 
 # SIDEBAR RE-ORGANIZATION #2: Packaging Directive Accordion
 with st.sidebar.expander("📂 Packaging Directives & Tolerances", expanded=False):
@@ -377,12 +383,13 @@ for idx, row in df_inventory.iterrows():
         if ext_dims_sorted[1] > req_dims_sorted[1] or ext_dims_sorted[0] > req_dims_sorted[0] or ext_h > limit_h:
             continue
             
+    # FIXED: Passed variables strictly in positional format to avoid packing errors
     parts_count, pack_orient, grid_layout, raw_max_qty = calculate_packing(
-        box_int_l, box_int_w, box_int_h,
+        box_int_l, box_int_w, box_int_h, 
         prod_l, prod_w, prod_h,
         orientation_rule,
-        enforce_lot=lot_alignment_enabled,
-        lot_multiplier=lot_step
+        lot_alignment_enabled,
+        lot_step
     )
     if parts_count == 0:
         continue
