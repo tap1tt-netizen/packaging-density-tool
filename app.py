@@ -371,7 +371,7 @@ for idx, row in df_inventory.iterrows():
     if pd.isna(box_int_l) or pd.isna(box_int_w) or pd.isna(box_int_h):
         continue
     
-    # MANAGER UPDATE #3: Filter based on custom dimension sliders (with fallback logic)
+    # Filter based on custom dimension sliders (with fallback logic)
     if enforce_box_dim_cap:
         ext_dims_sorted = sorted([ext_l, ext_w])
         req_dims_sorted = sorted([limit_l, limit_w])
@@ -422,7 +422,7 @@ for idx, row in df_inventory.iterrows():
         "Box ID / Specification": box_spec_label,
         "Box Size Key": row['BoxSize'],
         "Box Footprint (Ext)": f"{int(ext_l)}x{int(ext_w)} mm",
-        "Quality Class": q_class,
+        "Flute Type": q_class, # Standardized key matching Flute Type
         "Total Weight (kg)": round(total_package_weight, 2),
         "Internal Dimensions": f"{int(box_int_l)}x{int(box_int_w)}x{int(box_int_h)} mm",
         "Ext. Height [mm]": ext_h,
@@ -453,28 +453,20 @@ for idx, row in df_inventory.iterrows():
 if results:
     res_df = pd.DataFrame(results)
     
-    # MANAGER UPDATE #1: Weighted Index Calculations for the default multi-criteria option
-    # Normalized parameters scaled 0 to 1 for weighted math
+    # Weighted Index Calculations for the default multi-criteria option
     max_vol = res_df["Volumetric Efficiency (%)"].max() if res_df["Volumetric Efficiency (%)"].max() > 0 else 1
     max_qty = res_df["Number of Parts per Box"].max() if res_df["Number of Parts per Box"].max() > 0 else 1
     
     def calculate_priority_score(row):
-        # 1. Volumetric Efficiency component (60% weightage)
         v_score = row["Volumetric Efficiency (%)"] / max_vol
-        
-        # 2. Weight Compliance component (25% weightage) - Optimal standard is <13 kg
         wt = row["Total Weight (kg)"]
         if wt < max_box_weight_limit:
-            w_score = 1.0  # Perfect compliance
+            w_score = 1.0  
         elif wt <= 17.0:
-            w_score = 0.6  # Acceptable compliance
+            w_score = 0.6  
         else:
-            w_score = 0.1  # Poor ergonomic safety (Requires Forklift)
-            
-        # 3. Packed Quantity Yield component (15% weightage)
+            w_score = 0.1  
         q_score = row["Number of Parts per Box"] / max_qty
-        
-        # Weighted Index Equation
         return (0.60 * v_score) + (0.25 * w_score) + (0.15 * q_score)
         
     res_df["Priority Score"] = res_df.apply(calculate_priority_score, axis=1)
@@ -571,7 +563,7 @@ if results:
                 <b>👑 Best Recommendation</b><br>
                 <span style='font-size:11px; font-weight:bold; color:#0056b3;'>
                     {best_box['Box ID / Specification']}<br>
-                    <span style='color:#dc3545;'>[Flute: {best_box['Quality Class']}]</span>
+                    <span style='color:#dc3545;'>[Flute: {best_box['Flute Type']}]</span>
                 </span>
             </div>
         """, unsafe_allow_html=True)
@@ -596,15 +588,13 @@ if results:
     # ==========================================================================
     with tab_recommender:
         st.subheader("🏆 Cardboard Packaging Recommendations")
-        st.markdown("""
-            **Priority Ranking Logic:** High volumetric efficiency ➔ Weight compliance under limits ➔ Highest parts yield quantity.
-        """)
-        all_unique_flutes = sorted(list(sorted_df["Quality Class"].dropna().unique()))
+        
+        all_unique_flutes = sorted(list(sorted_df["Flute Type"].dropna().unique()))
         
         col_excel_filter, col_export_hub = st.columns([6, 4])
         with col_excel_filter:
             with st.popover("🔽 Filter Table by Flute (Excel-Style Dropdown)", use_container_width=False):
-                st.markdown("<b>Filter from 'Quality Class':</b>", unsafe_allow_html=True)
+                st.markdown("<b>Filter from 'Flute Type':</b>", unsafe_allow_html=True)
                 select_all = st.checkbox("(Select All)", value=True, key="excel_select_all")
                 selected_flutes = []
                 for fl in all_unique_flutes:
@@ -613,16 +603,22 @@ if results:
                         selected_flutes.append(fl)
                         
         if selected_flutes:
-            filtered_df = sorted_df[sorted_df["Quality Class"].isin(selected_flutes)].copy()
+            filtered_df = sorted_df[sorted_df["Flute Type"].isin(selected_flutes)].copy()
         else:
             filtered_df = sorted_df.copy()
             
-        drop_cols = [
-            "_nx", "_ny", "_nz", "_ox", "_oy", "_oz", 
-            "Raw Box ID", "Int. Length [mm]", "Int. Width [mm]", "Int. Height [mm]", 
-            "Ext. Length [mm]", "Ext. Width [mm]", "Tier Rank"
+        # DYNAMIC DELETION MATRIX: Retains ONLY your exactly specified columns
+        keep_columns = [
+            "Box ID / Specification",
+            "Box Footprint (Ext)",
+            "Flute Type",
+            "Total Weight (kg)",
+            "Number of Parts per Box",
+            "Volumetric Efficiency (%)",
+            "Remaining Air Space (%)",
+            "Box Price (€)"
         ]
-        display_df = filtered_df.drop(columns=[c for c in drop_cols if c in filtered_df.columns]).reset_index(drop=True)
+        display_df = filtered_df[keep_columns].copy()
         display_df.index = display_df.index + 1
         
         with col_export_hub:
@@ -669,24 +665,27 @@ if results:
             "Box Price (€)": "€ {:.2f}",
             "Volumetric Efficiency (%)": "{:.2f}%",
             "Remaining Air Space (%)": "{:.1f}%",
-            "Total Weight (kg)": "{:.2f} kg",
-            "Priority Score": "{:.3f}"
+            "Total Weight (kg)": "{:.2f} kg"
         })
         
+        # Cleaned streamlined DataFrame output viewport
         st.dataframe(
             styled_df, 
             use_container_width=True,
             height=450,
             column_config={
-                "Weight Status": st.column_config.TextColumn("Weight Status", width="medium"),
+                "Box ID / Specification": st.column_config.TextColumn("Box ID / Specification", width="medium"),
+                "Box Footprint (Ext)": st.column_config.TextColumn("Box Footprint (Ext)", width="small"),
+                "Flute Type": st.column_config.TextColumn("Flute Type", width="small"),
                 "Total Weight (kg)": st.column_config.TextColumn("Total Weight (kg)", width="small"),
-                "Priority Score": st.column_config.NumberColumn("Priority Score", width="small", format="%.3f"),
+                "Number of Parts per Box": st.column_config.NumberColumn("Number of Parts per Box", width="small"),
                 "Volumetric Efficiency (%)": st.column_config.ProgressColumn(
                     "Volumetric Efficiency (%)",
                     format="%.2f%%",
                     min_value=0,
                     max_value=100
                 ),
+                "Remaining Air Space (%)": st.column_config.TextColumn("Remaining Air Space (%)", width="small"),
                 "Box Price (€)": st.column_config.NumberColumn("Box Price (€)", format="€ %.2f")
             }
         )
@@ -733,7 +732,7 @@ if results:
             )
             st.session_state[qty_state_key] = active_quantity
         with col_adj_2:
-            override_weight = round((active_quantity * prod_wt) + estimate_box_weight(ext_l, ext_w, viz_box["Ext. Height [mm]"], viz_box["Quality Class"]), 2)
+            override_weight = round((active_quantity * prod_wt) + estimate_box_weight(ext_l, ext_w, viz_box["Ext. Height [mm]"], viz_box["Flute Type"]), 2)
             override_efficiency = round(((active_quantity * single_part_vol) / (box_l * box_w * viz_box["Int. Height [mm]"])) * 100, 2)
             st.info(f"⚡ Live Recalculated Package Weight: **{override_weight} kg** | Volumetric Efficiency: **{override_efficiency}%** | Loaded: **{active_quantity} / {max_possible_parts} parts**")
             
@@ -1089,7 +1088,7 @@ if results:
             
             comp_df = pd.DataFrame([
                 {"Metric Profile": "Box Specification ID", "Smallest Box (Top 10)": small_name, "Top 1 Best Box": top1_name, "Top 2 Best Box": top2_name, "Top 3 Best Box": top3_name},
-                {"Metric Profile": "Cardboard Flute Quality", "Smallest Box (Top 10)": small_row['Quality Class'], "Top 1 Best Box": top1_row['Quality Class'], "Top 2 Best Box": top2_row['Quality Class'] if top2_row is not None else "N/A", "Top 3 Best Box": top3_row['Quality Class'] if top3_row is not None else "N/A"},
+                {"Metric Profile": "Cardboard Flute Quality", "Smallest Box (Top 10)": small_row['Flute Type'], "Top 1 Best Box": top1_row['Flute Type'], "Top 2 Best Box": top2_row['Flute Type'] if top2_row is not None else "N/A", "Top 3 Best Box": top3_row['Flute Type'] if top3_row is not None else "N/A"},
                 {"Metric Profile": "External Footprint Dimensions", "Smallest Box (Top 10)": f"{int(small_row['Ext. Length [mm]'])}x{int(small_row['Ext. Width [mm]'])} mm", "Top 1 Best Box": f"{int(top1_row['Ext. Length [mm]'])}x{int(top1_row['Ext. Width [mm]'])} mm", "Top 2 Best Box": f"{int(top2_row['Ext. Length [mm]'])}x{int(top2_row['Ext. Width [mm]'])} mm" if top2_row is not None else "N/A", "Top 3 Best Box": f"{int(top3_row['Ext. Length [mm]'])}x{int(top3_row['Ext. Width [mm]'])} mm" if top3_row is not None else "N/A"},
                 {"Metric Profile": "Optimal Packing Orientation", "Smallest Box (Top 10)": determine_placement_style(prod_l, prod_w, prod_h, small_row["_oz"]), "Top 1 Best Box": determine_placement_style(prod_l, prod_w, prod_h, top1_row["_oz"]), "Top 2 Best Box": determine_placement_style(prod_l, prod_w, prod_h, top2_row["_oz"]) if top2_row is not None else "N/A", "Top 3 Best Box": determine_placement_style(prod_l, prod_w, prod_h, top3_row["_oz"]) if top3_row is not None else "N/A"},
                 {"Metric Profile": "Parts Loaded (Per Box)", "Smallest Box (Top 10)": f"{int(small_row['Number of Parts per Box'])} Pcs", "Top 1 Best Box": f"{int(top1_row['Number of Parts per Box'])} Pcs", "Top 2 Best Box": f"{int(top2_row['Number of Parts per Box'])} Pcs" if top2_row is not None else "N/A", "Top 3 Best Box": f"{int(top3_row['Number of Parts per Box'])} Pcs" if top3_row is not None else "N/A"},
@@ -1119,7 +1118,7 @@ if results:
         bx_ext_h = viz_box_t2["Ext. Height [mm]"]
         t2_qty_key = f"manual_qty_{st.session_state['global_selected_box']}"
         active_t2_pcs = int(st.session_state.get(t2_qty_key, viz_box_t2["Number of Parts per Box"]))
-        active_t2_wt = round((active_t2_pcs * prod_wt) + estimate_box_weight(bx_ext_l, bx_ext_w, bx_ext_h, viz_box_t2["Quality Class"]), 2)
+        active_t2_wt = round((active_t2_pcs * prod_wt) + estimate_box_weight(bx_ext_l, bx_ext_w, bx_ext_h, viz_box_t2["Flute Type"]), 2)
         
         col_metrics, col_plotly_pallet = st.columns([4, 6])
         with col_metrics:
@@ -1313,7 +1312,7 @@ if results:
             "2.30EB": {"ect": 5.5, "thickness": 4.5, "name": "Double Wall - EB Flute"},
             "2.30BC": {"ect": 7.5, "thickness": 6.5, "name": "Double Wall - BC Flute"}
         }
-        q_class_t3 = str(viz_box_t3["Quality Class"]).strip()
+        q_class_t3 = str(viz_box_t3["Flute Type"]).strip() # Updated mapping from Quality Class to Flute Type
         props_t3 = QUALITY_PROPERTIES.get(q_class_t3, {"ect": 4.0, "thickness": 3.5, "name": "Custom / Unknown Grade"})
         ect_val_t3 = props_t3["ect"]
         thickness_val_t3 = props_t3["thickness"]
@@ -1329,7 +1328,7 @@ if results:
         bx_ext_h_t3 = viz_box_t3["Ext. Height [mm]"]
         t3_qty_key = f"manual_qty_{st.session_state['global_selected_box']}"
         active_t3_pcs = int(st.session_state.get(t3_qty_key, viz_box_t3["Number of Parts per Box"]))
-        active_t3_wt = round((active_t3_pcs * prod_wt) + estimate_box_weight(bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, viz_box_t3["Quality Class"]), 2)
+        active_t3_wt = round((active_t3_pcs * prod_wt) + estimate_box_weight(bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, viz_box_t3["Flute Type"]), 2)
         
         _, z_layers_calc_t3, best_layer_qty_t3, _, p_wt_calc_t3, _, _, _ = calculate_pallet_stacking(1200, 800, bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, active_t3_wt, active_t3_pcs)
         boxes_above_t3 = max(0, z_layers_calc_t3 - 1)
