@@ -417,7 +417,8 @@ for idx, row in df_inventory.iterrows():
         "Box ID / Specification": box_spec_label,
         "Box Size Key": row['BoxSize'],
         "Box Footprint (Ext)": f"{int(ext_l)}x{int(ext_w)} mm",
-        "Flute Type": q_class, 
+        "Flute Type": q_class,             # Normalized: Used by the frontend visual table 
+        "Quality Class": q_class,           # Normalized: Retained to protect backend DB keys
         "Total Weight (kg)": round(total_package_weight, 2),
         "Internal Dimensions": f"{int(box_int_l)}x{int(box_int_w)}x{int(box_int_h)} mm",
         "Ext. Height [mm]": ext_h,
@@ -860,13 +861,11 @@ if results:
         col_cad, col_packing_3d = st.columns(2)
         with col_cad:
             st.markdown("##### 🔍 Rotatable 3D CAD Part Model")
-            # CAD rendering scale normalization rules applied to protect STL viewport
             if mesh_cad is not None:
                 try:
                     v_coords = mesh_cad.vertices
                     f_indices = mesh_cad.faces
                     
-                    # Prevent zero scale dimensions
                     x_span = np.ptp(v_coords[:, 0]) if np.ptp(v_coords[:, 0]) > 0 else 1
                     y_span = np.ptp(v_coords[:, 1]) if np.ptp(v_coords[:, 1]) > 0 else 1
                     z_span = np.ptp(v_coords[:, 2]) if np.ptp(v_coords[:, 2]) > 0 else 1
@@ -926,7 +925,6 @@ if results:
                     max_v = np.max(raw_v, axis=0)
                     raw_extent = max_v - min_v
                     
-                    # Prevent zero range dimension errors
                     for d_idx in range(3):
                         if raw_extent[d_idx] == 0: raw_extent[d_idx] = 1.0
                         
@@ -972,7 +970,6 @@ if results:
                                 break
                             x_pos = start_x_offset + c * (ox + sep_xy)
                             add_wireframe_compartment(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz)
-                            # Render placeholder cube if vertices array is empty to prevent crashes
                             if mesh_cad is not None and parts_placed < 10:
                                 try:
                                     add_plotly_mesh_part(
@@ -981,7 +978,6 @@ if results:
                                         f"Part #{parts_placed+1} @ Layer {layer+1}"
                                     )
                                 except Exception:
-                                    # Fallback placeholder geometry
                                     pass
                             parts_placed += 1
                 box_v = np.array([
@@ -1094,7 +1090,7 @@ if results:
             
             comp_df = pd.DataFrame([
                 {"Metric Profile": "Box Specification ID", "Smallest Box (Top 10)": small_name, "Top 1 Best Box": top1_name, "Top 2 Best Box": top2_name, "Top 3 Best Box": top3_name},
-                {"Metric Profile": "Cardboard Flute Quality", "Smallest Box (Top 10)": small_row['Flute Type'], "Top 1 Best Box": top1_row['Flute Type'], "Top 2 Best Box": top2_row['Flute Type'] if top2_row is not None else "N/A", "Top 3 Best Box": top3_row['Flute Type'] if top3_row is not None else "N/A"},
+                {"Metric Profile": "Cardboard Flute Quality", "Smallest Box (Top 10)": small_row['Quality Class'], "Top 1 Best Box": top1_row['Quality Class'], "Top 2 Best Box": top2_row['Quality Class'] if top2_row is not None else "N/A", "Top 3 Best Box": top3_row['Quality Class'] if top3_row is not None else "N/A"},
                 {"Metric Profile": "External Footprint Dimensions", "Smallest Box (Top 10)": f"{int(small_row['Ext. Length [mm]'])}x{int(small_row['Ext. Width [mm]'])} mm", "Top 1 Best Box": f"{int(top1_row['Ext. Length [mm]'])}x{int(top1_row['Ext. Width [mm]'])} mm", "Top 2 Best Box": f"{int(top2_row['Ext. Length [mm]'])}x{int(top2_row['Ext. Width [mm]'])} mm" if top2_row is not None else "N/A", "Top 3 Best Box": f"{int(top3_row['Ext. Length [mm]'])}x{int(top3_row['Ext. Width [mm]'])} mm" if top3_row is not None else "N/A"},
                 {"Metric Profile": "Optimal Packing Orientation", "Smallest Box (Top 10)": determine_placement_style(prod_l, prod_w, prod_h, small_row["_oz"]), "Top 1 Best Box": determine_placement_style(prod_l, prod_w, prod_h, top1_row["_oz"]), "Top 2 Best Box": determine_placement_style(prod_l, prod_w, prod_h, top2_row["_oz"]) if top2_row is not None else "N/A", "Top 3 Best Box": determine_placement_style(prod_l, prod_w, prod_h, top3_row["_oz"]) if top3_row is not None else "N/A"},
                 {"Metric Profile": "Parts Loaded (Per Box)", "Smallest Box (Top 10)": f"{int(small_row['Number of Parts per Box'])} Pcs", "Top 1 Best Box": f"{int(top1_row['Number of Parts per Box'])} Pcs", "Top 2 Best Box": f"{int(top2_row['Number of Parts per Box'])} Pcs" if top2_row is not None else "N/A", "Top 3 Best Box": f"{int(top3_row['Number of Parts per Box'])} Pcs" if top3_row is not None else "N/A"},
@@ -1124,7 +1120,7 @@ if results:
         bx_ext_h = viz_box_t2["Ext. Height [mm]"]
         t2_qty_key = f"manual_qty_{st.session_state['global_selected_box']}"
         active_t2_pcs = int(st.session_state.get(t2_qty_key, viz_box_t2["Number of Parts per Box"]))
-        active_t2_wt = round((active_t2_pcs * prod_wt) + estimate_box_weight(bx_ext_l, bx_ext_w, bx_ext_h, viz_box_t2["Flute Type"]), 2)
+        active_t2_wt = round((active_t2_pcs * prod_wt) + estimate_box_weight(bx_ext_l, bx_ext_w, bx_ext_h, viz_box_t2["Quality Class"]), 2)
         
         col_metrics, col_plotly_pallet = st.columns([4, 6])
         with col_metrics:
@@ -1318,7 +1314,7 @@ if results:
             "2.30EB": {"ect": 5.5, "thickness": 4.5, "name": "Double Wall - EB Flute"},
             "2.30BC": {"ect": 7.5, "thickness": 6.5, "name": "Double Wall - BC Flute"}
         }
-        q_class_t3 = str(viz_box_t3["Flute Type"]).strip() 
+        q_class_t3 = str(viz_box_t3["Quality Class"]).strip() 
         props_t3 = QUALITY_PROPERTIES.get(q_class_t3, {"ect": 4.0, "thickness": 3.5, "name": "Custom / Unknown Grade"})
         ect_val_t3 = props_t3["ect"]
         thickness_val_t3 = props_t3["thickness"]
@@ -1334,7 +1330,7 @@ if results:
         bx_ext_h_t3 = viz_box_t3["Ext. Height [mm]"]
         t3_qty_key = f"manual_qty_{st.session_state['global_selected_box']}"
         active_t3_pcs = int(st.session_state.get(t3_qty_key, viz_box_t3["Number of Parts per Box"]))
-        active_t3_wt = round((active_t3_pcs * prod_wt) + estimate_box_weight(bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, viz_box_t3["Flute Type"]), 2)
+        active_t3_wt = round((active_t3_pcs * prod_wt) + estimate_box_weight(bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, viz_box_t3["Quality Class"]), 2)
         
         _, z_layers_calc_t3, best_layer_qty_t3, _, p_wt_calc_t3, _, _, _ = calculate_pallet_stacking(1200, 800, bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, active_t3_wt, active_t3_pcs)
         boxes_above_t3 = max(0, z_layers_calc_t3 - 1)
