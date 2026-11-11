@@ -1286,6 +1286,9 @@ if results:
         # ----------------------------------------------------------------------
         st.markdown("### 📊 Executive Yield & Cost Impact Overview")
         
+        # Native Streamlit columns to prevent any markdown indentation bugs
+        card_col1, card_col2, card_col3 = st.columns(3)
+        
         # Color Logic Classes
         wt_cvse_class = "win" if wt_cvse <= max_pallet_weight_limit else "danger"
         wt_a1_class = "win" if wt_a1 <= max_pallet_weight_limit else "danger"
@@ -1295,106 +1298,63 @@ if results:
         yield_a1_class = "win" if pcs_a1 > max(pcs_cvse, pcs_a2) else "val"
         yield_a2_class = "win" if pcs_a2 > max(pcs_cvse, pcs_a1) else "val"
 
-        st.markdown(f"""
-        <div class="comparison-grid">
-            <!-- 1. CVSE OPTIMIZED COLUMN -->
-            <div class="comp-card hero">
-                <div class="hero-badge">👑 CVSE Optimized</div>
-                <div class="card-header">
-                    <h3>CVSE Recom Box</h3>
-                    <div class="dims">{int(viz_box['Ext. Length [mm]'])}x{int(viz_box['Ext. Width [mm]'])}x{int(viz_box['Ext. Height [mm]'])} mm</div>
-                </div>
-                <div class="metric-row">
-                    <span class="label">Quality</span>
-                    <span class="val">{viz_box['Quality Class']}</span>
-                </div>
-                <div class="metric-row">
-                    <span class="label">Parts / Box</span>
-                    <span class="val">{int(viz_box['No of Parts per Box'])} Pcs</span>
-                </div>
-                <div class="metric-row">
-                    <span class="label">Total Pallet Yield</span>
-                    <span class="val {yield_cvse_class}">{pcs_cvse} Pcs</span>
-                </div>
-                <div class="metric-row">
-                    <span class="label">Gross Weight</span>
-                    <span class="val {wt_cvse_class}">{wt_cvse} kg</span>
-                </div>
-                <div class="metric-row" style="margin-top:12px; border-top:1px dashed rgba(148,163,184,0.3); padding-top:10px;">
-                    <span class="label">Overall Cost / Pallet</span>
-                    <span class="val">€ {cost_cvse:.2f}</span>
-                </div>
-                <div class="metric-row">
-                    <span class="label">Saving (vs Alt I)</span>
-                    <span class="val saving">€ {potential_saving_alt1:.2f} Save</span>
-                </div>
-            </div>
+        # Column 1: CVSE Optimized
+        with card_col1:
+            st.markdown(f"""
+<div class="comp-card hero" style="min-height: 380px;">
+    <div class="hero-badge">👑 CVSE Optimized</div>
+    <div class="card-header">
+        <h3 style="color: var(--text-color);">CVSE Recom Box</h3>
+        <div class="dims">{int(viz_box['Ext. Length [mm]'])}x{int(viz_box['Ext. Width [mm]'])}x{int(viz_box['Ext. Height [mm]'])} mm</div>
+    </div>
+    <div class="metric-row"><span class="label">Quality</span><span class="val">{viz_box['Quality Class']}</span></div>
+    <div class="metric-row"><span class="label">Parts / Box</span><span class="val">{int(viz_box['No of Parts per Box'])} Pcs</span></div>
+    <div class="metric-row"><span class="label">Total Pallet Yield</span><span class="val {yield_cvse_class}">{pcs_cvse} Pcs</span></div>
+    <div class="metric-row"><span class="label">Gross Weight</span><span class="val {wt_cvse_class}">{wt_cvse} kg</span></div>
+    <div class="metric-row" style="margin-top:12px; border-top:1px dashed rgba(148,163,184,0.3); padding-top:10px;">
+        <span class="label">Overall Cost / Pallet</span><span class="val">€ {cost_cvse:.2f}</span>
+    </div>
+    <div class="metric-row"><span class="label">Saving (vs Alt I)</span><span class="val saving">€ {potential_saving_alt1:.2f} Save</span></div>
+</div>
+""", unsafe_allow_html=True)
 
-            <!-- 2. DIRECTIVE ALTERNATIVE I -->
-            <div class="comp-card">
-                <div class="card-header">
-                    <h3>BSH Alternative I</h3>
-                    <div class="dims">{int(alt1_l)}x{int(alt1_w)}x{int(alt1_h)} mm</div>
-                </div>
-                <div class="metric-row">
-                    <span class="label">Quality</span>
-                    <span class="val">{alt1_q}</span>
-                </div>
-                <div class="metric-row">
-                    <span class="label">Parts / Box</span>
-                    <span class="val">{int(qty_alt1)} Pcs</span>
-                </div>
-                <div class="metric-row">
-                    <span class="label">Total Pallet Yield</span>
-                    <span class="val {yield_a1_class}">{pcs_a1} Pcs</span>
-                </div>
-                <div class="metric-row">
-                    <span class="label">Gross Weight</span>
-                    <span class="val {wt_a1_class}">{wt_a1} kg</span>
-                </div>
-                <div class="metric-row" style="margin-top:12px; border-top:1px dashed rgba(148,163,184,0.3); padding-top:10px;">
-                    <span class="label">Overall Cost / Pallet</span>
-                    <span class="val">€ {cost_a1:.2f}</span>
-                </div>
-                <div class="metric-row">
-                    <span class="label">Saving (vs Alt I)</span>
-                    <span class="val" style="color: #64748b;">Baseline Reference</span>
-                </div>
-            </div>
+        # Column 2: Alternative I
+        with card_col2:
+            st.markdown(f"""
+<div class="comp-card" style="min-height: 380px;">
+    <div class="card-header">
+        <h3 style="color: var(--text-color);">BSH Alternative I</h3>
+        <div class="dims">{int(alt1_l)}x{int(alt1_w)}x{int(alt1_h)} mm</div>
+    </div>
+    <div class="metric-row"><span class="label">Quality</span><span class="val">{alt1_q}</span></div>
+    <div class="metric-row"><span class="label">Parts / Box</span><span class="val">{int(qty_alt1)} Pcs</span></div>
+    <div class="metric-row"><span class="label">Total Pallet Yield</span><span class="val {yield_a1_class}">{pcs_a1} Pcs</span></div>
+    <div class="metric-row"><span class="label">Gross Weight</span><span class="val {wt_a1_class}">{wt_a1} kg</span></div>
+    <div class="metric-row" style="margin-top:12px; border-top:1px dashed rgba(148,163,184,0.3); padding-top:10px;">
+        <span class="label">Overall Cost / Pallet</span><span class="val">€ {cost_a1:.2f}</span>
+    </div>
+    <div class="metric-row"><span class="label">Saving (vs Alt I)</span><span class="val" style="color: #64748b;">Baseline Reference</span></div>
+</div>
+""", unsafe_allow_html=True)
 
-            <!-- 3. DIRECTIVE ALTERNATIVE II -->
-            <div class="comp-card">
-                <div class="card-header">
-                    <h3>BSH Alternative II</h3>
-                    <div class="dims">{int(alt2_l)}x{int(alt2_w)}x{int(alt2_h)} mm</div>
-                </div>
-                <div class="metric-row">
-                    <span class="label">Quality</span>
-                    <span class="val">{alt2_q}</span>
-                </div>
-                <div class="metric-row">
-                    <span class="label">Parts / Box</span>
-                    <span class="val">{int(qty_alt2)} Pcs</span>
-                </div>
-                <div class="metric-row">
-                    <span class="label">Total Pallet Yield</span>
-                    <span class="val {yield_a2_class}">{pcs_a2} Pcs</span>
-                </div>
-                <div class="metric-row">
-                    <span class="label">Gross Weight</span>
-                    <span class="val {wt_a2_class}">{wt_a2} kg</span>
-                </div>
-                <div class="metric-row" style="margin-top:12px; border-top:1px dashed rgba(148,163,184,0.3); padding-top:10px;">
-                    <span class="label">Overall Cost / Pallet</span>
-                    <span class="val">€ {cost_a2:.2f}</span>
-                </div>
-                <div class="metric-row">
-                    <span class="label">Saving (vs CVSE)</span>
-                    <span class="val" style="color: #ef4444; font-weight:700;">+ € {potential_saving_alt2:.2f} Loss</span>
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # Column 3: Alternative II
+        with card_col3:
+            st.markdown(f"""
+<div class="comp-card" style="min-height: 380px;">
+    <div class="card-header">
+        <h3 style="color: var(--text-color);">BSH Alternative II</h3>
+        <div class="dims">{int(alt2_l)}x{int(alt2_w)}x{int(alt2_h)} mm</div>
+    </div>
+    <div class="metric-row"><span class="label">Quality</span><span class="val">{alt2_q}</span></div>
+    <div class="metric-row"><span class="label">Parts / Box</span><span class="val">{int(qty_alt2)} Pcs</span></div>
+    <div class="metric-row"><span class="label">Total Pallet Yield</span><span class="val {yield_a2_class}">{pcs_a2} Pcs</span></div>
+    <div class="metric-row"><span class="label">Gross Weight</span><span class="val {wt_a2_class}">{wt_a2} kg</span></div>
+    <div class="metric-row" style="margin-top:12px; border-top:1px dashed rgba(148,163,184,0.3); padding-top:10px;">
+        <span class="label">Overall Cost / Pallet</span><span class="val">€ {cost_a2:.2f}</span>
+    </div>
+    <div class="metric-row"><span class="label">Saving (vs CVSE)</span><span class="val" style="color: #ef4444; font-weight:700;">+ € {potential_saving_alt2:.2f} Loss</span></div>
+</div>
+""", unsafe_allow_html=True)
 
         # Detailed Matrix Parameters Table
         st.markdown("### 📋 Complete Parameters & Dimensions Table")
