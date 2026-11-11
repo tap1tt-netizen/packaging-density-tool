@@ -184,7 +184,7 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
     assembly_mode = False
 
     MATERIAL_DENSITIES = {
-        "Assembly (Multi-Material/Manual Weight)": "manual",  # MANAGER UPDATE #1: Assembly Option
+        "Assembly (Multi-Material/Manual Weight)": "manual",  
         "ABS Plastic": 1.04,
         "PLA Plastic": 1.24,
         "Polypropylene (PP)": 0.90,
@@ -256,8 +256,9 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
     
     st.markdown("#### Weight (kg)")
     if assembly_mode:
-        # MANAGER UPDATE #1: Show manual input when Assembly is selected
-        prod_wt = st.number_input("Total Assembly Weight (kg) - Manual", min_value=0.01, value=1.50, step=0.10)
+        # MANAGER UPDATE #1: Proactive Action Required callout and manual weight input
+        st.warning("⚠️ **Action Required: Assembly Mode Activated**\nPlease enter the total assembly weight manually below.")
+        prod_wt = st.number_input("Total Assembly Weight (kg)", min_value=0.01, value=1.50, step=0.10)
     else:
         prod_wt = st.number_input("Weight per Part (kg)", min_value=0.01, value=float(calculated_weight_kg), step=0.05)
     
@@ -309,7 +310,7 @@ with st.sidebar.expander("📂 Packaging Directives & Tolerances", expanded=Fals
 if not material_selected:
     st.markdown("""
         <div class='app-header'>
-            <h1>📦 Packaging Density & Interactive Box Recommender</h1>
+            <h1>📦 BSH Packaging Density & Box Recommender</h1>
             <p>Grid-Based Product Accommodation, Packaging Directive Compliance & Multi-Pallet Optimizer</p>
         </div>
     """, unsafe_allow_html=True)
@@ -800,22 +801,37 @@ if results:
                     st.markdown(f"<p style='color:#22c55e; font-weight:bold; margin-top:10px;'>🟢 Handheld Weight: Safe at {override_weight} kg (Conforms to &lt;{max_box_weight_limit} kg limit)</p>", unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
             with col_flat:
+                # MANAGER UPDATE #2: High-Contrast, Auto-Spacing 2D Matplotlib layout
                 st_text_color = '#FFFFFF' if st.get_option('theme.base') == 'dark' else '#212529'
                 fig, ax = plt.subplots(figsize=(6, 4), facecolor='none')
                 ax.set_facecolor('none')
+                
+                # Outer Box wall line
                 ax.add_patch(patches.Rectangle((0, 0), box_l, box_w, fill=False, edgecolor=st_text_color, linewidth=2.5, label='Box Wall'))
                 ax.add_patch(patches.Rectangle((0, 0), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.3))
                 ax.add_patch(patches.Rectangle((0, box_w - clear_side), box_l, clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.3))
                 ax.add_patch(patches.Rectangle((0, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.3))
                 ax.add_patch(patches.Rectangle((box_l - clear_side, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.3))
+                
                 total_grid_w = nx * ox + (nx - 1) * sep_xy
                 total_grid_h = ny * oy + (ny - 1) * sep_xy
                 leftover_x = (box_l - 2 * clear_side) - total_grid_w
                 leftover_y = (box_w - 2 * clear_side) - total_grid_h
                 start_x_offset = clear_side + (leftover_x / 2)
                 start_y_offset = clear_side + (leftover_y / 2)
+                
                 layer1_filled = min(active_quantity, nx * ny)
                 slot_counter = 0
+                
+                # Auto-scalable font mathematical ceiling
+                total_slots = nx * ny
+                if total_slots > 100:
+                    font_sz = 5
+                elif total_slots > 36:
+                    font_sz = 6
+                else:
+                    font_sz = 8
+                    
                 for r in range(ny):
                     y_pos = start_y_offset + r * (oy + sep_xy)
                     for c in range(nx):
@@ -823,17 +839,23 @@ if results:
                         slot_counter += 1
                         if slot_counter <= layer1_filled:
                             ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#a5d8ff', edgecolor='#1971c2', linewidth=1.2))
-                            ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1}, {r+1}", ha='center', va='center', fontsize=8, color='#0f4c81', fontweight='bold')
+                            ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1}, {r+1}", ha='center', va='center', fontsize=font_sz, color='#0f4c81', fontweight='bold')
                         else:
                             ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#e2e8f0', edgecolor='#94a3b8', linewidth=1.0, linestyle='--', alpha=0.35))
-                            ax.text(x_pos + ox/2, y_pos + oy/2, "Empty", ha='center', va='center', fontsize=7, color='#64748b', fontstyle='italic')
-                ax.annotate('', xy=(0, -25), xytext=(box_l, -25), arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
-                ax.text(box_l/2, -45, f"{int(ext_l)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center')
-                ax.annotate('', xy=(box_l + 25, 0), xytext=(box_l + 25, box_w), arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
-                ax.text(box_l + 45, box_w/2, f"{int(ext_w)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center', va='center', rotation=-90)
+                            ax.text(x_pos + ox/2, y_pos + oy/2, "Empty", ha='center', va='center', fontsize=font_sz - 1, color='#64748b', fontstyle='italic')
+                
+                # Increased offset spacing buffers for arrow annotations to avoid overlapping
+                ax.annotate('', xy=(0, -35), xytext=(box_l, -35), arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
+                ax.text(box_l/2, -60, f"{int(ext_l)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center')
+                
+                ax.annotate('', xy=(box_l + 35, 0), xytext=(box_l + 35, box_w), arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
+                ax.text(box_l + 60, box_w/2, f"{int(ext_w)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center', va='center', rotation=-90)
+                
                 ax.text(box_l/2, box_w + 15, f"Floor Grid: {nx}x{ny} | Active Layers: {active_layers}", color='#dc3545', fontsize=12, fontweight='bold', ha='center')
-                ax.set_xlim(-40, box_l + 80)
-                ax.set_ylim(-60, box_w + 35)
+                
+                # Expanded x and y limitations to prevent text label cutoff
+                ax.set_xlim(-60, box_l + 100)
+                ax.set_ylim(-80, box_w + 40)
                 ax.set_aspect('equal')
                 ax.axis('off')
                 st.pyplot(fig)
