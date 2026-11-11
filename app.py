@@ -181,8 +181,10 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
     auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
     calculated_weight_kg = 0.25
     material_selected = True  
+    assembly_mode = False
 
     MATERIAL_DENSITIES = {
+        "Assembly (Multi-Material/Manual Weight)": "manual",  # MANAGER UPDATE #1: Assembly Option
         "ABS Plastic": 1.04,
         "PLA Plastic": 1.24,
         "Polypropylene (PP)": 0.90,
@@ -226,19 +228,22 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
                 
                 st.success(f"📐 Extracted: {auto_l}x{auto_w}x{auto_h} mm")
                 
-                st.markdown("#### 🪵 Material Weight")
+                st.markdown("#### 🪵 Material Weight Extractor")
                 selected_material = st.selectbox(
                     "Select Part Material:",
                     options=["Select Material..."] + list(MATERIAL_DENSITIES.keys()),
                     index=0,
-                    help="Choose the material of this component to calculate its solid weight."
+                    help="Choose the material of this component or select 'Assembly' to enter weight manually."
                 )
+                
                 if selected_material == "Select Material...":
                     material_selected = False
+                elif selected_material == "Assembly (Multi-Material/Manual Weight)":
+                    assembly_mode = True
                 else:
                     density = MATERIAL_DENSITIES[selected_material]
                     calculated_weight_kg = round(cad_volume * density * 1e-6, 3)
-                    st.info(f"⚖️ Solid Weight: **{calculated_weight_kg} kg**")
+                    st.info(f"⚖️ Solid Weight ({selected_material}): **{calculated_weight_kg} kg**")
             else:
                 st.error("Uploaded file has invalid mesh geometry.")
         except Exception as e_cad:
@@ -248,10 +253,14 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
     prod_l = st.number_input("Part Length (mm)", min_value=1.0, value=float(auto_l), step=1.0)
     prod_w = st.number_input("Part Width (mm)", min_value=1.0, value=float(auto_w), step=1.0)
     prod_h = st.number_input("Part Height (mm)", min_value=1.0, value=float(auto_h), step=1.0)
-    st.markdown("#### Weight (kg)")
-    prod_wt = st.number_input("Weight per Part (kg)", min_value=0.01, value=float(calculated_weight_kg), step=0.05)
     
-    # RESOLVED NAME-ERROR: Created selectbox orientation inside the first expander
+    st.markdown("#### Weight (kg)")
+    if assembly_mode:
+        # MANAGER UPDATE #1: Show manual input when Assembly is selected
+        prod_wt = st.number_input("Total Assembly Weight (kg) - Manual", min_value=0.01, value=1.50, step=0.10)
+    else:
+        prod_wt = st.number_input("Weight per Part (kg)", min_value=0.01, value=float(calculated_weight_kg), step=0.05)
+    
     orientation_rule = st.selectbox(
         "Select Packing Orientation:",
         ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"]
@@ -383,7 +392,6 @@ for idx, row in df_inventory.iterrows():
         if ext_dims_sorted[1] > req_dims_sorted[1] or ext_dims_sorted[0] > req_dims_sorted[0] or ext_h > limit_h:
             continue
             
-    # FIXED: Passed variables strictly in positional format to avoid packing errors
     parts_count, pack_orient, grid_layout, raw_max_qty = calculate_packing(
         box_int_l, box_int_w, box_int_h, 
         prod_l, prod_w, prod_h,
@@ -424,8 +432,8 @@ for idx, row in df_inventory.iterrows():
         "Box ID / Specification": box_spec_label,
         "Box Size Key": row['BoxSize'],
         "Box Footprint (Ext)": f"{int(ext_l)}x{int(ext_w)} mm",
-        "Flute Type": q_class,             # Normalized: Used by the frontend visual table 
-        "Quality Class": q_class,           # Normalized: Retained to protect backend DB keys
+        "Flute Type": q_class,             
+        "Quality Class": q_class,           
         "Total Weight (kg)": round(total_package_weight, 2),
         "Internal Dimensions": f"{int(box_int_l)}x{int(box_int_w)}x{int(box_int_h)} mm",
         "Ext. Height [mm]": ext_h,
@@ -967,6 +975,7 @@ if results:
                 leftover_y = (box_w - 2 * clear_side) - total_grid_h
                 start_x_offset = clear_side + (leftover_x / 2)
                 start_y_offset = clear_side + (leftover_y / 2)
+                
                 parts_placed = 0
                 for layer in range(active_layers):
                     z_pos = layer * (oz + sep_z)
@@ -977,12 +986,14 @@ if results:
                                 break
                             x_pos = start_x_offset + c * (ox + sep_xy)
                             add_wireframe_compartment(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz)
-                            if mesh_cad is not None and parts_placed < 10:
+                            
+                            # MANAGER UPDATE #2: Render exactly 1 part per layer (rendered at row 1, col 1)
+                            if mesh_cad is not None and r == 0 and c == 0:
                                 try:
                                     add_plotly_mesh_part(
                                         fig_pack, x_pos, y_pos, z_pos, ox, oy, oz, 
                                         mesh_cad.vertices, mesh_cad.faces, 
-                                        f"Part #{parts_placed+1} @ Layer {layer+1}"
+                                        f"Part Layer {layer+1}"
                                     )
                                 except Exception:
                                     pass
@@ -1104,7 +1115,7 @@ if results:
                 {"Metric Profile": "Boxes Loaded (Per Pallet)", "Smallest Box (Top 10)": f"{bt_s} boxes", "Top 1 Best Box": f"{bt_1} boxes", "Top 2 Best Box": f"{bt_2} boxes" if top2_row is not None else "N/A", "Top 3 Best Box": f"{bt_3} boxes" if top3_row is not None else "N/A"},
                 {"Metric Profile": "Total Pieces (Per Pallet)", "Smallest Box (Top 10)": f"{pcs_s} Pcs", "Top 1 Best Box": f"{pcs_1} Pcs", "Top 2 Best Box": f"{pcs_2} Pcs" if top2_row is not None else "N/A", "Top 3 Best Box": f"{pcs_3} Pcs" if top3_row is not None else "N/A"},
                 {"Metric Profile": "Pallet Weight (inc. 23kg Tare)", "Smallest Box (Top 10)": f"{wt_s} kg", "Top 1 Best Box": f"{wt_1} kg", "Top 2 Best Box": f"{wt_2} kg" if top2_row is not None else "N/A", "Top 3 Best Box": f"{wt_3} kg" if top3_row is not None else "N/A"},
-                {"Metric Profile": "Overall Cost (Boxes + 8€ EPAL 1)", "Smallest Box (Top 10)": f"€ {price_s:.2f}", "Top 1 Best Box": f"€ {price_1:.2f}", "Top 2 Best Box": f"€ {price_2:.2f}" if top2_row is not None else "N/A", "Top 3 Best Box": f"€ {price_3:.2f}" if top3_row is not None else "N/A"}
+                {"Metric Profile": "Overall Cost (Boxes + 8€ EPAL 1)", "Smallest Box (Top 10)": f"€ {price_s:.2f}", "Top 1 Best Box": f"€ {price_1:.2f}", "Top 2 Best Box": f"€ {price_2:.2f} " if top2_row is not None else "N/A", "Top 3 Best Box": f"€ {price_3:.2f}" if top3_row is not None else "N/A"}
             ])
             st.table(comp_df)
         else:
