@@ -22,7 +22,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom Theme-Proof Styling: Uses Streamlit CSS variables to support Light and Dark themes perfectly
+# Custom Theme-Proof Styling: Supports Light and Dark themes perfectly
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght=400;500;600;700;800&display=swap');
@@ -103,7 +103,6 @@ st.markdown("""
         margin-bottom: 15px;
         color: var(--text-color);
     }
-    /* Tab navigation polish */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
         border-bottom: 1px solid rgba(148, 163, 184, 0.2);
@@ -115,8 +114,6 @@ st.markdown("""
         font-weight: 600;
         font-size: 14px;
     }
-    
-    /* SaaS-Style Modern Comparison Card Grid CSS */
     .comparison-grid {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
@@ -222,14 +219,12 @@ def load_database():
         raise FileNotFoundError("Could not find box database file.")
     df = df.dropna(subset=['BoxSize']).copy()
     
-    # Safely convert key numeric columns
     numeric_cols = [
         'Ext. Length [mm]', 'Ext.Width [mm]', 'Ext. Height [mm]',
         'Int.Length [mm]', 'Width [mm]', 'Height [mm]', 'Max. Load [kg]'
     ]
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors='coerce')
-    # Standardize PL as Box Contract Price in Euros (€)
     df['Box Price (€)'] = pd.to_numeric(df['PL'], errors='coerce').fillna(0.0)
     return df, loaded_file
 
@@ -257,7 +252,6 @@ sort_criteria = st.sidebar.selectbox(
     help="Default priority uses weighted index: Volumetric Efficiency (60%) ➔ Weight Compliance (25%) ➔ Quantity Yield (15%)."
 )
 
-# PRODUCT SPECIFICATIONS ACCORDION
 with st.sidebar.expander("📂 Product Specifications", expanded=True):
     uploaded_stl = st.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
     mesh_cad = None  
@@ -281,11 +275,11 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
             import trimesh
             uploaded_stl.seek(0)
             if filename.endswith('.step') or filename.endswith('.stp'):
+                import cascadio
                 mesh_cad = trimesh.load(uploaded_stl, file_type='step')
             else:
                 mesh_cad = trimesh.load(uploaded_stl, file_type='stl')
             
-            # Normalize vertices
             if mesh_cad.vertices.size > 0:
                 bounds = mesh_cad.bounding_box.extents
                 dims = sorted(bounds)
@@ -306,7 +300,6 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
                     cad_volume *= 1000.0  
                 
                 st.success(f"📐 Extracted: {auto_l}x{auto_w}x{auto_h} mm")
-                
                 st.markdown("#### 🪵 Material Weight Extractor")
                 selected_material = st.selectbox(
                     "Select Part Material:",
@@ -359,7 +352,6 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
         ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"]
     )
 
-# PACKAGING DIRECTIVES ACCORDION
 with st.sidebar.expander("📂 Packaging Directives & Tolerances", expanded=False):
     max_box_weight_limit = st.number_input(
         "Max Manual Box Weight Limit (kg)", 
@@ -396,7 +388,6 @@ with st.sidebar.expander("📂 Packaging Directives & Tolerances", expanded=Fals
     sep_xy = st.slider("Separator X/Y (mm)", min_value=0, max_value=10, value=2)
     sep_z = st.slider("Separator Z (mm)", min_value=0, max_value=10, value=4)
 
-# BSH PACKAGING DIRECTIVE MANUAL INPUTS
 with st.sidebar.expander("📋 Packaging Directive Ref Boxes", expanded=True):
     st.markdown("**Alternative I (e.g. SLC 400)**")
     alt1_l = st.number_input("Alt I Ext. Length (mm)", value=400.0, step=10.0)
@@ -410,7 +401,6 @@ with st.sidebar.expander("📋 Packaging Directive Ref Boxes", expanded=True):
     alt2_h = st.number_input("Alt II Ext. Height (mm)", value=200.0, step=10.0)
     alt2_q = st.selectbox("Alt II Quality Class", ["2.30EB", "2.30BC", "1.20C", "1.20B"], index=0)
 
-# BSH AIM DESIGN PROTOCOL Checks
 if uploaded_stl is not None and not material_selected and not assembly_mode:
     st.markdown("<div class='app-header'><h1>📦 BSH Packaging Density & Box Recommender</h1></div>", unsafe_allow_html=True)
     st.warning("⚠️ **Material Selection Required:** Please select a material type in the Product Specifications accordion to proceed.")
@@ -474,6 +464,28 @@ def estimate_box_weight(ext_l, ext_w, ext_h, quality):
     grammage_map = {'1.20B': 0.40, '1.20C': 0.45, '2.30EB': 0.70, '2.30BC': 0.85}
     g = grammage_map.get(str(quality).strip(), 0.50)
     return flat_area * g
+
+# Helper to retrieve either manual fine-tuned or max default quantity & package weight
+def get_live_box_metrics(row, weight_per_part):
+    box_spec = row["Box ID / Specification"]
+    qty_key = f"manual_qty_{box_spec}"
+    default_max_qty = int(row["No of Parts per Box"])
+    # If the user has manually tuned the quantity, fetch it from session_state
+    active_qty = int(st.session_state.get(qty_key, default_max_qty))
+    
+    # Recalculate dynamic package weight
+    ext_l = row["Ext. Length [mm]"]
+    ext_w = row["Ext. Width [mm]"]
+    ext_h = row["Ext. Height [mm]"]
+    box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row["Flute Type"])
+    live_total_weight = round((active_qty * weight_per_part) + box_weight, 2)
+    
+    # Recalculate volumetric efficiency based on active loaded parts
+    single_part_vol = prod_l * prod_w * prod_h
+    box_internal_vol = row["Int. Length [mm]"] * row["Int. Width [mm]"] * row["Int. Height [mm]"]
+    live_vol_efficiency = round(((active_qty * single_part_vol) / box_internal_vol) * 100, 2)
+    
+    return active_qty, live_total_weight, live_vol_efficiency
 
 # ==============================================================================
 # 5. EXECUTE CALCULATION ENGINE
@@ -604,7 +616,6 @@ if results:
     sorted_df = res_df.sort_values(by=sort_by_cols, ascending=ascending_rules).reset_index(drop=True)
     available_boxes = list(sorted_df["Box ID / Specification"].values)
     
-    # 🛡️ Dynamic Sync & Dropdown State Initialization
     current_best_box = available_boxes[0] if available_boxes else None
     
     if "previous_best_box" not in st.session_state:
@@ -613,11 +624,9 @@ if results:
     elif st.session_state["previous_best_box"] != current_best_box:
         st.session_state["global_selected_box"] = current_best_box
         st.session_state["previous_best_box"] = current_best_box
-        
     if "global_selected_box" not in st.session_state or st.session_state["global_selected_box"] not in available_boxes:
         st.session_state["global_selected_box"] = current_best_box
         
-    # Unified Sync Callbacks for Blueprint drop-downs
     def sync_from_tab1():
         st.session_state["global_selected_box"] = st.session_state["tab1_box_selector"]
     def sync_from_tab2():
@@ -635,9 +644,10 @@ if results:
         except (ValueError, KeyError):
             return 0
             
-    # FIXED: The Top-most KPI cards and alert systems read directly from sorted_df[0] (the true Rank 1),
-    # while the visual blueprint rendering area below safely follows the manually selected `st.session_state["global_selected_box"]`
+    # FIXED: Header KPI cards always display Rank-1 box based on priority sorted table
     viz_box_rank1 = sorted_df.iloc[0] if not sorted_df.empty else None
+    
+    # Retrieves manually selected blueprint box and binds live metrics
     viz_box_active = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0] if not sorted_df.empty else None
             
     col_title, col_safety_header = st.columns([7, 3])
@@ -648,41 +658,40 @@ if results:
                 <p>Grid-Based Product Accommodation, Weighted Multi-Criteria Priority Stacking & Multi-Pallet Optimizer</p>
             </div>
         """, unsafe_allow_html=True)
-        
     with col_safety_header:
         if viz_box_rank1 is not None:
-            total_package_weight = viz_box_rank1["Total Weight (kg)"]
-            ext_l = viz_box_rank1["Ext. Length [mm]"]
-            ext_w = viz_box_rank1["Ext. Width [mm]"]
-            if total_package_weight > 17.0:
+            # Check dynamic weight of Rank-1 box using fine-tuned quantity
+            r1_active_qty, r1_active_wt, _ = get_live_box_metrics(viz_box_rank1, prod_wt)
+            if r1_active_wt > 17.0:
                 st.markdown(f"""
                     <div style='background-color:rgba(239, 68, 68, 0.15); border-left:5px solid #ef4444; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
-                        <b style='color:#ef4444; font-size:16px;'>🚨 Rank 1 Load Status: Heavy (&gt;17 kg)</b><br>
-                        <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>{total_package_weight} kg (Forklift Required)</span><br>
+                        <b style='color:#ef4444; font-size:16px;'>🚨 3. Heavy Load (&gt;17 kg)</b><br>
+                        <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>{r1_active_wt} kg (Forklift Required)</span><br>
                         <span style='font-size:11px;'>Exceeds ergonomic manual limit. Permitted only with mechanical lift aids.</span>
                     </div>
                 """, unsafe_allow_html=True)
-            elif total_package_weight >= max_box_weight_limit:
+            elif r1_active_wt >= max_box_weight_limit:
                 st.markdown(f"""
                     <div style='background-color:rgba(245, 159, 0, 0.15); border-left:5px solid #f59f00; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
-                        <b style='color:#f59f00; font-size:16px;'>🟠 Rank 1 Load Status: Moderate ({max_box_weight_limit}-17 kg)</b><br>
-                        <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>{total_package_weight} kg (Elevated Weight)</span><br>
+                        <b style='color:#f59f00; font-size:16px;'>🟠 2. Moderate Weight ({max_box_weight_limit}-17 kg)</b><br>
+                        <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>{r1_active_wt} kg (Elevated Weight)</span><br>
                         <span style='font-size:11px;'>Slightly above standard {max_box_weight_limit} kg manual directive. Two-person lift recommended.</span>
                     </div>
                 """, unsafe_allow_html=True)
             else:
                 st.markdown(f"""
                     <div style='background-color:rgba(34, 197, 94, 0.15); border-left:5px solid #22c55e; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
-                        <b style='color:#22c55e; font-size:16px;'>🟢 Rank 1 Load Status: Light / Safe (&lt;{max_box_weight_limit} kg)</b><br>
-                        <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>Safe at {total_package_weight} kg</span><br>
+                        <b style='color:#22c55e; font-size:16px;'>🟢 1. Light / Safe Weight (&lt;{max_box_weight_limit} kg)</b><br>
+                        <span style='font-size:14px; font-weight:bold; color: var(--text-color);'>Safe at {r1_active_wt} kg</span><br>
                         <span style='font-size:11px;'>Conforms strictly to Packaging Directive (&lt;{max_box_weight_limit} kg). Single-operator manual safe.</span>
                     </div>
                 """, unsafe_allow_html=True)
             
     st.success(f"Connected to Cardboard Database: `{filename_loaded}` | Qualifying Options: {len(sorted_df)}")
     
-    # FIXED: Header summary metrics now correctly display the rank-1 recommended box properties
-    st.subheader("💡 Best Matched Packing Insights (Rank-1 Recommendation)")
+    # FIXED: Best matched insights dynamically reflect the fine-tuned loaded quantities and calculated weights
+    r1_live_qty, r1_live_wt, r1_live_eff = get_live_box_metrics(viz_box_rank1, prod_wt)
+    st.subheader("💡 Best Matched Packing Insights (Rank-1 Box)")
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.markdown(f"""
@@ -695,11 +704,11 @@ if results:
             </div>
         """, unsafe_allow_html=True)
     with col2:
-        st.markdown(f"<div class='metric-box'><b>📦 Max Parts Fitted</b><br><span style='font-size:24px; font-weight:bold; color:#28a745;'>{int(viz_box_rank1['No of Parts per Box'])} Pcs</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-box'><b>📦 Live Parts Loaded</b><br><span style='font-size:24px; font-weight:bold; color:#28a745;'>{r1_live_qty} Pcs</span></div>", unsafe_allow_html=True)
     with col3:
-        st.markdown(f"<div class='metric-box'><b>📊 Vol. Efficiency</b><br><span style='font-size:24px; font-weight:bold; color:#ffc107;'>{viz_box_rank1['Volumetric Efficiency (%)']}%</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-box'><b>📊 Vol. Efficiency</b><br><span style='font-size:24px; font-weight:bold; color:#ffc107;'>{r1_live_eff}%</span></div>", unsafe_allow_html=True)
     with col4:
-        st.markdown(f"<div class='metric-box'><b>⚖️ Total Weight</b><br><span style='font-size:24px; font-weight:bold; color:#17a2b8;'>{viz_box_rank1['Total Weight (kg)']} kg</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric-box'><b>⚖️ Live Weight</b><br><span style='font-size:24px; font-weight:bold; color:#17a2b8;'>{r1_live_wt} kg</span></div>", unsafe_allow_html=True)
     with col5:
         st.markdown(f"<div class='metric-box'><b>💰 Box Price</b><br><span style='font-size:24px; font-weight:bold; color:#e83e8c;'>€ {viz_box_rank1['Box Price (€)']:.2f}</span></div>", unsafe_allow_html=True)
         
@@ -817,7 +826,6 @@ if results:
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📋 Step-by-Step Visual Blueprint Loading Map")
         
-        # Interactive selector (properly synchronized with other tabs)
         safe_index_t1 = get_safe_index(available_boxes, st.session_state["global_selected_box"])
         selected_box_tab1 = st.selectbox(
             "Select a Cardboard Box to inspect its loading blueprints & 3D models (Synchronized):",
@@ -1160,7 +1168,6 @@ if results:
         }
         pure_box_max_h = max(200.0, max_pallet_height_limit - 144.0)
         
-        # Core calculations helper
         def calculate_pallet_stacking(pallet_l, pallet_w, ext_l, ext_w, ext_h, box_wt, pcs_box, pallet_tare=23.0, max_h=pure_box_max_h, max_wt=max_pallet_weight_limit):
             nx_a, ny_a = int(pallet_l // ext_l), int(pallet_w // ext_w)
             layers_a = nx_a * ny_a
@@ -1180,7 +1187,6 @@ if results:
             total_pcs = total_boxes * pcs_box
             return total_boxes, nz, best_layer_qty, total_pcs, round(total_weight, 2), best_orient, nx_best, ny_best
 
-        # BSH Directive DB Resolution Function
         def get_resolved_directive_row(df, l, w, h, q):
             match = df[(df['Ext. Length [mm]'] == l) & (df['Ext.Width [mm]'] == w) & (df['Ext. Height [mm]'] == h) & (df['Quality'].astype(str).str.strip() == q)]
             if not match.empty:
@@ -1209,36 +1215,44 @@ if results:
                 'Height [mm]': max(10.0, h - thick),
                 'Max. Load [kg]': 15.0,
                 'PL': 1.55 if l > 450 else 0.95,
-                'Box Price (€)': 1.55 if l > 450 else 0.95
+                'Box Price (€)': 1.55 if l > 450 else 0.95,
+                'Flute Type': q,
+                'Int. Length [mm]': max(10.0, l - 2*thick),
+                'Int. Width [mm]': max(10.0, w - 2*thick),
+                'Int. Height [mm]': max(10.0, h - thick)
             })
             return fallback_series, False
 
-        # Resolve Options
         row_alt1, found1 = get_resolved_directive_row(df_inventory, alt1_l, alt1_w, alt1_h, alt1_q)
         row_alt2, found2 = get_resolved_directive_row(df_inventory, alt2_l, alt2_w, alt2_h, alt2_q)
         
-        # Packing Calculations
+        # Calculate maximum default pack counts
         qty_alt1, _, _, _ = calculate_packing(
             row_alt1['Int.Length [mm]'], row_alt1['Width [mm]'], row_alt1['Height [mm]'],
             prod_l, prod_w, prod_h, orientation_rule, lot_alignment_enabled, lot_step
         )
-        wt_alt1 = round((qty_alt1 * prod_wt) + estimate_box_weight(alt1_l, alt1_w, alt1_h, alt1_q), 2)
+        row_alt1["No of Parts per Box"] = qty_alt1
         qty_alt2, _, _, _ = calculate_packing(
             row_alt2['Int.Length [mm]'], row_alt2['Width [mm]'], row_alt2['Height [mm]'],
             prod_l, prod_w, prod_h, orientation_rule, lot_alignment_enabled, lot_step
         )
-        wt_alt2 = round((qty_alt2 * prod_wt) + estimate_box_weight(alt2_l, alt2_w, alt2_h, alt2_q), 2)
+        row_alt2["No of Parts per Box"] = qty_alt2
         
-        # Stacks (Comparing Top-Ranked Recommendation Box)
+        # FIXED: Extract dynamic quantities & live recalculated weights for Comparison Cards (including CVSE Rank-1 box)
+        cvse_pcs, cvse_box_wt, _ = get_live_box_metrics(viz_box_rank1, prod_wt)
+        a1_pcs, a1_box_wt, _ = get_live_box_metrics(row_alt1, prod_wt)
+        a2_pcs, a2_box_wt, _ = get_live_box_metrics(row_alt2, prod_wt)
+        
+        # Calculate dynamic Pallet Stack Metrics using dynamically adjusted box configurations
         bt_cvse, _, _, pcs_cvse, wt_cvse, _, _, _ = calculate_pallet_stacking(
             1200, 800, viz_box_rank1["Ext. Length [mm]"], viz_box_rank1["Ext. Width [mm]"], viz_box_rank1["Ext. Height [mm]"], 
-            viz_box_rank1["Total Weight (kg)"], int(viz_box_rank1["No of Parts per Box"])
+            cvse_box_wt, cvse_pcs
         )
         bt_a1, _, _, pcs_a1, wt_a1, _, _, _ = calculate_pallet_stacking(
-            1200, 800, alt1_l, alt1_w, alt1_h, wt_alt1, qty_alt1
+            1200, 800, alt1_l, alt1_w, alt1_h, a1_box_wt, a1_pcs
         )
         bt_a2, _, _, pcs_a2, wt_a2, _, _, _ = calculate_pallet_stacking(
-            1200, 800, alt2_l, alt2_w, alt2_h, wt_alt2, qty_alt2
+            1200, 800, alt2_l, alt2_w, alt2_h, a2_box_wt, a2_pcs
         )
         
         cost_cvse = (bt_cvse * viz_box_rank1["Box Price (€)"]) + 8.00
@@ -1247,12 +1261,8 @@ if results:
         potential_saving_alt1 = max(0.0, cost_a1 - cost_cvse)
         potential_saving_alt2 = max(0.0, cost_a2 - cost_cvse)
         
-        # ----------------------------------------------------------------------
-        # MODERN SAAS COMPARISON CARD GRID (Strategy 1 & 2 combined)
-        # ----------------------------------------------------------------------
         st.markdown("### 📊 Executive Yield & Cost Impact Overview")
         
-        # Color Logic Classes
         wt_cvse_class = "win" if wt_cvse <= max_pallet_weight_limit else "danger"
         wt_a1_class = "win" if wt_a1 <= max_pallet_weight_limit else "danger"
         wt_a2_class = "win" if wt_a2 <= max_pallet_weight_limit else "danger"
@@ -1262,7 +1272,6 @@ if results:
         yield_a2_class = "win" if pcs_a2 > max(pcs_cvse, pcs_a1) else "val"
         
         card_col1, card_col2, card_col3 = st.columns(3)
-        # Column 1: CVSE Optimized Box (Hero Card always shows Absolute Rank-1 Box)
         with card_col1:
             st.markdown(f"""
 <div class="comp-card hero" style="min-height: 380px;">
@@ -1272,7 +1281,7 @@ if results:
         <div class="dims">{int(viz_box_rank1['Ext. Length [mm]'])}x{int(viz_box_rank1['Ext. Width [mm]'])}x{int(viz_box_rank1['Ext. Height [mm]'])} mm</div>
     </div>
     <div class="metric-row"><span class="label">Quality</span><span class="val">{viz_box_rank1['Quality Class']}</span></div>
-    <div class="metric-row"><span class="label">Parts / Box</span><span class="val">{int(viz_box_rank1['No of Parts per Box'])} Pcs</span></div>
+    <div class="metric-row"><span class="label">Parts / Box</span><span class="val">{cvse_pcs} Pcs</span></div>
     <div class="metric-row"><span class="label">Total Pallet Yield</span><span class="val {yield_cvse_class}">{pcs_cvse} Pcs</span></div>
     <div class="metric-row"><span class="label">Gross Weight</span><span class="val {wt_cvse_class}">{wt_cvse} kg</span></div>
     <div class="metric-row" style="margin-top:12px; border-top:1px dashed rgba(148,163,184,0.3); padding-top:10px;">
@@ -1281,8 +1290,6 @@ if results:
     <div class="metric-row"><span class="label">Saving (vs Alt I)</span><span class="val saving">€ {potential_saving_alt1:.2f} Save</span></div>
 </div>
 """, unsafe_allow_html=True)
-
-        # Column 2: Packaging Directive Alt 1
         with card_col2:
             st.markdown(f"""
 <div class="comp-card" style="min-height: 380px;">
@@ -1291,7 +1298,7 @@ if results:
         <div class="dims">{int(alt1_l)}x{int(alt1_w)}x{int(alt1_h)} mm</div>
     </div>
     <div class="metric-row"><span class="label">Quality</span><span class="val">{alt1_q}</span></div>
-    <div class="metric-row"><span class="label">Parts / Box</span><span class="val">{int(qty_alt1)} Pcs</span></div>
+    <div class="metric-row"><span class="label">Parts / Box</span><span class="val">{a1_pcs} Pcs</span></div>
     <div class="metric-row"><span class="label">Total Pallet Yield</span><span class="val {yield_a1_class}">{pcs_a1} Pcs</span></div>
     <div class="metric-row"><span class="label">Gross Weight</span><span class="val {wt_a1_class}">{wt_a1} kg</span></div>
     <div class="metric-row" style="margin-top:12px; border-top:1px dashed rgba(148,163,184,0.3); padding-top:10px;">
@@ -1300,8 +1307,6 @@ if results:
     <div class="metric-row"><span class="label">Saving (vs Alt I)</span><span class="val" style="color: #64748b;">Baseline Reference</span></div>
 </div>
 """, unsafe_allow_html=True)
-
-        # Column 3: Packaging Directive Alt 2
         with card_col3:
             st.markdown(f"""
 <div class="comp-card" style="min-height: 380px;">
@@ -1310,7 +1315,7 @@ if results:
         <div class="dims">{int(alt2_l)}x{int(alt2_w)}x{int(alt2_h)} mm</div>
     </div>
     <div class="metric-row"><span class="label">Quality</span><span class="val">{alt2_q}</span></div>
-    <div class="metric-row"><span class="label">Parts / Box</span><span class="val">{int(qty_alt2)} Pcs</span></div>
+    <div class="metric-row"><span class="label">Parts / Box</span><span class="val">{a2_pcs} Pcs</span></div>
     <div class="metric-row"><span class="label">Total Pallet Yield</span><span class="val {yield_a2_class}">{pcs_a2} Pcs</span></div>
     <div class="metric-row"><span class="label">Gross Weight</span><span class="val {wt_a2_class}">{wt_a2} kg</span></div>
     <div class="metric-row" style="margin-top:12px; border-top:1px dashed rgba(148,163,184,0.3); padding-top:10px;">
@@ -1319,17 +1324,16 @@ if results:
     <div class="metric-row"><span class="label">Saving (vs CVSE)</span><span class="val" style="color: #ef4444; font-weight:700;">+ € {potential_saving_alt2:.2f} Loss</span></div>
 </div>
 """, unsafe_allow_html=True)
-
-        # FIXED: Decision Winner algorithm updated to respect Priority Score (Multi-Criteria) instead of a simple Pcs count.
+        
+        # FIXED: Priority score winner check based on live recalculations
         best_overall_box_spec = viz_box_rank1["Box ID / Specification"]
         st.markdown(f"""
         <div class='success-box'>
-            🏆 <b>Decision Winner: {best_overall_box_spec}</b>! 
-            Under the current <b>{sort_criteria}</b> settings, this box achieves the absolute highest performance ranking 
-            (Priority Score: <b>{viz_box_rank1['Priority Score']:.3f}</b>) across packing efficiency, weight limits, and cost profiles.
+            🏆 <b>Decision Winner: {best_overall_box_spec}</b>! Under the current settings, this box achieves the absolute highest performance ranking 
+            (Priority Score: <b>{viz_box_rank1['Priority Score']:.3f}</b>) across live fine-tuned loading capacities, stacking limits, and cost.
         </div>
         """, unsafe_allow_html=True)
-
+        
         st.markdown("<hr style='margin:25px 0;'>", unsafe_allow_html=True)
         st.markdown(f"### 📦 Palletization Report & Interactive 3D Stacking Model")
         
@@ -1341,14 +1345,14 @@ if results:
             key="tab2_box_selector",
             on_change=sync_from_tab2
         )
+        
         viz_box_t2 = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
         
+        # Pull dynamically adjusted active loading metrics
+        active_t2_pcs, active_t2_wt, _ = get_live_box_metrics(viz_box_t2, prod_wt)
         bx_ext_l = viz_box_t2["Ext. Length [mm]"]
         bx_ext_w = viz_box_t2["Ext. Width [mm]"]
         bx_ext_h = viz_box_t2["Ext. Height [mm]"]
-        t2_qty_key = f"manual_qty_{st.session_state['global_selected_box']}"
-        active_t2_pcs = int(st.session_state.get(t2_qty_key, viz_box_t2["No of Parts per Box"]))
-        active_t2_wt = round((active_t2_pcs * prod_wt) + estimate_box_weight(bx_ext_l, bx_ext_w, bx_ext_h, viz_box_t2["Quality Class"]), 2)
         
         col_metrics, col_plotly_pallet = st.columns([4, 6])
         with col_metrics:
@@ -1396,7 +1400,6 @@ if results:
             try:
                 fig_pallet_3d = go.Figure()
                 pallet_h = active_p_spec["pallet_h"] 
-                # 1. Top Deck Boards
                 fig_pallet_3d.add_trace(go.Mesh3d(
                     x=[0, active_p_spec["l"], active_p_spec["l"], 0, 0, active_p_spec["l"], active_p_spec["l"], 0],
                     y=[0, 0, active_p_spec["w"], active_p_spec["w"], 0, 0, active_p_spec["w"], active_p_spec["w"]],
@@ -1407,7 +1410,6 @@ if results:
                     color='#d2b48c', opacity=0.95, name="Top Deck Boards",
                     flatshading=True, lighting=dict(ambient=0.6, diffuse=0.8, specular=0.1)
                 ))
-                # 2. Runner Blocks
                 runners_y = [
                     (0, 100),
                     (active_p_spec["w"]/2 - 50, active_p_spec["w"]/2 + 50),
@@ -1424,7 +1426,6 @@ if results:
                         color='#cd853f', opacity=0.95, name=f"Runner {r_idx+1}",
                         flatshading=True, lighting=dict(ambient=0.6, diffuse=0.8, specular=0.1)
                     ))
-                # 3. Bottom Base Boards
                 fig_pallet_3d.add_trace(go.Mesh3d(
                     x=[0, active_p_spec["l"], active_p_spec["l"], 0, 0, active_p_spec["l"], active_p_spec["l"], 0],
                     y=[0, 0, active_p_spec["w"], active_p_spec["w"], 0, 0, active_p_spec["w"], active_p_spec["w"]],
@@ -1435,7 +1436,6 @@ if results:
                     color='#d2b48c', opacity=0.95, name="Bottom Boards",
                     flatshading=True, lighting=dict(ambient=0.6, diffuse=0.8, specular=0.1)
                 ))
-                # 4. Box Drawing
                 bx_dx = bx_ext_l if p_orient == "Lengthwise (L-parallel)" else bx_ext_w
                 bx_dy = bx_ext_w if p_orient == "Lengthwise (L-parallel)" else bx_ext_l
                 bx_dz = bx_ext_h
@@ -1494,25 +1494,24 @@ if results:
                     height=500
                 )
                 st.plotly_chart(fig_pallet_3d, use_container_width=True)
-            except Exception as e_pall_plotly:
-                st.warning(f"Error rendering interactive 3D pallet: {e_pall_plotly}")
+            except Exception as e_pack_plotly:
+                st.warning(f"Error rendering interactive 3D pallet: {e_pack_plotly}")
                 
     # ==========================================================================
     # TAB 3: MCKEE GRAVITY COMPRESSION SAFETY CHECK
     # ==========================================================================
     with tab_compression:
-        st.subheader("🗜️ Corrugated Cardboard McKee Compression Strength Checker")
-        st.markdown(f"Validate if the bottom cardboard box can handle the heavy vertical static loads from the stack above on a **{max_pallet_height_limit} mm** pallet layout.")
+        st.subheader("🗜 ... Corrugated Cardboard McKee Compression Strength Checker")
+        st.markdown(f"Validate if the bottom cardboard box can handle vertical static loads on a **{max_pallet_height_limit} mm** pallet layout.")
         st.markdown("#### ⚙️ Stacking Setup")
         col_setup_1, col_setup_2 = st.columns(2)
         with col_setup_1:
             stack_style = st.selectbox(
                 "Select Pallet Stacking Configuration:",
                 ["Single Pallet Load", "Double-Stacked Pallets (Pallet-on-Pallet)"],
-                help="Single Pallet checks local column load. Double Stacking adds the entire gross weight of the top pallet onto the bottom boxes."
+                help="Single Pallet checks column load. Double Stacking adds the entire gross weight of the top pallet."
             )
         with col_setup_2:
-            # Dropdown menu items
             cvse_id = viz_box_rank1["Box ID / Specification"]
             alt1_id = f"{row_alt1['BoxSize']} [{alt1_q}]"
             alt2_id = f"{row_alt2['BoxSize']} [{alt2_q}]"
@@ -1536,7 +1535,6 @@ if results:
             
             selected_key_type = next((item[1] for item in dropdown_mapping if item[0] == selected_display_label), "cvse")
             
-            # Simulated rows mapping for McKee math matching
             if selected_key_type == "cvse":
                 viz_box_t3 = viz_box_rank1
                 st.session_state["global_selected_box"] = cvse_id
@@ -1546,11 +1544,13 @@ if results:
                     "Quality Class": alt1_q,
                     "Int. Length [mm]": row_alt1["Int.Length [mm]"],
                     "Int. Width [mm]": row_alt1["Width [mm]"],
+                    "Int. Height [mm]": row_alt1["Height [mm]"],
                     "Ext. Length [mm]": alt1_l,
                     "Ext. Width [mm]": alt1_w,
                     "Ext. Height [mm]": alt1_h,
                     "Total Weight (kg)": wt_alt1,
-                    "No of Parts per Box": qty_alt1
+                    "No of Parts per Box": qty_alt1,
+                    "Flute Type": alt1_q
                 })
             elif selected_key_type == "alt2":
                 viz_box_t3 = pd.Series({
@@ -1558,11 +1558,13 @@ if results:
                     "Quality Class": alt2_q,
                     "Int. Length [mm]": row_alt2["Int.Length [mm]"],
                     "Int. Width [mm]": row_alt2["Width [mm]"],
+                    "Int. Height [mm]": row_alt2["Height [mm]"],
                     "Ext. Length [mm]": alt2_l,
                     "Ext. Width [mm]": alt2_w,
                     "Ext. Height [mm]": alt2_h,
                     "Total Weight (kg)": wt_alt2,
-                    "No of Parts per Box": qty_alt2
+                    "No of Parts per Box": qty_alt2,
+                    "Flute Type": alt2_q
                 })
             else:
                 viz_box_t3 = sorted_df[sorted_df["Box ID / Specification"] == selected_key_type].iloc[0]
@@ -1571,7 +1573,7 @@ if results:
         st.markdown("#### 🪵 3. Load, Environment & Logistics Parameters")
         col_moisture, col_spread, col_fragility = st.columns(3)
         with col_moisture:
-            moisture_sel = st.selectbox("Moisture (Humidity):", ["Dry", "Normal", "Humid", "Wet"], index=1, help="Humidity weakens boxes over time.")
+            moisture_sel = st.selectbox("Moisture (Humidity):", ["Dry", "Normal", "Humid", "Wet"], index=1)
         with col_spread:
             spread_sel = st.selectbox("Load spread:", ["Even", "Uneven", "Center", "Corner"], index=0)
         with col_fragility:
@@ -1610,8 +1612,8 @@ if results:
         bx_ext_w_t3 = viz_box_t3["Ext. Width [mm]"]
         bx_ext_h_t3 = viz_box_t3["Ext. Height [mm]"]
         
-        active_t3_pcs = int(viz_box_t3["No of Parts per Box"])
-        active_t3_wt = float(viz_box_t3["Total Weight (kg)"])
+        # FIXED: McKee dynamically grabs the fine-tuned live quantity & weight rather than the database defaults
+        active_t3_pcs, active_t3_wt, _ = get_live_box_metrics(viz_box_t3, prod_wt)
         
         _, z_layers_calc_t3, best_layer_qty_t3, _, p_wt_calc_t3, _, _, _ = calculate_pallet_stacking(
             1200, 800, bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, active_t3_wt, active_t3_pcs
@@ -1626,58 +1628,52 @@ if results:
         with col_comp_kpis[0]:
             st.metric("💪 Theoretical Box BCT Strength", f"{bct_kg_t3} kg", help="Ultimate crushing force of a single box.")
         with col_comp_kpis[1]:
-            st.metric("🛡️ Combined Safety Factor (SF)", f"{sf_t3}x", help="Dynamic stacking margin calculated based on climate, storage, and handling conditions.")
+            st.metric("🛡️ Combined Safety Factor (SF)", f"{sf_t3}x", help="Climate/handling margin.")
         with col_comp_kpis[2]:
-            st.metric("🔒 Safe Design Capacity", f"{bct_safe_load_t3} kg", help=f"Maximum allowed load applying a {sf_t3}x safety threshold.")
+            st.metric("🔒 Safe Design Capacity", f"{bct_safe_load_t3} kg", help="Safe capacity limit.")
         with col_comp_kpis[3]:
-            st.metric("🏋️ Actual Load on Bottom Box", f"{actual_bottom_load_t3} kg", help="Total static weight supported by the lowest box on the stack.")
+            st.metric("🏋️ Actual Load on Bottom Box", f"{actual_bottom_load_t3} kg", help="Load supported by the lowest box on stack.")
             
         st.markdown("#### 🔍 Structural Safety Verdict:")
         if actual_bottom_load_t3 == 0:
             st.markdown(f"""
             <div class='success-box'>
-                <b>🟢 Safe (Single Layer Stack):</b> There are no other layers stacked above this box on the pallet. Compression failure is mathematically impossible.
+                <b>🟢 Safe (Single Layer Stack):</b> No other layers stacked above this box on the pallet. Stacking failure is mathematically impossible.
             </div>
             """, unsafe_allow_html=True)
         elif actual_bottom_load_t3 <= bct_safe_load_t3:
             st.markdown(f"""
             <div class='success-box'>
-                <b>🟢 Safe Stacking Approved:</b> The actual load of <b>{actual_bottom_load_t3} kg</b> is within the safe limit of <b>{bct_safe_load_t3} kg</b>. 
-                Cardboard quality class <b>{q_class_t3} ({q_name_t3})</b> is structurally sufficient for the bottom layers of this stack under current environment variables!
+                <b>🟢 Safe Stacking Approved:</b> The live actual load of <b>{actual_bottom_load_t3} kg</b> is within the safe design limit of <b>{bct_safe_load_t3} kg</b>! 
+                Cardboard quality class <b>{q_class_t3} ({q_name_t3})</b> is structurally safe for bottom layers under these environment variables!
             </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown(f"""
             <div class='danger-box'>
-                <b>🚨 Warning - Structural Failure Risk:</b> The actual load of <b>{actual_bottom_load_t3} kg</b> exceeds the safe stacked design capacity of <b>{bct_safe_load_t3} kg</b> under these environmental conditions!<br>
-                <b>Recommendation:</b><br>
-                1. Upgrade the cardboard to a stronger grade (e.g., <b>2.30BC Double-Wall</b>).<br>
-                2. Decrease the stacking height on the pallet (reduce the number of layers).<br>
-                3. Use corner-board protectors to reinforce structural load paths.
+                <b>🚨 Warning - Structural Failure Risk:</b> The live actual load of <b>{actual_bottom_load_t3} kg</b> exceeds the safe design capacity of <b>{bct_safe_load_t3} kg</b>!<br>
+                <b>Recommendation:</b> Upgrade cardboard flute, decrease stacking height, or reinforce load paths.
             </div>
             """, unsafe_allow_html=True)
             
         st.markdown("<div class='guide-box'><h5>🧮 Step-by-Step Mathematical Workings (McKee Metric Standard):</h5>"
-                    "The Box Compression Test (BCT) is computed dynamically using metric units:</div>", unsafe_allow_html=True)
+                    "The Box Compression Test (BCT) is computed dynamically using live units:</div>", unsafe_allow_html=True)
         st.latex(r"\text{BCT (Newtons)} = 1.82 \times \text{ECT} \times \sqrt{t \times P}")
         st.latex(r"\text{BCT (kg)} = \frac{\text{BCT (Newtons)}}{9.81 \text{ m/s}^2}")
         st.latex(r"\text{Safe Design Capacity} = \frac{\text{BCT (kg)}}{\text{Combined Safety Factor (SF)}}")
         st.markdown(f"""
         <div class='guide-box' style='margin-top:-20px; border-top-left-radius:0px; border-top-right-radius:0px; border-top:0px;'>
-            <b>Active Box Parameters:</b>
+            <b>Active Live Parameters (Based on {active_t3_pcs} Pcs Loaded):</b>
             <ul>
-                <li><b>ECT (Edge Crush Test):</b> Quality class <b>{q_class_t3}</b> baseline is <b>{ect_val_t3} N/mm</b>.</li>
+                <li><b>ECT:</b> Quality class <b>{q_class_t3}</b> baseline is <b>{ect_val_t3} N/mm</b>.</li>
                 <li><b>t (Thickness):</b> Quality class <b>{q_class_t3}</b> baseline is <b>{thickness_val_t3} mm</b>.</li>
-                <li><b>P (Perimeter):</b> Measured boundary is <b>{int(box_perimeter_t3)} mm</b> (Lengthwise wall perimeter).</li>
+                <li><b>P (Perimeter):</b> Measured boundary is <b>{int(box_perimeter_t3)} mm</b>.</li>
             </ul>
             <hr style='border: 0.5px solid rgba(148,163,184,0.3);'>
-            <b>Step-by-Step Calculations:</b><br><br>
-            <b>1. Pristine Crushing Force:</b><br>
-            1.82 × {ect_val_t3} N/mm × √({thickness_val_t3} mm × {int(box_perimeter_t3)} mm) = <b>{bct_n_t3:.2f} Newtons</b><br><br>
-            <b>2. Mass Conversion (kg):</b><br>
-            {bct_n_t3:.2f} N ÷ 9.81 m/s² = <b>{bct_kg_t3} kg</b><br><br>
-            <b>3. Stacking Environment Safety Limit applied ({sf_t3}x):</b><br>
-            {bct_kg_t3} kg ÷ {sf_t3} = <b>{bct_safe_load_t3} kg</b> (Safe Design Capacity)
+            <b>Live Calculations:</b><br><br>
+            <b>1. Pristine Crushing Force:</b> 1.82 × {ect_val_t3} N/mm × √({thickness_val_t3} mm × {int(box_perimeter_t3)} mm) = <b>{bct_n_t3:.2f} Newtons</b><br>
+            <b>2. Mass Conversion (kg):</b> {bct_n_t3:.2f} N ÷ 9.81 m/s² = <b>{bct_kg_t3} kg</b><br>
+            <b>3. Environmental Safety Limit ({sf_t3}x):</b> {bct_kg_t3} kg ÷ {sf_t3} = <b>{bct_safe_load_t3} kg</b>
         </div>
         """, unsafe_allow_html=True)
 else:
