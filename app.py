@@ -737,7 +737,7 @@ if results:
         "🗜️ Tab 3: McKee Gravity Compression Safety Check"
     ])
 
-    # ==============================================================================
+# ==============================================================================
 # 7. COLLABORATIVE FEEDBACK HUB
 # ==============================================================================
 st.sidebar.markdown("<hr style='margin:15px 0; border:0; border-top:1px solid rgba(148,163,184,0.3);'>", unsafe_allow_html=True)
@@ -774,16 +774,18 @@ with st.sidebar.form("feedback_form", clear_on_submit=True):
             except Exception as e_feed:
                 st.error(f"Could not save feedback: {e_feed}")
 
-    # ==============================================================================
+# ==============================================================================
 # 8. SECURE ADMIN VIEW PANEL
 # ==============================================================================
 st.markdown("<br><br><hr style='border:0; border-top:1px solid rgba(148,163,184,0.2);'>", unsafe_allow_html=True)
+
 with st.expander("🔐 Admin Panel: View Collected Feedback"):
-    admin_password = st.text_input("Enter Admin Password to view logs:", type="password")
+    admin_password = st.text_input("Enter Admin Password to view logs:", type="password", key="admin_pwd_input")
     
     # Simple, secure local access password (change "BSHAdmin2026" to your choice)
     if admin_password == "BSHAdmin2026":
         feedback_file = "feedback_log.csv"
+        
         if os.path.exists(feedback_file):
             try:
                 feed_df = pd.read_csv(feedback_file)
@@ -803,6 +805,7 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
                 st.error(f"Error reading feedback file: {e_read_feed}")
         else:
             st.info("No feedback has been submitted yet. The log file is empty.")
+            
     elif admin_password != "":
         st.error("Incorrect password. Access denied.")
     # ==========================================================================
