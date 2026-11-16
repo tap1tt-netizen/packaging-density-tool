@@ -6,6 +6,7 @@ import pandas as pd
 def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule, clear_side, clear_height, sep_xy, sep_z, enforce_lot=False, lot_multiplier=24):
     dims = sorted([p_l, p_w, p_h])
     h_dim, w_dim, l_dim = dims[0], dims[1], dims[2]
+    
     if rule == "Force Flat Packing Only":
         orientations = [(l_dim, w_dim, h_dim), (w_dim, l_dim, h_dim)]
     elif rule == "Force Standing on Edge":
@@ -18,9 +19,11 @@ def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule, clea
             (p_w, p_l, p_h), (p_w, p_h, p_l),
             (p_h, p_l, p_w), (p_h, p_w, p_l)
         ]
+        
     best_qty = 0
     best_config = (p_l, p_w, p_h)
     best_grid_layout = (0, 0, 0)
+    
     for px, py, pz in orientations:
         nx = max(0, int((box_int_l - (2 * clear_side) + sep_xy) // (px + sep_xy)))
         ny = max(0, int((box_int_w - (2 * clear_side) + sep_xy) // (py + sep_xy)))
@@ -30,9 +33,11 @@ def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule, clea
             best_qty = total_parts
             best_config = (px, py, pz)
             best_grid_layout = (nx, ny, nz)
+            
     if enforce_lot and best_qty >= lot_multiplier:
         aligned_qty = (best_qty // lot_multiplier) * lot_multiplier
         return aligned_qty, best_config, best_grid_layout, best_qty
+        
     return best_qty, best_config, best_grid_layout, best_qty
 
 def estimate_box_weight(ext_l, ext_w, ext_h, quality):
