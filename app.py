@@ -1265,10 +1265,27 @@ if results:
         )
         row_alt2["No of Parts per Box"] = qty_alt2
         
-        # FIXED: Extract dynamic quantities & live recalculated weights for Comparison Cards (including CVSE Rank-1 box)
+        # CVSE Recommendation remains fully dynamic & reactive to the manual slider:
         cvse_pcs, cvse_box_wt, _ = get_live_box_metrics(viz_box_rank1, prod_wt)
-        a1_pcs, a1_box_wt, _ = get_live_box_metrics(row_alt1, prod_wt)
-        a2_pcs, a2_box_wt, _ = get_live_box_metrics(row_alt2, prod_wt)
+        
+        # Reference Alternatives remain strictly fixed to their calculated geometric capacities:
+        a1_pcs = int(row_alt1["No of Parts per Box"])
+        a1_box_weight = estimate_box_weight(
+            row_alt1["Ext. Length [mm]"], 
+            row_alt1.get("Ext.Width [mm]") if "Ext.Width [mm]" in row_alt1 else row_alt1.get("Ext. Width [mm]"), 
+            row_alt1["Ext. Height [mm]"], 
+            alt1_q
+        )
+        a1_box_wt = round((a1_pcs * prod_wt) + a1_box_weight, 2)
+
+        a2_pcs = int(row_alt2["No of Parts per Box"])
+        a2_box_weight = estimate_box_weight(
+            row_alt2["Ext. Length [mm]"], 
+            row_alt2.get("Ext.Width [mm]") if "Ext.Width [mm]" in row_alt2 else row_alt2.get("Ext. Width [mm]"), 
+            row_alt2["Ext. Height [mm]"], 
+            alt2_q
+        )
+        a2_box_wt = round((a2_pcs * prod_wt) + a2_box_weight, 2)
         
         # Calculate dynamic Pallet Stack Metrics using dynamically adjusted box configurations
         bt_cvse, _, _, pcs_cvse, wt_cvse, _, _, _ = calculate_pallet_stacking(
