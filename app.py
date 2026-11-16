@@ -736,7 +736,75 @@ if results:
         "🚛 Tab 2: Pallet Stacking Optimizer (EPAL 1 & EPAL 2)", 
         "🗜️ Tab 3: McKee Gravity Compression Safety Check"
     ])
+
+    # ==============================================================================
+# 7. COLLABORATIVE FEEDBACK HUB
+# ==============================================================================
+st.sidebar.markdown("<hr style='margin:15px 0; border:0; border-top:1px solid rgba(148,163,184,0.3);'>", unsafe_allow_html=True)
+st.sidebar.subheader("💬 App Feedback Hub")
+
+with st.sidebar.form("feedback_form", clear_on_submit=True):
+    user_name = st.text_input("Your Name / Department:", placeholder="e.g., Jane Doe (Logistics)")
+    rating = st.select_slider("Rate this tool:", options=["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐"], value="⭐⭐⭐⭐⭐")
+    feedback_text = st.text_area("How can we improve this tool?", placeholder="Enter your feedback or bug reports here...")
     
+    submitted = st.form_submit_button("Submit Feedback", use_container_width=True)
+    
+    if submitted:
+        if feedback_text.strip() == "":
+            st.error("Please enter some feedback comments before submitting.")
+        else:
+            # Prepare the feedback data row
+            feedback_entry = {
+                "Timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "User": user_name.strip() if user_name.strip() != "" else "Anonymous Colleague",
+                "Rating": rating,
+                "Comments": feedback_text.strip()
+            }
+            new_row = pd.DataFrame([feedback_entry])
+            
+            feedback_file = "feedback_log.csv"
+            try:
+                # Append to CSV if it exists, otherwise create it
+                if os.path.exists(feedback_file):
+                    new_row.to_csv(feedback_file, mode='a', header=False, index=False)
+                else:
+                    new_row.to_csv(feedback_file, mode='w', header=True, index=False)
+                st.success("🎉 Thank you! Your feedback has been logged.")
+            except Exception as e_feed:
+                st.error(f"Could not save feedback: {e_feed}")
+
+    # ==============================================================================
+# 8. SECURE ADMIN VIEW PANEL
+# ==============================================================================
+st.markdown("<br><br><hr style='border:0; border-top:1px solid rgba(148,163,184,0.2);'>", unsafe_allow_html=True)
+with st.expander("🔐 Admin Panel: View Collected Feedback"):
+    admin_password = st.text_input("Enter Admin Password to view logs:", type="password")
+    
+    # Simple, secure local access password (change "BSHAdmin2026" to your choice)
+    if admin_password == "BSHAdmin2026":
+        feedback_file = "feedback_log.csv"
+        if os.path.exists(feedback_file):
+            try:
+                feed_df = pd.read_csv(feedback_file)
+                st.markdown(f"### 📋 Total Submissions: {len(feed_df)}")
+                st.dataframe(feed_df, use_container_width=True)
+                
+                # Excel/CSV Export options for your manager
+                csv_feedback = feed_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Export Feedback Database to CSV",
+                    data=csv_feedback,
+                    file_name="BSH_Tool_Feedback_Export.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            except Exception as e_read_feed:
+                st.error(f"Error reading feedback file: {e_read_feed}")
+        else:
+            st.info("No feedback has been submitted yet. The log file is empty.")
+    elif admin_password != "":
+        st.error("Incorrect password. Access denied.")
     # ==========================================================================
     # TAB 1: BOX RECOMMENDER & INDIVIDUAL LOADING
     # ==========================================================================
