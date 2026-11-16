@@ -475,7 +475,7 @@ def get_live_box_metrics(row, weight_per_part):
     
     # Recalculate dynamic package weight
     ext_l = row["Ext. Length [mm]"]
-    ext_w = row["Ext. Width [mm]"]
+    ext_w = row["Ext.Width [mm]"]  # <--- FIXED: Changed "Ext. Width [mm]" to "Ext.Width [mm]" (removed space)
     ext_h = row["Ext. Height [mm]"]
     box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row["Flute Type"])
     live_total_weight = round((active_qty * weight_per_part) + box_weight, 2)
