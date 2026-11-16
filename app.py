@@ -1791,5 +1791,6 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
             <b>3. Environmental Safety Limit ({sf_t3}x):</b> {bct_kg_t3} kg ÷ {sf_t3} = <b>{bct_safe_load_t3} kg</b>
         </div>
         """, unsafe_allow_html=True)
-else:
+if not results:
     st.warning("⚠️ No suitable boxes in your database can fit this product under the active weight or dimension parameters.")
+
