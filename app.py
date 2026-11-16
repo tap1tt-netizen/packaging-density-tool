@@ -315,7 +315,7 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
                 else:
                     density = MATERIAL_DENSITIES[selected_material]
                     calculated_weight_kg = round(cad_volume * density * 1e-6, 3)
-                    st.info(f"⚖️ Solid Weight ({selected_material}): **{calculated_weight_kg} kg**")
+                    st.info(f"⚖️ Solid Weight ({selected_material}): \*\*{calculated_weight_kg} kg\*\*")
             else:
                 st.error("Uploaded file has invalid mesh geometry.")
         except Exception as e_cad:
@@ -342,7 +342,7 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
     
     st.markdown("#### Weight (kg)")
     if assembly_mode:
-        st.warning("⚠️ **Action Required: Input Assembly Weight**\nEnter weight manually below to trigger calculations.")
+        st.warning("⚠️ \*\*Action Required: Input Assembly Weight\*\*\\nEnter weight manually below to trigger calculations.")
         prod_wt = st.number_input("Total Assembly Weight (kg)", min_value=0.0, value=0.0, step=0.1)
     else:
         prod_wt = st.number_input("Weight per Part (kg)", min_value=0.01, value=float(calculated_weight_kg), step=0.05)
@@ -389,13 +389,13 @@ with st.sidebar.expander("📂 Packaging Directives & Tolerances", expanded=Fals
     sep_z = st.slider("Separator Z (mm)", min_value=0, max_value=10, value=4)
 
 with st.sidebar.expander("📋 Packaging Directive Ref Boxes", expanded=True):
-    st.markdown("**Alternative I (e.g. SLC 400)**")
+    st.markdown("\*\*Alternative I (e.g. SLC 400)\*\*")
     alt1_l = st.number_input("Alt I Ext. Length (mm)", value=400.0, step=10.0)
     alt1_w = st.number_input("Alt I Ext. Width (mm)", value=300.0, step=10.0)
     alt1_h = st.number_input("Alt I Ext. Height (mm)", value=220.0, step=10.0)
     alt1_q = st.selectbox("Alt I Quality Class", ["2.30EB", "2.30BC", "1.20C", "1.20B"], index=1)
     st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
-    st.markdown("**Alternative II (e.g. SLC 600)**")
+    st.markdown("\*\*Alternative II (e.g. SLC 600)\*\*")
     alt2_l = st.number_input("Alt II Ext. Length (mm)", value=600.0, step=10.0)
     alt2_w = st.number_input("Alt II Ext. Width (mm)", value=400.0, step=10.0)
     alt2_h = st.number_input("Alt II Ext. Height (mm)", value=200.0, step=10.0)
@@ -403,12 +403,12 @@ with st.sidebar.expander("📋 Packaging Directive Ref Boxes", expanded=True):
 
 if uploaded_stl is not None and not material_selected and not assembly_mode:
     st.markdown("<div class='app-header'><h1>📦 BSH Packaging Density & Box Recommender</h1></div>", unsafe_allow_html=True)
-    st.warning("⚠️ **Material Selection Required:** Please select a material type in the Product Specifications accordion to proceed.")
+    st.warning("⚠️ \*\*Material Selection Required:\*\* Please select a material type in the Product Specifications accordion to proceed.")
     st.stop()
 
 if assembly_mode and prod_wt == 0.0:
     st.markdown("<div class='app-header'><h1>📦 BSH Packaging Density & Box Recommender</h1></div>", unsafe_allow_html=True)
-    st.warning("⚠️ **Assembly Weight Required:** Please enter the total assembly weight in the sidebar to proceed.")
+    st.warning("⚠️ \*\*Assembly Weight Required:\*\* Please enter the total assembly weight in the sidebar to proceed.")
     st.stop()
 
 # ==============================================================================
@@ -465,7 +465,6 @@ def estimate_box_weight(ext_l, ext_w, ext_h, quality):
     g = grammage_map.get(str(quality).strip(), 0.50)
     return flat_area * g
 
-# Helper to retrieve either manual fine-tuned or max default quantity & package weight
 # Helper to retrieve either manual fine-tuned or max default quantity & package weight
 def get_live_box_metrics(row, weight_per_part):
     box_spec = row["Box ID / Specification"]
@@ -737,124 +736,6 @@ if results:
         "🗜️ Tab 3: McKee Gravity Compression Safety Check"
     ])
 
-# ==============================================================================
-# 7. COLLABORATIVE FEEDBACK HUB (WITH EMAIL NOTIFICATIONS)
-# ==============================================================================
-st.sidebar.markdown("<hr style='margin:15px 0; border:0; border-top:1px solid rgba(148,163,184,0.3);'>", unsafe_allow_html=True)
-st.sidebar.subheader("💬 App Feedback Hub")
-
-with st.sidebar.form("feedback_form", clear_on_submit=True):
-    user_name = st.text_input("Your Name / Department:", placeholder="e.g., Jane Doe (Logistics)")
-    rating = st.select_slider("Rate this tool:", options=["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐"], value="⭐⭐⭐⭐⭐")
-    feedback_text = st.text_area("How can we improve this tool?", placeholder="Enter your feedback or bug reports here...")
-    
-    submitted = st.form_submit_button("Submit Feedback", use_container_width=True)
-    
-    if submitted:
-        if feedback_text.strip() == "":
-            st.error("Please enter some feedback comments before submitting.")
-        else:
-            # 1. Prepare data row
-            feedback_entry = {
-                "Timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "User": user_name.strip() if user_name.strip() != "" else "Anonymous Colleague",
-                "Rating": rating,
-                "Comments": feedback_text.strip()
-            }
-            new_row = pd.DataFrame([feedback_entry])
-            
-            # 2. Save to local CSV database
-            feedback_file = "feedback_log.csv"
-            try:
-                if os.path.exists(feedback_file):
-                    new_row.to_csv(feedback_file, mode='a', header=False, index=False)
-                else:
-                    new_row.to_csv(feedback_file, mode='w', header=True, index=False)
-                st.success("🎉 Thank you! Your feedback has been logged.")
-            except Exception as e_feed:
-                st.warning(f"Logged locally, but couldn't write to CSV: {e_feed}")
-
-            # 3. Send Email Notification
-            try:
-                import smtplib
-                from email.mime.text import MIMEText
-                
-                # --- Configuration Settings ---
-                SMTP_SERVER = "mail.bsh-group.com"  # Internal BSH SMTP server relay
-                SMTP_PORT = 25                      # Standard non-authenticated port
-                SENDER_EMAIL = "packaging-density-app@bsh-group.com"
-                RECIPIENT_EMAIL = "Prasannakumar.Tamilarasan@bshg.com"  # <-- Your BSH email address
-                # -------------------------------
-                
-                # Construct email body template
-                email_body = f"""
-                Hello Prasannakumar,
-
-                You have received new feedback for the Packaging Density & Box Recommender tool!
-
-                =========================================
-                📅 Timestamp: {feedback_entry['Timestamp']}
-                👤 Submitted By: {feedback_entry['User']}
-                ⭐ Rating: {feedback_entry['Rating']}
-                
-                💬 Comments:
-                {feedback_text.strip()}
-                =========================================
-
-                To view all collected responses, log in to the admin panel at the bottom of the tool page.
-
-                Best regards,
-                BSH AIM Automation
-                """
-                
-                msg = MIMEText(email_body)
-                msg["Subject"] = f"📦 New App Feedback Received from {feedback_entry['User']}"
-                msg["From"] = SENDER_EMAIL
-                msg["To"] = RECIPIENT_EMAIL
-                
-                # Connect to internal mail gateway and send
-                server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-                server.sendmail(SENDER_EMAIL, [RECIPIENT_EMAIL], msg.as_string())
-                server.quit()
-                
-            except Exception as e_email:
-                # Silently log errors to your server console so the front-end user experience is unaffected
-                print(f"Email relay not connected: {e_email}")
-
-# ==============================================================================
-# 8. SECURE ADMIN VIEW PANEL
-# ==============================================================================
-st.markdown("<br><br><hr style='border:0; border-top:1px solid rgba(148,163,184,0.2);'>", unsafe_allow_html=True)
-
-with st.expander("🔐 Admin Panel: View Collected Feedback"):
-    admin_password = st.text_input("Enter Admin Password to view logs:", type="password", key="admin_pwd_input")
-    
-    # Simple, secure local access password (change "BSHAdmin2026" to your choice)
-    if admin_password == "BSHAdmin2026":
-        feedback_file = "feedback_log.csv"
-        
-        if os.path.exists(feedback_file):
-            try:
-                feed_df = pd.read_csv(feedback_file)
-                st.markdown(f"### 📋 Total Submissions: {len(feed_df)}")
-                st.dataframe(feed_df, use_container_width=True)
-                
-                # Excel/CSV Export options for your manager
-                csv_feedback = feed_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Export Feedback Database to CSV",
-                    data=csv_feedback,
-                    file_name="BSH_Tool_Feedback_Export.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-            except Exception as e_read_feed:
-                st.error(f"Error reading feedback file: {e_read_feed}")
-        else:
-            st.info("No feedback has been submitted yet. The log file is empty.")
-            
-    elif admin_password != "":
-        st.error("Incorrect password. Access denied.")
     # ==========================================================================
     # TAB 1: BOX RECOMMENDER & INDIVIDUAL LOADING
     # ==========================================================================
@@ -1004,7 +885,7 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
         with col_adj_2:
             override_weight = round((active_quantity * prod_wt) + estimate_box_weight(ext_l, ext_w, viz_box_active["Ext. Height [mm]"], viz_box_active["Flute Type"]), 2)
             override_efficiency = round(((active_quantity * single_part_vol) / (box_l * box_w * viz_box_active["Int. Height [mm]"])) * 100, 2)
-            st.info(f"⚡ Live Recalculated Package Weight: **{override_weight} kg** | Volumetric Efficiency: **{override_efficiency}%** | Loaded: **{active_quantity} / {max_possible_parts} parts**")
+            st.info(f"⚡ Live Recalculated Package Weight: \*\*{override_weight} kg\*\* | Volumetric Efficiency: \*\*{override_efficiency}%\*\* | Loaded: \*\*{active_quantity} / {max_possible_parts} parts\*\*")
             
         placement_style = determine_placement_style(prod_l, prod_w, prod_h, oz)
         is_standing = oz > min(prod_l, prod_w, prod_h)
@@ -1296,7 +1177,7 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
     # ==========================================================================
     with tab_pallet:
         st.subheader("🚛 Multi-Pallet Optimization Engine")
-        st.markdown(f"Pallet transport optimization aligned to packaging directive: **{max_pallet_height_limit} mm max height** and **{max_pallet_weight_limit} kg gross weight limit**.")
+        st.markdown(f"Pallet transport optimization aligned to packaging directive: \*\*{max_pallet_height_limit} mm max height\*\* and \*\*{max_pallet_weight_limit} kg gross weight limit\*\*.")
         
         PALLETS = {
             "EPAL 1 (Standard)": {"l": 1200, "w": 800, "tare": 23.0, "pallet_h": 144.0},
@@ -1322,51 +1203,6 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
                 total_weight = total_boxes * box_wt + pallet_tare
             total_pcs = total_boxes * pcs_box
             return total_boxes, nz, best_layer_qty, total_pcs, round(total_weight, 2), best_orient, nx_best, ny_best
-
-        def get_resolved_directive_row(df, l, w, h, q):
-            match = df[(df['Ext. Length [mm]'] == l) & (df['Ext.Width [mm]'] == w) & (df['Ext. Height [mm]'] == h) & (df['Quality'].astype(str).str.strip() == q)]
-            if not match.empty:
-                row = match.iloc[0].copy()
-                # Crucial Fix: Add the missing 'Box ID / Specification' key for matched rows
-                row["Box ID / Specification"] = f"{row['BoxSize']} [{str(row['Quality']).strip()}]"
-                return row, True
-                
-            match_tol = df[(abs(df['Ext. Length [mm]'] - l) <= 10) & (abs(df['Ext.Width [mm]'] - w) <= 10) & (df['Quality'].astype(str).str.strip() == q)]
-            if not match_tol.empty:
-                row_mod = match_tol.iloc[0].copy()
-                row_mod['Ext. Length [mm]'] = l
-                row_mod['Ext.Width [mm]'] = w
-                row_mod['Ext. Height [mm]'] = h
-                row_mod['Int.Length [mm]'] = max(10.0, l - 15.0)
-                row_mod['Width [mm]'] = max(10.0, w - 15.0)
-                row_mod['Height [mm]'] = max(10.0, h - 10.0)
-                # Crucial Fix: Add the missing 'Box ID / Specification' key for toleranced matches
-                row_mod["Box ID / Specification"] = f"{row_mod['BoxSize']} [{str(row_mod['Quality']).strip()}]"
-                return row_mod, True
-            
-            thick = 10 if "2.30" in q else 6
-            box_size_key = f"DIR-SPEC-{int(l)}x{int(w)}x{int(h)}"
-            fallback_series = pd.Series({
-                'BoxSize': box_size_key,
-                'Quality': q,
-                'Quality Class': q,
-                'Ext. Length [mm]': l,
-                'Ext.Width [mm]': w,
-                'Ext. Height [mm]': h,
-                'Int.Length [mm]': max(10.0, l - 2*thick),
-                'Width [mm]': max(10.0, w - 2*thick),
-                'Height [mm]': max(10.0, h - thick),
-                'Max. Load [kg]': 15.0,
-                'PL': 1.55 if l > 450 else 0.95,
-                'Box Price (€)': 1.55 if l > 450 else 0.95,
-                'Flute Type': q,
-                'Int. Length [mm]': max(10.0, l - 2*thick),
-                'Int. Width [mm]': max(10.0, w - 2*thick),
-                'Int. Height [mm]': max(10.0, h - thick),
-                # Crucial Fix: Add the missing 'Box ID / Specification' key for fallback rows
-                'Box ID / Specification': f"{box_size_key} [{q}]"
-            })
-            return fallback_series, False
 
         row_alt1, found1 = get_resolved_directive_row(df_inventory, alt1_l, alt1_w, alt1_h, alt1_q)
         row_alt2, found2 = get_resolved_directive_row(df_inventory, alt2_l, alt2_w, alt2_h, alt2_q)
@@ -1395,7 +1231,6 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
             alt1_q
         )
         a1_box_wt = round((a1_pcs * prod_wt) + a1_box_weight, 2)
-
         a2_pcs = int(row_alt2["No of Parts per Box"])
         a2_box_weight = estimate_box_weight(
             row_alt2["Ext. Length [mm]"], 
@@ -1518,8 +1353,8 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
         
         col_metrics, col_plotly_pallet = st.columns([4, 6])
         with col_metrics:
-            st.markdown(f"#### 📋 Stacking Report for **{st.session_state['global_selected_box']}**")
-            st.caption(f"Calculations reflect active configuration: **{active_t2_pcs} pcs/box** @ **{active_t2_wt} kg/box**")
+            st.markdown(f"#### 📋 Stacking Report for \*\*{st.session_state['global_selected_box']}\*\*")
+            st.caption(f"Calculations reflect active configuration: \*\*{active_t2_pcs} pcs/box\*\* @ \*\*{active_t2_wt} kg/box\*\*")
             
             b_total_1, z_layers_1, _, p_pcs_1, p_wt_1, orient_1, nx_1, ny_1 = calculate_pallet_stacking(
                 PALLETS["EPAL 1 (Standard)"]["l"], PALLETS["EPAL 1 (Standard)"]["w"],
@@ -1664,7 +1499,7 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
     # ==========================================================================
     with tab_compression:
         st.subheader("🗜 ... Corrugated Cardboard McKee Compression Strength Checker")
-        st.markdown(f"Validate if the bottom cardboard box can handle vertical static loads on a **{max_pallet_height_limit} mm** pallet layout.")
+        st.markdown(f"Validate if the bottom cardboard box can handle vertical static loads on a \*\*{max_pallet_height_limit} mm\*\* pallet layout.")
         st.markdown("#### ⚙️ Stacking Setup")
         col_setup_1, col_setup_2 = st.columns(2)
         with col_setup_1:
@@ -1820,9 +1655,9 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
             
         st.markdown("<div class='guide-box'><h5>🧮 Step-by-Step Mathematical Workings (McKee Metric Standard):</h5>"
                     "The Box Compression Test (BCT) is computed dynamically using live units:</div>", unsafe_allow_html=True)
-        st.latex(r"\text{BCT (Newtons)} = 1.82 \times \text{ECT} \times \sqrt{t \times P}")
-        st.latex(r"\text{BCT (kg)} = \frac{\text{BCT (Newtons)}}{9.81 \text{ m/s}^2}")
-        st.latex(r"\text{Safe Design Capacity} = \frac{\text{BCT (kg)}}{\text{Combined Safety Factor (SF)}}")
+        st.latex(r"\\text{BCT (Newtons)} = 1.82 \\times \\text{ECT} \\times \\sqrt{t \\times P}")
+        st.latex(r"\\text{BCT (kg)} = \\frac{\\text{BCT (Newtons)}}{9.81 \\text{ m/s}^2}")
+        st.latex(r"\\text{Safe Design Capacity} = \\frac{\\text{BCT (kg)}}{\\text{Combined Safety Factor (SF)}}")
         st.markdown(f"""
         <div class='guide-box' style='margin-top:-20px; border-top-left-radius:0px; border-top-right-radius:0px; border-top:0px;'>
             <b>Active Live Parameters (Based on {active_t3_pcs} Pcs Loaded):</b>
@@ -1838,6 +1673,216 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
             <b>3. Environmental Safety Limit ({sf_t3}x):</b> {bct_kg_t3} kg ÷ {sf_t3} = <b>{bct_safe_load_t3} kg</b>
         </div>
         """, unsafe_allow_html=True)
+
+# Fail-safe warning display
 if not results:
     st.warning("⚠️ No suitable boxes in your database can fit this product under the active weight or dimension parameters.")
 
+# ==============================================================================
+# 7. COLLABORATIVE FEEDBACK HUB (WITH TEAMS WEBHOOK NOTIFICATIONS)
+# ==============================================================================
+st.sidebar.markdown("<hr style='margin:15px 0; border:0; border-top:1px solid rgba(148,163,184,0.3);'>", unsafe_allow_html=True)
+st.sidebar.subheader("💬 App Feedback Hub")
+
+with st.sidebar.form("feedback_form", clear_on_submit=True):
+    user_name = st.text_input("Your Name / Department:", placeholder="e.g., Jane Doe (Logistics)")
+    rating = st.select_slider("Rate this tool:", options=["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐"], value="⭐⭐⭐⭐⭐")
+    feedback_text = st.text_area("How can we improve this tool?", placeholder="Enter your feedback or bug reports here...")
+    
+    submitted = st.form_submit_button("Submit Feedback", use_container_width=True)
+    
+    if submitted:
+        if feedback_text.strip() == "":
+            st.error("Please enter some feedback comments before submitting.")
+        else:
+            # 1. Prepare data row
+            feedback_entry = {
+                "Timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "User": user_name.strip() if user_name.strip() != "" else "Anonymous Colleague",
+                "Rating": rating,
+                "Comments": feedback_text.strip()
+            }
+            new_row = pd.DataFrame([feedback_entry])
+            
+            # 2. Save to local CSV database
+            feedback_file = "feedback_log.csv"
+            try:
+                if os.path.exists(feedback_file):
+                    new_row.to_csv(feedback_file, mode='a', header=False, index=False)
+                else:
+                    new_row.to_csv(feedback_file, mode='w', header=True, index=False)
+                st.success("🎉 Thank you! Your feedback has been logged.")
+            except Exception as e_feed:
+                st.warning(f"Logged locally, but couldn't write to CSV: {e_feed}")
+
+            # 3. Securely Send Email Notification via Secrets
+            try:
+                import smtplib
+                from email.mime.text import MIMEText
+                
+                # Safely pull secure credentials from Streamlit Secrets
+                if "email" in st.secrets:
+                    SMTP_SERVER = st.secrets["email"]["smtp_server"]
+                    SMTP_PORT = int(st.secrets["email"]["smtp_port"])
+                    SENDER_EMAIL = st.secrets["email"]["sender_email"]
+                    SENDER_PASSWORD = st.secrets["email"]["sender_password"]
+                    RECIPIENT_EMAIL = "Prasannakumar.Tamilarasan@bshg.com"
+                    
+                    # Construct email body template
+                    email_body = f"""
+                    Hello Prasannakumar,
+
+                    You have received new feedback for the Packaging Density & Box Recommender tool!
+
+                    =========================================
+                    📅 Timestamp: {feedback_entry['Timestamp']}
+                    👤 Submitted By: {feedback_entry['User']}
+                    ⭐ Rating: {feedback_entry['Rating']}
+                    
+                    💬 Comments:
+                    {feedback_text.strip()}
+                    =========================================
+
+                    To view all collected responses, log in to the admin panel at the bottom of the tool page.
+
+                    Best regards,
+                    BSH AIM Automation
+                    """
+                    
+                    msg = MIMEText(email_body)
+                    msg["Subject"] = f"📦 New App Feedback Received from {feedback_entry['User']}"
+                    msg["From"] = SENDER_EMAIL
+                    msg["To"] = RECIPIENT_EMAIL
+                    
+                    # Connect with secure TLS encryption
+                    server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+                    server.starttls()
+                    server.login(SENDER_EMAIL, SENDER_PASSWORD)
+                    server.sendmail(SENDER_EMAIL, [RECIPIENT_EMAIL], msg.as_string())
+                    server.quit()
+                else:
+                    # If local testing without secrets, try internal port 25 relay
+                    SMTP_SERVER = "mail.bsh-group.com"
+                    SMTP_PORT = 25
+                    SENDER_EMAIL = "packaging-density-app@bsh-group.com"
+                    RECIPIENT_EMAIL = "Prasannakumar.Tamilarasan@bshg.com"
+                    
+                    email_body = f"""
+                    Hello Prasannakumar,
+
+                    You have received new feedback for the Packaging Density & Box Recommender tool!
+
+                    =========================================
+                    📅 Timestamp: {feedback_entry['Timestamp']}
+                    👤 Submitted By: {feedback_entry['User']}
+                    ⭐ Rating: {feedback_entry['Rating']}
+                    
+                    💬 Comments:
+                    {feedback_text.strip()}
+                    =========================================
+                    """
+                    msg = MIMEText(email_body)
+                    msg["Subject"] = f"📦 New App Feedback Received from {feedback_entry['User']}"
+                    msg["From"] = SENDER_EMAIL
+                    msg["To"] = RECIPIENT_EMAIL
+                    
+                    server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+                    server.sendmail(SENDER_EMAIL, [RECIPIENT_EMAIL], msg.as_string())
+                    server.quit()
+                    
+            except Exception as e_email:
+                print(f"Failed to send email notification: {e_email}")
+
+            # 4. Send Teams Webhook Notification
+            try:
+                import json
+                from urllib import request
+                
+                # Retrieve webhook URL securely from Secrets
+                if "teams" in st.secrets and st.secrets["teams"]["webhook_url"] != "":
+                    WEBHOOK_URL = st.secrets["teams"]["webhook_url"]
+                    
+                    # Custom Adaptive Card formatted payload
+                    payload = {
+                        "type": "message",
+                        "attachments": [
+                            {
+                                "contentType": "application/vnd.microsoft.card.adaptive",
+                                "content": {
+                                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                                    "type": "AdaptiveCard",
+                                    "version": "1.2",
+                                    "body": [
+                                        {
+                                            "type": "TextBlock",
+                                            "text": "📦 New App Feedback Received!",
+                                            "weight": "Bolder",
+                                            "size": "Medium",
+                                            "color": "Accent"
+                                        },
+                                        {
+                                            "type": "FactSet",
+                                            "facts": [
+                                                {"title": "📅 Timestamp:", "value": feedback_entry["Timestamp"]},
+                                                {"title": "👤 Submitted By:", "value": feedback_entry["User"]},
+                                                {"title": "⭐ Rating:", "value": feedback_entry["Rating"]}
+                                            ]
+                                        },
+                                        {
+                                            "type": "TextBlock",
+                                            "text": f"💬 Comments:\n\"{feedback_entry['Comments']}\"",
+                                            "wrap": True,
+                                            "italic": True
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                    
+                    # Build and send secure HTTPS POST request
+                    req = request.Request(url=WEBHOOK_URL, method="POST")
+                    req.add_header("Content-Type", "application/json")
+                    jsondata = json.dumps(payload).encode("utf-8")
+                    
+                    with request.urlopen(req, data=jsondata) as response:
+                        if response.status not in [200, 201, 202]:
+                            print(f"Teams returned unexpected code: {response.status}")
+                else:
+                    print("Teams notification skipped: 'webhook_url' not configured in st.secrets.")
+                    
+            except Exception as e_teams:
+                print(f"Failed to post Teams webhook: {e_teams}")
+
+# ==============================================================================
+# 8. SECURE ADMIN VIEW PANEL
+# ==============================================================================
+st.markdown("<br><br><hr style='border:0; border-top:1px solid rgba(148,163,184,0.2);'>", unsafe_allow_html=True)
+
+with st.expander("🔐 Admin Panel: View Collected Feedback"):
+    admin_password = st.text_input("Enter Admin Password to view logs:", type="password", key="admin_pwd_input")
+    
+    if admin_password == "BSHAdmin2026":
+        feedback_file = "feedback_log.csv"
+        
+        if os.path.exists(feedback_file):
+            try:
+                feed_df = pd.read_csv(feedback_file)
+                st.markdown(f"### 📋 Total Submissions: {len(feed_df)}")
+                st.dataframe(feed_df, use_container_width=True)
+                
+                csv_feedback = feed_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Export Feedback Database to CSV",
+                    data=csv_feedback,
+                    file_name="BSH_Tool_Feedback_Export.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            except Exception as e_read_feed:
+                st.error(f"Error reading feedback file: {e_read_feed}")
+        else:
+            st.info("No feedback has been submitted yet. The log file is empty.")
+            
+    elif admin_password != "":
+        st.error("Incorrect password. Access denied.")
