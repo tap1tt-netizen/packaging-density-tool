@@ -1172,7 +1172,7 @@ if results:
             except Exception as e_pack_plotly:
                 st.warning(f"Error rendering interactive 3D box: {e_pack_plotly}")
                 
-    # ==========================================================================
+       # ==========================================================================
     # TAB 2: PALLET STACKING OPTIMIZER & COMPARATIVE ANALYSIS
     # ==========================================================================
     with tab_pallet:
@@ -1185,25 +1185,7 @@ if results:
         }
         pure_box_max_h = max(200.0, max_pallet_height_limit - 144.0)
         
-        def calculate_pallet_stacking(pallet_l, pallet_w, ext_l, ext_w, ext_h, box_wt, pcs_box, pallet_tare=23.0, max_h=pure_box_max_h, max_wt=max_pallet_weight_limit):
-            nx_a, ny_a = int(pallet_l // ext_l), int(pallet_w // ext_w)
-            layers_a = nx_a * ny_a
-            nx_b, ny_b = int(pallet_l // ext_w), int(pallet_w // ext_l)
-            layers_b = nx_b * ny_b
-            best_layer_qty = max(layers_a, layers_b)
-            best_orient = "Lengthwise (L-parallel)" if layers_a >= layers_b else "Widthwise (W-parallel)"
-            nx_best = nx_a if layers_a >= layers_b else nx_b
-            ny_best = ny_a if layers_a >= layers_b else ny_b
-            nz = max(1, int(max_h // ext_h))
-            total_boxes = best_layer_qty * nz
-            total_weight = total_boxes * box_wt + pallet_tare
-            while total_weight > max_wt and nz > 1:
-                nz -= 1
-                total_boxes = best_layer_qty * nz
-                total_weight = total_boxes * box_wt + pallet_tare
-            total_pcs = total_boxes * pcs_box
-            return total_boxes, nz, best_layer_qty, total_pcs, round(total_weight, 2), best_orient, nx_best, ny_best
-
+        # Look up alternative rows (functions are now defined globally at the top)
         row_alt1, found1 = get_resolved_directive_row(df_inventory, alt1_l, alt1_w, alt1_h, alt1_q)
         row_alt2, found2 = get_resolved_directive_row(df_inventory, alt2_l, alt2_w, alt2_h, alt2_q)
         
@@ -1231,6 +1213,7 @@ if results:
             alt1_q
         )
         a1_box_wt = round((a1_pcs * prod_wt) + a1_box_weight, 2)
+        
         a2_pcs = int(row_alt2["No of Parts per Box"])
         a2_box_weight = estimate_box_weight(
             row_alt2["Ext. Length [mm]"], 
@@ -1243,13 +1226,13 @@ if results:
         # Calculate dynamic Pallet Stack Metrics using dynamically adjusted box configurations
         bt_cvse, _, _, pcs_cvse, wt_cvse, _, _, _ = calculate_pallet_stacking(
             1200, 800, viz_box_rank1["Ext. Length [mm]"], viz_box_rank1["Ext. Width [mm]"], viz_box_rank1["Ext. Height [mm]"], 
-            cvse_box_wt, cvse_pcs
+            cvse_box_wt, cvse_pcs, max_h=pure_box_max_h
         )
         bt_a1, _, _, pcs_a1, wt_a1, _, _, _ = calculate_pallet_stacking(
-            1200, 800, alt1_l, alt1_w, alt1_h, a1_box_wt, a1_pcs
+            1200, 800, alt1_l, alt1_w, alt1_h, a1_box_wt, a1_pcs, max_h=pure_box_max_h
         )
         bt_a2, _, _, pcs_a2, wt_a2, _, _, _ = calculate_pallet_stacking(
-            1200, 800, alt2_l, alt2_w, alt2_h, a2_box_wt, a2_pcs
+            1200, 800, alt2_l, alt2_w, alt2_h, a2_box_wt, a2_pcs, max_h=pure_box_max_h
         )
         
         cost_cvse = (bt_cvse * viz_box_rank1["Box Price (€)"]) + 8.00
@@ -1322,7 +1305,6 @@ if results:
 </div>
 """, unsafe_allow_html=True)
         
-        # FIXED: Priority score winner check based on live recalculations
         best_overall_box_spec = viz_box_rank1["Box ID / Specification"]
         st.markdown(f"""
         <div class='success-box'>
@@ -1345,7 +1327,6 @@ if results:
         
         viz_box_t2 = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
         
-        # Pull dynamically adjusted active loading metrics
         active_t2_pcs, active_t2_wt, _ = get_live_box_metrics(viz_box_t2, prod_wt)
         bx_ext_l = viz_box_t2["Ext. Length [mm]"]
         bx_ext_w = viz_box_t2["Ext. Width [mm]"]
@@ -1358,11 +1339,11 @@ if results:
             
             b_total_1, z_layers_1, _, p_pcs_1, p_wt_1, orient_1, nx_1, ny_1 = calculate_pallet_stacking(
                 PALLETS["EPAL 1 (Standard)"]["l"], PALLETS["EPAL 1 (Standard)"]["w"],
-                bx_ext_l, bx_ext_w, bx_ext_h, active_t2_wt, active_t2_pcs, PALLETS["EPAL 1 (Standard)"]["tare"]
+                bx_ext_l, bx_ext_w, bx_ext_h, active_t2_wt, active_t2_pcs, PALLETS["EPAL 1 (Standard)"]["tare"], max_h=pure_box_max_h
             )
             b_total_2, z_layers_2, _, p_pcs_2, p_wt_2, orient_2, nx_2, ny_2 = calculate_pallet_stacking(
                 PALLETS["EPAL 2 (Industrial)"]["l"], PALLETS["EPAL 2 (Industrial)"]["w"],
-                bx_ext_l, bx_ext_w, bx_ext_h, active_t2_wt, active_t2_pcs, PALLETS["EPAL 2 (Industrial)"]["tare"]
+                bx_ext_l, bx_ext_w, bx_ext_h, active_t2_wt, active_t2_pcs, PALLETS["EPAL 2 (Industrial)"]["tare"], max_h=pure_box_max_h
             )
             st.markdown(f"""
             <div style='background-color: var(--background-color); padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid var(--text-color); border-left: 5px solid #228be6;'>
@@ -1392,7 +1373,7 @@ if results:
             active_p_spec = PALLETS["EPAL 1 (Standard)"] if "EPAL 1" in pallet_sel else PALLETS["EPAL 2 (Industrial)"]
             p_boxes, p_layers, p_l_qty, _, _, p_orient, nx_act, ny_act = calculate_pallet_stacking(
                 active_p_spec["l"], active_p_spec["w"],
-                bx_ext_l, bx_ext_w, bx_ext_h, active_t2_wt, active_t2_pcs, active_p_spec["tare"]
+                bx_ext_l, bx_ext_w, bx_ext_h, active_t2_wt, active_t2_pcs, active_p_spec["tare"], max_h=pure_box_max_h
             )
             try:
                 fig_pallet_3d = go.Figure()
