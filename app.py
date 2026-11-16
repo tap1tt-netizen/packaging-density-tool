@@ -22,212 +22,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom Theme-Proof Styling: Supports Light and Dark themes perfectly
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght=400;500;600;700;800&display=swap');
-    html, body, [class*="css"] {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-    /* Executive SaaS Header */
-    .app-header {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-        padding: 22px 28px;
-        border-radius: 14px;
-        color: #ffffff;
-        margin-bottom: 22px;
-        box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.2);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-    .app-header h1 {
-        font-size: 24px;
-        font-weight: 800;
-        letter-spacing: -0.02em;
-        margin: 0;
-        color: #ffffff !important;
-    }
-    .app-header p {
-        font-size: 13px;
-        color: #94a3b8;
-        margin: 5px 0 0 0;
-    }
-    /* Modern KPI Cards */
-    .metric-box {
-        background-color: var(--background-color);
-        padding: 16px 18px;
-        border-radius: 12px;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        border-left: 5px solid #2563eb;
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
-        min-height: 110px;
-        color: var(--text-color);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .metric-box:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 18px -4px rgba(0,0,0,0.08);
-    }
-    .stDataFrame {
-        border-radius: 12px;
-        overflow: hidden;
-    }
-    .guide-box {
-        background-color: var(--background-color);
-        padding: 20px;
-        border-radius: 12px;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        color: var(--text-color);
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
-    }
-    .warning-box {
-        background-color: rgba(245, 159, 0, 0.12);
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 5px solid #f59f00;
-        margin-bottom: 15px;
-        color: var(--text-color);
-    }
-    .danger-box {
-        background-color: rgba(239, 68, 68, 0.12);
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 5px solid #ef4444;
-        margin-bottom: 15px;
-        color: var(--text-color);
-    }
-    .success-box {
-        background-color: rgba(34, 197, 94, 0.12);
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 5px solid #22c55e;
-        margin-bottom: 15px;
-        color: var(--text-color);
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-        padding-bottom: 4px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 8px 8px 0px 0px;
-        padding: 10px 18px;
-        font-weight: 600;
-        font-size: 14px;
-    }
-    .comparison-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 20px;
-        margin-top: 15px;
-        margin-bottom: 25px;
-    }
-    .comp-card {
-        background-color: var(--background-color);
-        border-radius: 14px;
-        padding: 22px;
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        display: flex;
-        flex-direction: column;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .comp-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 18px -4px rgba(0,0,0,0.08);
-    }
-    .comp-card.hero {
-        border: 2px solid #2563eb;
-        box-shadow: 0 10px 25px rgba(37, 99, 235, 0.12);
-        position: relative;
-        background-color: rgba(37, 99, 235, 0.015);
-    }
-    .hero-badge {
-        position: absolute;
-        top: -12px;
-        right: 22px;
-        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-        color: white !important;
-        font-size: 10px;
-        font-weight: 800;
-        padding: 4px 12px;
-        border-radius: 20px;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
-    }
-    .card-header {
-        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-        padding-bottom: 12px;
-        margin-bottom: 15px;
-    }
-    .card-header h3 {
-        margin: 0;
-        font-size: 18px;
-        font-weight: 800;
-        letter-spacing: -0.01em;
-    }
-    .card-header .dims {
-        font-size: 13px;
-        color: #64748b;
-        margin-top: 4px;
-    }
-    .metric-row {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 10px;
-        font-size: 14px;
-    }
-    .metric-row .label {
-        color: #64748b;
-    }
-    .metric-row .val {
-        font-weight: 700;
-    }
-    .val.win {
-        color: #22c55e !important;
-    }
-    .val.danger {
-        color: #ef4444 !important;
-    }
-    .val.saving {
-        background-color: rgba(34, 197, 94, 0.15);
-        color: #22c55e !important;
-        padding: 2px 8px;
-        border-radius: 6px;
-        font-size: 13px;
-    }
-</style>
-""", unsafe_allow_html=True)
+# --- Clean Imports from your Modular Folders ---
+from components.styles import inject_bsh_styles
+from utils.data_handling import load_database, log_feedback_locally, post_teams_webhook
+from engines.calculations import calculate_packing, estimate_box_weight, get_resolved_directive_row
+from components.visualizations import draw_2d_blueprint
 
-# ==============================================================================
-# 2. BULLETPROOF DATABASE READER
-# ==============================================================================
-@st.cache_data
-def load_database():
-    possible_files = ['1.xlsx', '1.xlsx_Sheet1_Sheet1.csv']
-    df = None
-    loaded_file = None
-    for file in possible_files:
-        if os.path.exists(file):
-            loaded_file = file
-            if file.endswith('.csv'):
-                df = pd.read_csv(file)
-            else:
-                df = pd.read_excel(file)
-            break
-    if df is None:
-        raise FileNotFoundError("Could not find box database file.")
-    df = df.dropna(subset=['BoxSize']).copy()
-    
-    numeric_cols = [
-        'Ext. Length [mm]', 'Ext.Width [mm]', 'Ext. Height [mm]',
-        'Int.Length [mm]', 'Width [mm]', 'Height [mm]', 'Max. Load [kg]'
-    ]
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-    df['Box Price (€)'] = pd.to_numeric(df['PL'], errors='coerce').fillna(0.0)
-    return df, loaded_file
+# Inject styling rules cleanly
+inject_bsh_styles()
 
+# Load Database safely via cached data loader
 try:
     df_inventory, filename_loaded = load_database()
 except Exception as e:
@@ -235,6 +39,44 @@ except Exception as e:
     st.info("Please place your cardboard database file named `1.xlsx` in this folder:")
     st.code(os.getcwd())
     st.stop()
+
+# Helper to retrieve either manual fine-tuned or max default quantity & package weight
+def get_live_box_metrics(row, weight_per_part):
+    box_spec = row["Box ID / Specification"]
+    qty_key = f"manual_qty_{box_spec}"
+    default_max_qty = int(row["No of Parts per Box"])
+    # If the user has manually tuned the quantity, fetch it from session_state
+    active_qty = int(st.session_state.get(qty_key, default_max_qty))
+    
+    # Recalculate dynamic package weight
+    ext_l = row.get("Ext. Length [mm]") if "Ext. Length [mm]" in row else row.get("Ext. Length [mm]")
+    ext_w = row.get("Ext.Width [mm]") if "Ext.Width [mm]" in row else row.get("Ext. Width [mm]")
+    ext_h = row.get("Ext. Height [mm]") if "Ext. Height [mm]" in row else row.get("Ext. Height [mm]")
+    
+    box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row["Flute Type"] if "Flute Type" in row else row.get("Quality"))
+    live_total_weight = round((active_qty * weight_per_part) + box_weight, 2)
+    
+    # Recalculate volumetric efficiency based on active loaded parts
+    single_part_vol = prod_l * prod_w * prod_h
+    
+    # Robust Internal Dimension Lookups
+    int_l = row.get("Int.Length [mm]") if "Int.Length [mm]" in row else row.get("Int. Length [mm]")
+    int_w = row.get("Width [mm]") if "Width [mm]" in row else row.get("Int. Width [mm]")
+    int_h = row.get("Height [mm]") if "Height [mm]" in row else row.get("Int. Height [mm]")
+    
+    box_internal_vol = int_l * int_w * int_h
+    live_vol_efficiency = round(((active_qty * single_part_vol) / box_internal_vol) * 100, 2)
+    
+    return active_qty, live_total_weight, live_vol_efficiency
+
+def determine_placement_style(p_l, p_w, p_h, oz):
+    dims = sorted([p_l, p_w, p_h])
+    if int(oz) == int(dims[0]):
+        return "🟢 FLAT / HORIZONTAL (Resting on wide base, most stable)"
+    elif int(oz) == int(dims[1]):
+        return "⚠️ STANDING ON SIDE / EDGE"
+    else:
+        return "🚨 STANDING VERTICAL / ON END (Unstable, prone to tipping)"
 
 # ==============================================================================
 # 3. SIDEBAR: OPERATOR INPUTS & PACKAGING DIRECTIVE CONTROLS
@@ -412,155 +254,6 @@ if assembly_mode and prod_wt == 0.0:
     st.stop()
 
 # ==============================================================================
-# 4. RECOMMENDATION SYSTEM MATHEMATICS (DEFINED GLOBALLY AT THE TOP)
-# ==============================================================================
-def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule, enforce_lot=False, lot_multiplier=24):
-    dims = sorted([p_l, p_w, p_h])
-    h_dim, w_dim, l_dim = dims[0], dims[1], dims[2]
-    if rule == "Force Flat Packing Only":
-        orientations = [(l_dim, w_dim, h_dim), (w_dim, l_dim, h_dim)]
-    elif rule == "Force Standing on Edge":
-        orientations = [(l_dim, h_dim, w_dim), (h_dim, l_dim, w_dim)]
-    elif rule == "Force Standing Vertical":
-        orientations = [(w_dim, h_dim, l_dim), (h_dim, w_dim, l_dim)]
-    else:
-        orientations = [
-            (p_l, p_w, p_h), (p_l, p_h, p_w),
-            (p_w, p_l, p_h), (p_w, p_h, p_l),
-            (p_h, p_l, p_w), (p_h, p_w, p_l)
-        ]
-    best_qty = 0
-    best_config = (p_l, p_w, p_h)
-    best_grid_layout = (0, 0, 0)
-    for px, py, pz in orientations:
-        nx = max(0, int((box_int_l - (2 * clear_side) + sep_xy) // (px + sep_xy)))
-        ny = max(0, int((box_int_w - (2 * clear_side) + sep_xy) // (py + sep_xy)))
-        nz = max(0, int((box_int_h - clear_height + sep_z) // (pz + sep_z)))
-        total_parts = nx * ny * nz
-        if total_parts > best_qty:
-            best_qty = total_parts
-            best_config = (px, py, pz)
-            best_grid_layout = (nx, ny, nz)
-    if enforce_lot and best_qty >= lot_multiplier:
-        aligned_qty = (best_qty // lot_multiplier) * lot_multiplier
-        return aligned_qty, best_config, best_grid_layout, best_qty
-    return best_qty, best_config, best_grid_layout, best_qty
-
-def determine_placement_style(p_l, p_w, p_h, oz):
-    dims = sorted([p_l, p_w, p_h])
-    if int(oz) == int(dims[0]):
-        return "🟢 FLAT / HORIZONTAL (Resting on wide base, most stable)"
-    elif int(oz) == int(dims[1]):
-        return "⚠️ STANDING ON SIDE / EDGE"
-    else:
-        return "🚨 STANDING VERTICAL / ON END (Unstable, prone to tipping)"
-
-def estimate_box_weight(ext_l, ext_w, ext_h, quality):
-    if pd.isna(ext_l) or pd.isna(ext_w) or pd.isna(ext_h):
-        return 0.15
-    sheet_l_m = (2 * (ext_l + ext_w) + 40) / 1000.0
-    sheet_w_m = (ext_h + ext_w) / 1000.0
-    flat_area = sheet_l_m * sheet_w_m
-    grammage_map = {'1.20B': 0.40, '1.20C': 0.45, '2.30EB': 0.70, '2.30BC': 0.85}
-    g = grammage_map.get(str(quality).strip(), 0.50)
-    return flat_area * g
-
-# Robust lookup helper for dynamic user manual adjustments
-def get_live_box_metrics(row, weight_per_part):
-    box_spec = row["Box ID / Specification"]
-    qty_key = f"manual_qty_{box_spec}"
-    default_max_qty = int(row["No of Parts per Box"])
-    # If the user has manually tuned the quantity, fetch it from session_state
-    active_qty = int(st.session_state.get(qty_key, default_max_qty))
-    
-    # Recalculate dynamic package weight
-    ext_l = row.get("Ext. Length [mm]") if "Ext. Length [mm]" in row else row.get("Ext. Length [mm]")
-    
-    # Robust Width Lookup: Check both spacing variations
-    ext_w = row.get("Ext.Width [mm]") if "Ext.Width [mm]" in row else row.get("Ext. Width [mm]")
-    
-    ext_h = row.get("Ext. Height [mm]") if "Ext. Height [mm]" in row else row.get("Ext. Height [mm]")
-    
-    box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row["Flute Type"] if "Flute Type" in row else row.get("Quality"))
-    live_total_weight = round((active_qty * weight_per_part) + box_weight, 2)
-    
-    # Recalculate volumetric efficiency based on active loaded parts
-    single_part_vol = prod_l * prod_w * prod_h
-    
-    # Robust Internal Dimension Lookups
-    int_l = row.get("Int.Length [mm]") if "Int.Length [mm]" in row else row.get("Int. Length [mm]")
-    int_w = row.get("Width [mm]") if "Width [mm]" in row else row.get("Int. Width [mm]")
-    int_h = row.get("Height [mm]") if "Height [mm]" in row else row.get("Int. Height [mm]")
-    
-    box_internal_vol = int_l * int_w * int_h
-    live_vol_efficiency = round(((active_qty * single_part_vol) / box_internal_vol) * 100, 2)
-    
-    return active_qty, live_total_weight, live_vol_efficiency
-
-# Robust Pallet stacking optimizer
-def calculate_pallet_stacking(pallet_l, pallet_w, ext_l, ext_w, ext_h, box_wt, pcs_box, pallet_tare=23.0, max_h=970.0, max_wt=600.0):
-    nx_a, ny_a = int(pallet_l // ext_l), int(pallet_w // ext_w)
-    layers_a = nx_a * ny_a
-    nx_b, ny_b = int(pallet_l // ext_w), int(pallet_w // ext_l)
-    layers_b = nx_b * ny_b
-    best_layer_qty = max(layers_a, layers_b)
-    best_orient = "Lengthwise (L-parallel)" if layers_a >= layers_b else "Widthwise (W-parallel)"
-    nx_best = nx_a if layers_a >= layers_b else nx_b
-    ny_best = ny_a if layers_a >= layers_b else ny_b
-    nz = max(1, int(max_h // ext_h))
-    total_boxes = best_layer_qty * nz
-    total_weight = total_boxes * box_wt + pallet_tare
-    while total_weight > max_wt and nz > 1:
-        nz -= 1
-        total_boxes = best_layer_qty * nz
-        total_weight = total_boxes * box_wt + pallet_tare
-    total_pcs = total_boxes * pcs_box
-    return total_boxes, nz, best_layer_qty, total_pcs, round(total_weight, 2), best_orient, nx_best, ny_best
-
-# Robust reference box lookups with matching quality
-def get_resolved_directive_row(df, l, w, h, q):
-    match = df[(df['Ext. Length [mm]'] == l) & (df['Ext.Width [mm]'] == w) & (df['Ext. Height [mm]'] == h) & (df['Quality'].astype(str).str.strip() == q)]
-    if not match.empty:
-        row = match.iloc[0].copy()
-        row["Box ID / Specification"] = f"{row['BoxSize']} [{str(row['Quality']).strip()}]"
-        return row, True
-        
-    match_tol = df[(abs(df['Ext. Length [mm]'] - l) <= 10) & (abs(df['Ext.Width [mm]'] - w) <= 10) & (df['Quality'].astype(str).str.strip() == q)]
-    if not match_tol.empty:
-        row_mod = match_tol.iloc[0].copy()
-        row_mod['Ext. Length [mm]'] = l
-        row_mod['Ext.Width [mm]'] = w
-        row_mod['Ext. Height [mm]'] = h
-        row_mod['Int.Length [mm]'] = max(10.0, l - 15.0)
-        row_mod['Width [mm]'] = max(10.0, w - 15.0)
-        row_mod['Height [mm]'] = max(10.0, h - 10.0)
-        row_mod["Box ID / Specification"] = f"{row_mod['BoxSize']} [{str(row_mod['Quality']).strip()}]"
-        return row_mod, True
-    
-    thick = 10 if "2.30" in q else 6
-    box_size_key = f"DIR-SPEC-{int(l)}x{int(w)}x{int(h)}"
-    fallback_series = pd.Series({
-        'BoxSize': box_size_key,
-        'Quality': q,
-        'Quality Class': q,
-        'Ext. Length [mm]': l,
-        'Ext.Width [mm]': w,
-        'Ext. Height [mm]': h,
-        'Int.Length [mm]': max(10.0, l - 2*thick),
-        'Width [mm]': max(10.0, w - 2*thick),
-        'Height [mm]': max(10.0, h - thick),
-        'Max. Load [kg]': 15.0,
-        'PL': 1.55 if l > 450 else 0.95,
-        'Box Price (€)': 1.55 if l > 450 else 0.95,
-        'Flute Type': q,
-        'Int. Length [mm]': max(10.0, l - 2*thick),
-        'Int. Width [mm]': max(10.0, w - 2*thick),
-        'Int. Height [mm]': max(10.0, h - thick),
-        'Box ID / Specification': f"{box_size_key} [{q}]"
-    })
-    return fallback_series, False
-
-# ==============================================================================
 # 5. EXECUTE CALCULATION ENGINE
 # ==============================================================================
 results = []
@@ -585,6 +278,7 @@ for idx, row in df_inventory.iterrows():
         box_int_l, box_int_w, box_int_h, 
         prod_l, prod_w, prod_h,
         orientation_rule,
+        clear_side, clear_height, sep_xy, sep_z,
         lot_alignment_enabled,
         lot_step
     )
@@ -724,7 +418,7 @@ if results:
         except (ValueError, KeyError):
             return 0
             
-    # FIXED: Header KPI cards always display Rank-1 box based on priority sorted table
+    # Header KPI cards always display Rank-1 box based on priority sorted table
     viz_box_rank1 = sorted_df.iloc[0] if not sorted_df.empty else None
     
     # Retrieves manually selected blueprint box and binds live metrics
@@ -769,7 +463,7 @@ if results:
             
     st.success(f"Connected to Cardboard Database: `{filename_loaded}` | Qualifying Options: {len(sorted_df)}")
     
-    # FIXED: Best matched insights dynamically reflect the fine-tuned loaded quantities and calculated weights
+    # Best matched insights dynamically reflect the fine-tuned loaded quantities and calculated weights
     r1_live_qty, r1_live_wt, r1_live_eff = get_live_box_metrics(viz_box_rank1, prod_wt)
     st.subheader("💡 Best Matched Packing Insights (Rank-1 Box)")
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -1248,43 +942,6 @@ if results:
         }
         pure_box_max_h = max(200.0, max_pallet_height_limit - 144.0)
         
-        # Look up alternative rows using the global functions
-        row_alt1, found1 = get_resolved_directive_row(df_inventory, alt1_l, alt1_w, alt1_h, alt1_q)
-        row_alt2, found2 = get_resolved_directive_row(df_inventory, alt2_l, alt2_w, alt2_h, alt2_q)
-        
-        # Calculate maximum default pack counts
-        qty_alt1, _, _, _ = calculate_packing(
-            row_alt1['Int.Length [mm]'], row_alt1['Width [mm]'], row_alt1['Height [mm]'],
-            prod_l, prod_w, prod_h, orientation_rule, lot_alignment_enabled, lot_step
-        )
-        row_alt1["No of Parts per Box"] = qty_alt1
-        qty_alt2, _, _, _ = calculate_packing(
-            row_alt2['Int.Length [mm]'], row_alt2['Width [mm]'], row_alt2['Height [mm]'],
-            prod_l, prod_w, prod_h, orientation_rule, lot_alignment_enabled, lot_step
-        )
-        row_alt2["No of Parts per Box"] = qty_alt2
-        
-        # CVSE Recommendation remains fully dynamic & reactive to the manual slider:
-        cvse_pcs, cvse_box_wt, _ = get_live_box_metrics(viz_box_rank1, prod_wt)
-        
-        # Reference Alternatives remain strictly fixed to their calculated geometric capacities:
-        a1_pcs = int(row_alt1["No of Parts per Box"])
-        a1_box_weight = estimate_box_weight(
-            row_alt1["Ext. Length [mm]"], 
-            row_alt1.get("Ext.Width [mm]") if "Ext.Width [mm]" in row_alt1 else row_alt1.get("Ext. Width [mm]"), 
-            row_alt1["Ext. Height [mm]"], 
-            alt1_q
-        )
-        a1_box_wt = round((a1_pcs * prod_wt) + a1_box_weight, 2)
-        a2_pcs = int(row_alt2["No of Parts per Box"])
-        a2_box_weight = estimate_box_weight(
-            row_alt2["Ext. Length [mm]"], 
-            row_alt2.get("Ext.Width [mm]") if "Ext.Width [mm]" in row_alt2 else row_alt2.get("Ext. Width [mm]"), 
-            row_alt2["Ext. Height [mm]"], 
-            alt2_q
-        )
-        a2_box_wt = round((a2_pcs * prod_wt) + a2_box_weight, 2)
-        
         # Calculate dynamic Pallet Stack Metrics using dynamically adjusted box configurations
         bt_cvse, _, _, pcs_cvse, wt_cvse, _, _, _ = calculate_pallet_stacking(
             1200, 800, viz_box_rank1["Ext. Length [mm]"], viz_box_rank1["Ext. Width [mm]"], viz_box_rank1["Ext. Height [mm]"], 
@@ -1367,7 +1024,6 @@ if results:
 </div>
 """, unsafe_allow_html=True)
         
-        # FIXED: Priority score winner check based on live recalculations
         best_overall_box_spec = viz_box_rank1["Box ID / Specification"]
         st.markdown(f"""
         <div class='success-box'>
@@ -1390,7 +1046,6 @@ if results:
         
         viz_box_t2 = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
         
-        # Pull dynamically adjusted active loading metrics
         active_t2_pcs, active_t2_wt, _ = get_live_box_metrics(viz_box_t2, prod_wt)
         bx_ext_l = viz_box_t2["Ext. Length [mm]"]
         bx_ext_w = viz_box_t2["Ext. Width [mm]"]
@@ -1538,7 +1193,7 @@ if results:
                 st.plotly_chart(fig_pallet_3d, use_container_width=True)
             except Exception as e_pack_plotly:
                 st.warning(f"Error rendering interactive 3D pallet: {e_pack_plotly}")
-                
+
     # ==========================================================================
     # TAB 3: MCKEE GRAVITY COMPRESSION SAFETY CHECK
     # ==========================================================================
@@ -1638,23 +1293,23 @@ if results:
             "2.30EB": {"ect": 5.5, "thickness": 4.5, "name": "Double Wall - EB Flute"},
             "2.30BC": {"ect": 7.5, "thickness": 6.5, "name": "Double Wall - BC Flute"}
         }
-        q_class_t3 = str(viz_box_t3["Quality Class"]).strip() 
+        q_class_t3 = str(viz_box_t3["Quality Class"] if "Quality Class" in viz_box_t3 else viz_box_t3.get("Flute Type")).strip() 
         props_t3 = QUALITY_PROPERTIES.get(q_class_t3, {"ect": 4.0, "thickness": 3.5, "name": "Custom / Unknown Grade"})
         ect_val_t3 = props_t3["ect"]
         thickness_val_t3 = props_t3["thickness"]
         q_name_t3 = props_t3["name"]
         
-        box_perimeter_t3 = 2 * (viz_box_t3["Int. Length [mm]"] + viz_box_t3["Int. Width [mm]"])
+        box_perimeter_t3 = 2 * ((viz_box_t3.get("Int.Length [mm]") or viz_box_t3.get("Int. Length [mm]")) + (viz_box_t3.get("Width [mm]") or viz_box_t3.get("Int. Width [mm]")))
         bct_n_t3 = 1.82 * ect_val_t3 * np.sqrt(thickness_val_t3 * box_perimeter_t3)
         bct_kg_t3 = round(bct_n_t3 / 9.81, 1) 
         sf_t3 = round(1.5 * f_moisture * f_spread * f_fragility * f_storage * f_transport, 2)
         bct_safe_load_t3 = round(bct_kg_t3 / sf_t3, 1)
         
         bx_ext_l_t3 = viz_box_t3["Ext. Length [mm]"]
-        bx_ext_w_t3 = viz_box_t3["Ext. Width [mm]"]
+        bx_ext_w_t3 = viz_box_t3.get("Ext.Width [mm]") or viz_box_t3.get("Ext. Width [mm]")
         bx_ext_h_t3 = viz_box_t3["Ext. Height [mm]"]
         
-        # FIXED: McKee dynamically grabs the fine-tuned live quantity & weight rather than the database defaults
+        # McKee dynamically grabs the fine-tuned live quantity & weight rather than the database defaults
         active_t3_pcs, active_t3_wt, _ = get_live_box_metrics(viz_box_t3, prod_wt)
         
         _, z_layers_calc_t3, best_layer_qty_t3, _, p_wt_calc_t3, _, _, _ = calculate_pallet_stacking(
@@ -1700,9 +1355,9 @@ if results:
             
         st.markdown("<div class='guide-box'><h5>🧮 Step-by-Step Mathematical Workings (McKee Metric Standard):</h5>"
                     "The Box Compression Test (BCT) is computed dynamically using live units:</div>", unsafe_allow_html=True)
-        st.latex(r"\\text{BCT (Newtons)} = 1.82 \\times \\text{ECT} \\times \\sqrt{t \\times P}")
-        st.latex(r"\\text{BCT (kg)} = \\frac{\\text{BCT (Newtons)}}{9.81 \\text{ m/s}^2}")
-        st.latex(r"\\text{Safe Design Capacity} = \\frac{\\text{BCT (kg)}}{\\text{Combined Safety Factor (SF)}}")
+        st.latex(r"\text{BCT (Newtons)} = 1.82 \times \text{ECT} \times \sqrt{t \times P}")
+        st.latex(r"\text{BCT (kg)} = \frac{\text{BCT (Newtons)}}{9.81\text{ m/s}^2}")
+        st.latex(r"\text{Safe Design Capacity} = \frac{\text{BCT (kg)}}{\text{Combined Safety Factor (SF)}}")
         st.markdown(f"""
         <div class='guide-box' style='margin-top:-20px; border-top-left-radius:0px; border-top-right-radius:0px; border-top:0px;'>
             <b>Active Live Parameters (Based on {active_t3_pcs} Pcs Loaded):</b>
@@ -1740,164 +1395,19 @@ with st.sidebar.form("feedback_form", clear_on_submit=True):
         if feedback_text.strip() == "":
             st.error("Please enter some feedback comments before submitting.")
         else:
-            # 1. Prepare data row
             feedback_entry = {
                 "Timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "User": user_name.strip() if user_name.strip() != "" else "Anonymous Colleague",
                 "Rating": rating,
                 "Comments": feedback_text.strip()
             }
-            new_row = pd.DataFrame([feedback_entry])
             
-            # 2. Save to local CSV database
-            feedback_file = "feedback_log.csv"
-            try:
-                if os.path.exists(feedback_file):
-                    new_row.to_csv(feedback_file, mode='a', header=False, index=False)
-                else:
-                    new_row.to_csv(feedback_file, mode='w', header=True, index=False)
-                st.success("🎉 Thank you! Your feedback has been logged.")
-            except Exception as e_feed:
-                st.warning(f"Logged locally, but couldn't write to CSV: {e_feed}")
-
-            # 3. Securely Send Email Notification via Secrets
-            try:
-                import smtplib
-                from email.mime.text import MIMEText
-                
-                # Safely pull secure credentials from Streamlit Secrets
-                if "email" in st.secrets:
-                    SMTP_SERVER = st.secrets["email"]["smtp_server"]
-                    SMTP_PORT = int(st.secrets["email"]["smtp_port"])
-                    SENDER_EMAIL = st.secrets["email"]["sender_email"]
-                    SENDER_PASSWORD = st.secrets["email"]["sender_password"]
-                    RECIPIENT_EMAIL = "Prasannakumar.Tamilarasan@bshg.com"
-                    
-                    # Construct email body template
-                    email_body = f"""
-                    Hello Prasannakumar,
-
-                    You have received new feedback for the Packaging Density & Box Recommender tool!
-
-                    =========================================
-                    📅 Timestamp: {feedback_entry['Timestamp']}
-                    👤 Submitted By: {feedback_entry['User']}
-                    ⭐ Rating: {feedback_entry['Rating']}
-                    
-                    💬 Comments:
-                    {feedback_text.strip()}
-                    =========================================
-
-                    To view all collected responses, log in to the admin panel at the bottom of the tool page.
-
-                    Best regards,
-                    BSH AIM Automation
-                    """
-                    
-                    msg = MIMEText(email_body)
-                    msg["Subject"] = f"📦 New App Feedback Received from {feedback_entry['User']}"
-                    msg["From"] = SENDER_EMAIL
-                    msg["To"] = RECIPIENT_EMAIL
-                    
-                    # Connect with secure TLS encryption
-                    server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-                    server.starttls()
-                    server.login(SENDER_EMAIL, SENDER_PASSWORD)
-                    server.sendmail(SENDER_EMAIL, [RECIPIENT_EMAIL], msg.as_string())
-                    server.quit()
-                else:
-                    # If local testing without secrets, try internal port 25 relay
-                    SMTP_SERVER = "mail.bsh-group.com"
-                    SMTP_PORT = 25
-                    SENDER_EMAIL = "packaging-density-app@bsh-group.com"
-                    RECIPIENT_EMAIL = "Prasannakumar.Tamilarasan@bshg.com"
-                    
-                    email_body = f"""
-                    Hello Prasannakumar,
-
-                    You have received new feedback for the Packaging Density & Box Recommender tool!
-
-                    =========================================
-                    📅 Timestamp: {feedback_entry['Timestamp']}
-                    👤 Submitted By: {feedback_entry['User']}
-                    ⭐ Rating: {feedback_entry['Rating']}
-                    
-                    💬 Comments:
-                    {feedback_text.strip()}
-                    =========================================
-                    """
-                    msg = MIMEText(email_body)
-                    msg["Subject"] = f"📦 New App Feedback Received from {feedback_entry['User']}"
-                    msg["From"] = SENDER_EMAIL
-                    msg["To"] = RECIPIENT_EMAIL
-                    
-                    server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-                    server.sendmail(SENDER_EMAIL, [RECIPIENT_EMAIL], msg.as_string())
-                    server.quit()
-                    
-            except Exception as e_email:
-                print(f"Failed to send email notification: {e_email}")
-
-            # 4. Send Teams Webhook Notification
-            try:
-                import json
-                from urllib import request
-                
-                # Retrieve webhook URL securely from Secrets
-                if "teams" in st.secrets and st.secrets["teams"]["webhook_url"] != "":
-                    WEBHOOK_URL = st.secrets["teams"]["webhook_url"]
-                    
-                    # Custom Adaptive Card formatted payload
-                    payload = {
-                        "type": "message",
-                        "attachments": [
-                            {
-                                "contentType": "application/vnd.microsoft.card.adaptive",
-                                "content": {
-                                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                                    "type": "AdaptiveCard",
-                                    "version": "1.2",
-                                    "body": [
-                                        {
-                                            "type": "TextBlock",
-                                            "text": "📦 New App Feedback Received!",
-                                            "weight": "Bolder",
-                                            "size": "Medium",
-                                            "color": "Accent"
-                                        },
-                                        {
-                                            "type": "FactSet",
-                                            "facts": [
-                                                {"title": "📅 Timestamp:", "value": feedback_entry["Timestamp"]},
-                                                {"title": "👤 Submitted By:", "value": feedback_entry["User"]},
-                                                {"title": "⭐ Rating:", "value": feedback_entry["Rating"]}
-                                            ]
-                                        },
-                                        {
-                                            "type": "TextBlock",
-                                            "text": f"💬 Comments:\n\"{feedback_entry['Comments']}\"",
-                                            "wrap": True,
-                                            "italic": True
-                                        }
-                                    ]
-                                }
-                            }
-                        ]
-                    }
-                    
-                    # Build and send secure HTTPS POST request
-                    req = request.Request(url=WEBHOOK_URL, method="POST")
-                    req.add_header("Content-Type", "application/json")
-                    jsondata = json.dumps(payload).encode("utf-8")
-                    
-                    with request.urlopen(req, data=jsondata) as response:
-                        if response.status not in [200, 201, 202]:
-                            print(f"Teams returned unexpected code: {response.status}")
-                else:
-                    print("Teams notification skipped: 'webhook_url' not configured in st.secrets.")
-                    
-            except Exception as e_teams:
-                print(f"Failed to post Teams webhook: {e_teams}")
+            # 1. Log Locally to CSV
+            log_feedback_locally(feedback_entry)
+            st.success("🎉 Thank you! Your feedback has been logged.")
+            
+            # 2. Trigger secure MS Teams notification
+            post_teams_webhook(feedback_entry)
 
 # ==============================================================================
 # 8. SECURE ADMIN VIEW PANEL
@@ -1909,7 +1419,6 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
     
     if admin_password == "BSHAdmin2026":
         feedback_file = "feedback_log.csv"
-        
         if os.path.exists(feedback_file):
             try:
                 feed_df = pd.read_csv(feedback_file)
@@ -1928,6 +1437,5 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
                 st.error(f"Error reading feedback file: {e_read_feed}")
         else:
             st.info("No feedback has been submitted yet. The log file is empty.")
-            
     elif admin_password != "":
         st.error("Incorrect password. Access denied.")
