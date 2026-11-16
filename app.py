@@ -412,7 +412,7 @@ if assembly_mode and prod_wt == 0.0:
     st.stop()
 
 # ==============================================================================
-# 4. RECOMMENDATION SYSTEM MATHEMATICS
+# 4. RECOMMENDATION SYSTEM MATHEMATICS (DEFINED GLOBALLY AT THE TOP)
 # ==============================================================================
 def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule, enforce_lot=False, lot_multiplier=24):
     dims = sorted([p_l, p_w, p_h])
@@ -465,7 +465,7 @@ def estimate_box_weight(ext_l, ext_w, ext_h, quality):
     g = grammage_map.get(str(quality).strip(), 0.50)
     return flat_area * g
 
-# Helper to retrieve either manual fine-tuned or max default quantity & package weight
+# Robust lookup helper for dynamic user manual adjustments
 def get_live_box_metrics(row, weight_per_part):
     box_spec = row["Box ID / Specification"]
     qty_key = f"manual_qty_{box_spec}"
@@ -496,6 +496,69 @@ def get_live_box_metrics(row, weight_per_part):
     live_vol_efficiency = round(((active_qty * single_part_vol) / box_internal_vol) * 100, 2)
     
     return active_qty, live_total_weight, live_vol_efficiency
+
+# Robust Pallet stacking optimizer
+def calculate_pallet_stacking(pallet_l, pallet_w, ext_l, ext_w, ext_h, box_wt, pcs_box, pallet_tare=23.0, max_h=970.0, max_wt=600.0):
+    nx_a, ny_a = int(pallet_l // ext_l), int(pallet_w // ext_w)
+    layers_a = nx_a * ny_a
+    nx_b, ny_b = int(pallet_l // ext_w), int(pallet_w // ext_l)
+    layers_b = nx_b * ny_b
+    best_layer_qty = max(layers_a, layers_b)
+    best_orient = "Lengthwise (L-parallel)" if layers_a >= layers_b else "Widthwise (W-parallel)"
+    nx_best = nx_a if layers_a >= layers_b else nx_b
+    ny_best = ny_a if layers_a >= layers_b else ny_b
+    nz = max(1, int(max_h // ext_h))
+    total_boxes = best_layer_qty * nz
+    total_weight = total_boxes * box_wt + pallet_tare
+    while total_weight > max_wt and nz > 1:
+        nz -= 1
+        total_boxes = best_layer_qty * nz
+        total_weight = total_boxes * box_wt + pallet_tare
+    total_pcs = total_boxes * pcs_box
+    return total_boxes, nz, best_layer_qty, total_pcs, round(total_weight, 2), best_orient, nx_best, ny_best
+
+# Robust reference box lookups with matching quality
+def get_resolved_directive_row(df, l, w, h, q):
+    match = df[(df['Ext. Length [mm]'] == l) & (df['Ext.Width [mm]'] == w) & (df['Ext. Height [mm]'] == h) & (df['Quality'].astype(str).str.strip() == q)]
+    if not match.empty:
+        row = match.iloc[0].copy()
+        row["Box ID / Specification"] = f"{row['BoxSize']} [{str(row['Quality']).strip()}]"
+        return row, True
+        
+    match_tol = df[(abs(df['Ext. Length [mm]'] - l) <= 10) & (abs(df['Ext.Width [mm]'] - w) <= 10) & (df['Quality'].astype(str).str.strip() == q)]
+    if not match_tol.empty:
+        row_mod = match_tol.iloc[0].copy()
+        row_mod['Ext. Length [mm]'] = l
+        row_mod['Ext.Width [mm]'] = w
+        row_mod['Ext. Height [mm]'] = h
+        row_mod['Int.Length [mm]'] = max(10.0, l - 15.0)
+        row_mod['Width [mm]'] = max(10.0, w - 15.0)
+        row_mod['Height [mm]'] = max(10.0, h - 10.0)
+        row_mod["Box ID / Specification"] = f"{row_mod['BoxSize']} [{str(row_mod['Quality']).strip()}]"
+        return row_mod, True
+    
+    thick = 10 if "2.30" in q else 6
+    box_size_key = f"DIR-SPEC-{int(l)}x{int(w)}x{int(h)}"
+    fallback_series = pd.Series({
+        'BoxSize': box_size_key,
+        'Quality': q,
+        'Quality Class': q,
+        'Ext. Length [mm]': l,
+        'Ext.Width [mm]': w,
+        'Ext. Height [mm]': h,
+        'Int.Length [mm]': max(10.0, l - 2*thick),
+        'Width [mm]': max(10.0, w - 2*thick),
+        'Height [mm]': max(10.0, h - thick),
+        'Max. Load [kg]': 15.0,
+        'PL': 1.55 if l > 450 else 0.95,
+        'Box Price (€)': 1.55 if l > 450 else 0.95,
+        'Flute Type': q,
+        'Int. Length [mm]': max(10.0, l - 2*thick),
+        'Int. Width [mm]': max(10.0, w - 2*thick),
+        'Int. Height [mm]': max(10.0, h - thick),
+        'Box ID / Specification': f"{box_size_key} [{q}]"
+    })
+    return fallback_series, False
 
 # ==============================================================================
 # 5. EXECUTE CALCULATION ENGINE
@@ -1172,7 +1235,7 @@ if results:
             except Exception as e_pack_plotly:
                 st.warning(f"Error rendering interactive 3D box: {e_pack_plotly}")
                 
-       # ==========================================================================
+    # ==========================================================================
     # TAB 2: PALLET STACKING OPTIMIZER & COMPARATIVE ANALYSIS
     # ==========================================================================
     with tab_pallet:
@@ -1185,7 +1248,7 @@ if results:
         }
         pure_box_max_h = max(200.0, max_pallet_height_limit - 144.0)
         
-        # Look up alternative rows (functions are now defined globally at the top)
+        # Look up alternative rows using the global functions
         row_alt1, found1 = get_resolved_directive_row(df_inventory, alt1_l, alt1_w, alt1_h, alt1_q)
         row_alt2, found2 = get_resolved_directive_row(df_inventory, alt2_l, alt2_w, alt2_h, alt2_q)
         
@@ -1213,7 +1276,6 @@ if results:
             alt1_q
         )
         a1_box_wt = round((a1_pcs * prod_wt) + a1_box_weight, 2)
-        
         a2_pcs = int(row_alt2["No of Parts per Box"])
         a2_box_weight = estimate_box_weight(
             row_alt2["Ext. Length [mm]"], 
@@ -1305,6 +1367,7 @@ if results:
 </div>
 """, unsafe_allow_html=True)
         
+        # FIXED: Priority score winner check based on live recalculations
         best_overall_box_spec = viz_box_rank1["Box ID / Specification"]
         st.markdown(f"""
         <div class='success-box'>
@@ -1327,6 +1390,7 @@ if results:
         
         viz_box_t2 = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
         
+        # Pull dynamically adjusted active loading metrics
         active_t2_pcs, active_t2_wt, _ = get_live_box_metrics(viz_box_t2, prod_wt)
         bx_ext_l = viz_box_t2["Ext. Length [mm]"]
         bx_ext_w = viz_box_t2["Ext. Width [mm]"]
