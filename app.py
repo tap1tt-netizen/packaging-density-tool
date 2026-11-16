@@ -1187,7 +1187,7 @@ if results:
             total_pcs = total_boxes * pcs_box
             return total_boxes, nz, best_layer_qty, total_pcs, round(total_weight, 2), best_orient, nx_best, ny_best
 
-            def get_resolved_directive_row(df, l, w, h, q):
+        def get_resolved_directive_row(df, l, w, h, q):
             match = df[(df['Ext. Length [mm]'] == l) & (df['Ext.Width [mm]'] == w) & (df['Ext. Height [mm]'] == h) & (df['Quality'].astype(str).str.strip() == q)]
             if not match.empty:
                 row = match.iloc[0].copy()
