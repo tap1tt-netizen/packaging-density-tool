@@ -738,7 +738,7 @@ if results:
     ])
 
 # ==============================================================================
-# 7. COLLABORATIVE FEEDBACK HUB
+# 7. COLLABORATIVE FEEDBACK HUB (WITH EMAIL NOTIFICATIONS)
 # ==============================================================================
 st.sidebar.markdown("<hr style='margin:15px 0; border:0; border-top:1px solid rgba(148,163,184,0.3);'>", unsafe_allow_html=True)
 st.sidebar.subheader("💬 App Feedback Hub")
@@ -754,7 +754,7 @@ with st.sidebar.form("feedback_form", clear_on_submit=True):
         if feedback_text.strip() == "":
             st.error("Please enter some feedback comments before submitting.")
         else:
-            # Prepare the feedback data row
+            # 1. Prepare data row
             feedback_entry = {
                 "Timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "User": user_name.strip() if user_name.strip() != "" else "Anonymous Colleague",
@@ -763,16 +763,63 @@ with st.sidebar.form("feedback_form", clear_on_submit=True):
             }
             new_row = pd.DataFrame([feedback_entry])
             
+            # 2. Save to local CSV database
             feedback_file = "feedback_log.csv"
             try:
-                # Append to CSV if it exists, otherwise create it
                 if os.path.exists(feedback_file):
                     new_row.to_csv(feedback_file, mode='a', header=False, index=False)
                 else:
                     new_row.to_csv(feedback_file, mode='w', header=True, index=False)
                 st.success("🎉 Thank you! Your feedback has been logged.")
             except Exception as e_feed:
-                st.error(f"Could not save feedback: {e_feed}")
+                st.warning(f"Logged locally, but couldn't write to CSV: {e_feed}")
+
+            # 3. Send Email Notification
+            try:
+                import smtplib
+                from email.mime.text import MIMEText
+                
+                # --- Configuration Settings ---
+                SMTP_SERVER = "mail.bsh-group.com"  # Internal BSH SMTP server relay
+                SMTP_PORT = 25                      # Standard non-authenticated port
+                SENDER_EMAIL = "packaging-density-app@bsh-group.com"
+                RECIPIENT_EMAIL = "Prasannakumar.Tamilarasan@bshg.com"  # <-- Your BSH email address
+                # -------------------------------
+                
+                # Construct email body template
+                email_body = f"""
+                Hello Prasannakumar,
+
+                You have received new feedback for the Packaging Density & Box Recommender tool!
+
+                =========================================
+                📅 Timestamp: {feedback_entry['Timestamp']}
+                👤 Submitted By: {feedback_entry['User']}
+                ⭐ Rating: {feedback_entry['Rating']}
+                
+                💬 Comments:
+                {feedback_text.strip()}
+                =========================================
+
+                To view all collected responses, log in to the admin panel at the bottom of the tool page.
+
+                Best regards,
+                BSH AIM Automation
+                """
+                
+                msg = MIMEText(email_body)
+                msg["Subject"] = f"📦 New App Feedback Received from {feedback_entry['User']}"
+                msg["From"] = SENDER_EMAIL
+                msg["To"] = RECIPIENT_EMAIL
+                
+                # Connect to internal mail gateway and send
+                server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+                server.sendmail(SENDER_EMAIL, [RECIPIENT_EMAIL], msg.as_string())
+                server.quit()
+                
+            except Exception as e_email:
+                # Silently log errors to your server console so the front-end user experience is unaffected
+                print(f"Email relay not connected: {e_email}")
 
 # ==============================================================================
 # 8. SECURE ADMIN VIEW PANEL
