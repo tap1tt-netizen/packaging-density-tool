@@ -1187,10 +1187,14 @@ if results:
             total_pcs = total_boxes * pcs_box
             return total_boxes, nz, best_layer_qty, total_pcs, round(total_weight, 2), best_orient, nx_best, ny_best
 
-        def get_resolved_directive_row(df, l, w, h, q):
+            def get_resolved_directive_row(df, l, w, h, q):
             match = df[(df['Ext. Length [mm]'] == l) & (df['Ext.Width [mm]'] == w) & (df['Ext. Height [mm]'] == h) & (df['Quality'].astype(str).str.strip() == q)]
             if not match.empty:
-                return match.iloc[0], True
+                row = match.iloc[0].copy()
+                # Crucial Fix: Add the missing 'Box ID / Specification' key for matched rows
+                row["Box ID / Specification"] = f"{row['BoxSize']} [{str(row['Quality']).strip()}]"
+                return row, True
+                
             match_tol = df[(abs(df['Ext. Length [mm]'] - l) <= 10) & (abs(df['Ext.Width [mm]'] - w) <= 10) & (df['Quality'].astype(str).str.strip() == q)]
             if not match_tol.empty:
                 row_mod = match_tol.iloc[0].copy()
@@ -1200,11 +1204,14 @@ if results:
                 row_mod['Int.Length [mm]'] = max(10.0, l - 15.0)
                 row_mod['Width [mm]'] = max(10.0, w - 15.0)
                 row_mod['Height [mm]'] = max(10.0, h - 10.0)
+                # Crucial Fix: Add the missing 'Box ID / Specification' key for toleranced matches
+                row_mod["Box ID / Specification"] = f"{row_mod['BoxSize']} [{str(row_mod['Quality']).strip()}]"
                 return row_mod, True
             
             thick = 10 if "2.30" in q else 6
+            box_size_key = f"DIR-SPEC-{int(l)}x{int(w)}x{int(h)}"
             fallback_series = pd.Series({
-                'BoxSize': f"DIR-SPEC-{int(l)}x{int(w)}x{int(h)}",
+                'BoxSize': box_size_key,
                 'Quality': q,
                 'Quality Class': q,
                 'Ext. Length [mm]': l,
@@ -1219,7 +1226,9 @@ if results:
                 'Flute Type': q,
                 'Int. Length [mm]': max(10.0, l - 2*thick),
                 'Int. Width [mm]': max(10.0, w - 2*thick),
-                'Int. Height [mm]': max(10.0, h - thick)
+                'Int. Height [mm]': max(10.0, h - thick),
+                # Crucial Fix: Add the missing 'Box ID / Specification' key for fallback rows
+                'Box ID / Specification': f"{box_size_key} [{q}]"
             })
             return fallback_series, False
 
