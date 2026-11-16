@@ -466,6 +466,7 @@ def estimate_box_weight(ext_l, ext_w, ext_h, quality):
     return flat_area * g
 
 # Helper to retrieve either manual fine-tuned or max default quantity & package weight
+# Helper to retrieve either manual fine-tuned or max default quantity & package weight
 def get_live_box_metrics(row, weight_per_part):
     box_spec = row["Box ID / Specification"]
     qty_key = f"manual_qty_{box_spec}"
@@ -474,15 +475,25 @@ def get_live_box_metrics(row, weight_per_part):
     active_qty = int(st.session_state.get(qty_key, default_max_qty))
     
     # Recalculate dynamic package weight
-    ext_l = row["Ext. Length [mm]"]
-    ext_w = row["Ext.Width [mm]"]  # <--- FIXED: Changed "Ext. Width [mm]" to "Ext.Width [mm]" (removed space)
-    ext_h = row["Ext. Height [mm]"]
-    box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row["Flute Type"])
+    ext_l = row.get("Ext. Length [mm]") if "Ext. Length [mm]" in row else row.get("Ext. Length [mm]")
+    
+    # Robust Width Lookup: Check both spacing variations
+    ext_w = row.get("Ext.Width [mm]") if "Ext.Width [mm]" in row else row.get("Ext. Width [mm]")
+    
+    ext_h = row.get("Ext. Height [mm]") if "Ext. Height [mm]" in row else row.get("Ext. Height [mm]")
+    
+    box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row["Flute Type"] if "Flute Type" in row else row.get("Quality"))
     live_total_weight = round((active_qty * weight_per_part) + box_weight, 2)
     
     # Recalculate volumetric efficiency based on active loaded parts
     single_part_vol = prod_l * prod_w * prod_h
-    box_internal_vol = row["Int. Length [mm]"] * row["Int. Width [mm]"] * row["Int. Height [mm]"]
+    
+    # Robust Internal Dimension Lookups
+    int_l = row.get("Int.Length [mm]") if "Int.Length [mm]" in row else row.get("Int. Length [mm]")
+    int_w = row.get("Width [mm]") if "Width [mm]" in row else row.get("Int. Width [mm]")
+    int_h = row.get("Height [mm]") if "Height [mm]" in row else row.get("Int. Height [mm]")
+    
+    box_internal_vol = int_l * int_w * int_h
     live_vol_efficiency = round(((active_qty * single_part_vol) / box_internal_vol) * 100, 2)
     
     return active_qty, live_total_weight, live_vol_efficiency
@@ -561,11 +572,18 @@ for idx, row in df_inventory.iterrows():
         "Remaining Air Space (%)": round(air_space_percent, 1),
         "Box Price (€)": row['Box Price (€)'],
         "Tier Rank": tier_rank,
+        
+        # Store both versions of keys to keep all other functions safe!
         "Int. Length [mm]": box_int_l,
+        "Int.Length [mm]": box_int_l,
         "Int. Width [mm]": box_int_w,
+        "Width [mm]": box_int_w,
         "Int. Height [mm]": box_int_h,
+        "Height [mm]": box_int_h,
         "Ext. Length [mm]": ext_l,
         "Ext. Width [mm]": ext_w,
+        "Ext.Width [mm]": ext_w,
+        
         "_nx": grid_layout[0],
         "_ny": grid_layout[1],
         "_nz": grid_layout[2],
