@@ -510,18 +510,25 @@ MATERIAL_DENSITIES = {
 
 with st.sidebar.expander("📂 Product Specifications & CAD", expanded=True):
     uploaded_stl = st.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
+    
+    # DYNAMIC RESET MECHANISM: Reset selectbox back to "Select Material..." when a new file is uploaded
+    file_specifier_key = "default_uploader"
+    if uploaded_stl is not None:
+        file_specifier_key = f"uploader_{uploaded_stl.name}"
+        if st.session_state.get("last_seen_file") != uploaded_stl.name:
+            st.session_state["last_seen_file"] = uploaded_stl.name
+            st.session_state["spec_material"] = "Select Material..."
+            st.session_state["spec_prod_wt"] = 0.0
+            
     material_selected = True  
     assembly_mode = False
     
-    # Defaults
-    auto_l, auto_w, auto_h = st.session_state["spec_prod_l"], st.session_state["spec_prod_w"], st.session_state["spec_prod_h"]
-    calculated_weight_kg = st.session_state["spec_prod_wt"]
-    
+    # Dimensions Cache Update
     if uploaded_stl is not None:
-        filename = uploaded_stl.name.lower()
         try:
             import trimesh
             uploaded_stl.seek(0)
+            filename = uploaded_stl.name.lower()
             if filename.endswith('.step') or filename.endswith('.stp'):
                 import cascadio
                 mesh_cad = trimesh.load(uploaded_stl, file_type='step')
@@ -546,7 +553,6 @@ with st.sidebar.expander("📂 Product Specifications & CAD", expanded=True):
                     auto_l *= 10.0
                     auto_w *= 10.0
                     auto_h *= 10.0
-                    cad_volume *= 1000.0  
                 
                 st.session_state["spec_prod_l"] = float(auto_l)
                 st.session_state["spec_prod_w"] = float(auto_w)
@@ -554,18 +560,27 @@ with st.sidebar.expander("📂 Product Specifications & CAD", expanded=True):
                 st.success(f"📐 Extracted: {auto_l}x{auto_w}x{auto_h} mm")
         except Exception as e_cad:
             st.warning(f"Error reading CAD mesh: {e_cad}")
-            
+
+    # Build dropdown selections reactively 
     mat_options = ["Select Material..."] + list(MATERIAL_DENSITIES.keys())
-    current_mat = st.session_state["spec_material"]
+    current_mat = st.session_state.get("spec_material", "Select Material...")
     mat_index = mat_options.index(current_mat) if current_mat in mat_options else 0
     
+    # Reactive Selectbox bound to the dynamic file name key
     selected_material = st.selectbox(
         "Select Part Material:", 
         options=mat_options, 
         index=mat_index, 
-        key="spec_material",
+        key=f"spec_material_{file_specifier_key}",
         help="Choose the material of this component or select 'Assembly' to enter weight manually."
     )
+    # Sync with root state
+    st.session_state["spec_material"] = selected_material
+    
+    # Material-Density Evaluator: Calculate density instantly based on the active state values
+    temp_l = st.session_state["spec_prod_l"]
+    temp_w = st.session_state["spec_prod_w"]
+    temp_h = st.session_state["spec_prod_h"]
     
     if selected_material == "Select Material...":
         material_selected = False
@@ -576,12 +591,13 @@ with st.sidebar.expander("📂 Product Specifications & CAD", expanded=True):
         mesh_display = st.session_state.get("active_cad_mesh")
         if mesh_display is not None and hasattr(mesh_display, "volume") and mesh_display.volume > 0:
             cad_volume = mesh_display.volume
-            is_cm_scale = st.session_state["spec_prod_l"] < 500.0
+            # Handle standard cm to mm scaling variables
+            is_cm_scale = temp_l < 500.0
             if is_cm_scale:
                 cad_volume = cad_volume * 1000.0 if cad_volume < 100000 else cad_volume
             calculated_weight_kg = round(cad_volume * density * 1e-6, 3)
         else:
-            calculated_weight_kg = round(st.session_state["spec_prod_l"] * st.session_state["spec_prod_w"] * st.session_state["spec_prod_h"] * 1e-6 * density, 3)
+            calculated_weight_kg = round(temp_l * temp_w * temp_h * 1e-6 * density, 3)
         
         st.session_state["spec_prod_wt"] = calculated_weight_kg
         st.info(f"⚖️ Solid Weight ({selected_material}): **{calculated_weight_kg} kg**")
@@ -592,7 +608,7 @@ with st.sidebar.expander("📂 Product Specifications & CAD", expanded=True):
     
     if assembly_mode:
         st.warning("⚠️ **Action Required: Input Assembly Weight**\nEnter weight manually below to trigger calculations.")
-        prod_wt = st.number_input("Total Assembly Weight (kg)", min_value=0.0, value=0.0, step=0.1, key="spec_prod_wt")
+        prod_wt = st.number_input("Total Assembly Weight (kg)", min_value=0.0, step=0.1, key="spec_prod_wt")
     else:
         prod_wt = st.number_input("Part Weight (kg)", min_value=0.001, step=0.01, format="%.3f", key="spec_prod_wt")
 
