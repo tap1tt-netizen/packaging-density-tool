@@ -25,7 +25,7 @@ st.set_page_config(
 # Custom Theme-Proof Styling: Supports Light and Dark themes perfectly
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght=400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     html, body, [class*="css"] {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
@@ -78,6 +78,15 @@ st.markdown("""
         border: 1px solid rgba(148, 163, 184, 0.25);
         color: var(--text-color);
         box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
+    }
+    .ai-badge-box {
+        background: linear-gradient(135deg, rgba(37,99,235,0.08) 0%, rgba(99,102,241,0.08) 100%);
+        border: 1px solid rgba(37,99,235,0.25);
+        border-left: 5px solid #6366f1;
+        padding: 12px 16px;
+        border-radius: 10px;
+        margin-bottom: 14px;
+        color: var(--text-color);
     }
     .warning-box {
         background-color: rgba(245, 159, 0, 0.12);
@@ -198,7 +207,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. BULLETPROOF DATABASE READER
+# 2. BULLETPROOF DATABASE READER & HELPER FUNCTIONS
 # ==============================================================================
 @st.cache_data
 def load_database():
@@ -234,13 +243,54 @@ except Exception as e:
     st.code(os.getcwd())
     st.stop()
 
+def log_feedback_locally(entry):
+    feedback_file = "feedback_log.csv"
+    df_entry = pd.DataFrame([entry])
+    if not os.path.exists(feedback_file):
+        df_entry.to_csv(feedback_file, index=False)
+    else:
+        df_entry.to_csv(feedback_file, mode='a', header=False, index=False)
+
 # ==============================================================================
-# 4. RECOMMENDATION SYSTEM MATHEMATICS (DEFINED GLOBALLY AT THE TOP)
+# 3. ADVANCED PACKING & ORDER METHODOLOGY CALCULATION ENGINE
 # ==============================================================================
 @st.cache_data
-def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule, clear_side, clear_height, sep_xy, sep_z, enforce_lot=False, lot_multiplier=24):
+def calculate_packing(
+    box_int_l, box_int_w, box_int_h, 
+    p_l, p_w, p_h, 
+    rule, clear_side, clear_height, sep_xy, sep_z,
+    order_method="Uniform Grid (Standard)",
+    nesting_offset=15.0,
+    bulk_density=0.55,
+    enforce_lot=False, lot_multiplier=24
+):
+    """
+    Computes part capacity under 3 distinct industrial order methodologies:
+    1. Uniform Grid (Orthogonal arrangements with separator clearances)
+    2. Stackable / Nesting (Hollow parts nested vertically with depth offset)
+    3. Random Bulk Fill (Small fasteners poured loose based on empirical bulk packing fraction)
+    """
+    # ----------------- METHODOLOGY C: RANDOM BULK FILL -----------------
+    if order_method == "Random (Bulk Pour)":
+        box_internal_vol = max(1.0, float(box_int_l * box_int_w * box_int_h))
+        part_bounding_vol = max(1.0, float(p_l * p_w * p_h))
+        
+        # Effective capacity = (Internal Box Volume * Bulk Packing Density) / Part Volume
+        raw_qty = int((box_internal_vol * bulk_density) // part_bounding_vol)
+        raw_qty = max(0, raw_qty)
+        
+        best_config = (p_l, p_w, p_h)
+        best_grid = (raw_qty, 1, 1)  # Represented as a bulk aggregate
+        
+        if enforce_lot and raw_qty >= lot_multiplier:
+            aligned_qty = (raw_qty // lot_multiplier) * lot_multiplier
+            return aligned_qty, best_config, best_grid, raw_qty
+        return raw_qty, best_config, best_grid, raw_qty
+
+    # ----------------- ORIENTATION DEFINITIONS -----------------
     dims = sorted([p_l, p_w, p_h])
     h_dim, w_dim, l_dim = dims[0], dims[1], dims[2]
+
     if rule == "Force Flat Packing Only":
         orientations = [(l_dim, w_dim, h_dim), (w_dim, l_dim, h_dim)]
     elif rule == "Force Standing on Edge":
@@ -253,24 +303,45 @@ def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule, clea
             (p_w, p_l, p_h), (p_w, p_h, p_l),
             (p_h, p_l, p_w), (p_h, p_w, p_l)
         ]
+
     best_qty = 0
     best_config = (p_l, p_w, p_h)
     best_grid_layout = (0, 0, 0)
+
+    # ----------------- METHODOLOGY A & B: GRID / NESTING -----------------
     for px, py, pz in orientations:
         nx = max(0, int((box_int_l - (2 * clear_side) + sep_xy) // (px + sep_xy)))
         ny = max(0, int((box_int_w - (2 * clear_side) + sep_xy) // (py + sep_xy)))
-        nz = max(0, int((box_int_h - clear_height + sep_z) // (pz + sep_z)))
+        
+        if order_method == "Stackable (Nesting)":
+            # First base unit requires full pz height; subsequent units add nesting_offset
+            avail_h = box_int_h - clear_height
+            if avail_h < pz:
+                nz = 0
+            else:
+                effective_offset = max(1.0, nesting_offset + sep_z)
+                nz = 1 + int((avail_h - pz) // effective_offset)
+        else:
+            # Standard Uniform Grid
+            nz = max(0, int((box_int_h - clear_height + sep_z) // (pz + sep_z)))
+
         total_parts = nx * ny * nz
         if total_parts > best_qty:
             best_qty = total_parts
             best_config = (px, py, pz)
             best_grid_layout = (nx, ny, nz)
+
     if enforce_lot and best_qty >= lot_multiplier:
         aligned_qty = (best_qty // lot_multiplier) * lot_multiplier
         return aligned_qty, best_config, best_grid_layout, best_qty
+
     return best_qty, best_config, best_grid_layout, best_qty
 
-def determine_placement_style(p_l, p_w, p_h, oz):
+def determine_placement_style(p_l, p_w, p_h, oz, order_method="Uniform Grid (Standard)"):
+    if order_method == "Random (Bulk Pour)":
+        return "🎲 RANDOM BULK POUR (Loose fill, non-oriented packaging)"
+    if order_method == "Stackable (Nesting)":
+        return "🔵 STACKABLE / NESTING (Interlocked along vertical axis)"
     dims = sorted([p_l, p_w, p_h])
     if int(oz) == int(dims[0]):
         return "🟢 FLAT / HORIZONTAL (Resting on wide base, most stable)"
@@ -289,24 +360,23 @@ def estimate_box_weight(ext_l, ext_w, ext_h, quality):
     g = grammage_map.get(str(quality).strip(), 0.50)
     return flat_area * g
 
-# Robust lookup helper for dynamic user manual adjustments
-def get_live_box_metrics(row, weight_per_part):
+def get_live_box_metrics(row, weight_per_part, prod_l, prod_w, prod_h):
     box_spec = row["Box ID / Specification"]
     qty_key = f"manual_qty_{box_spec}"
     default_max_qty = int(row["No of Parts per Box"])
     active_qty = int(st.session_state.get(qty_key, default_max_qty))
     
-    ext_l = row.get("Ext. Length [mm]") if "Ext. Length [mm]" in row else row.get("Ext. Length [mm]")
+    ext_l = row.get("Ext. Length [mm]")
     ext_w = row.get("Ext.Width [mm]") if "Ext.Width [mm]" in row else row.get("Ext. Width [mm]")
-    ext_h = row.get("Ext. Height [mm]") if "Ext. Height [mm]" in row else row.get("Ext. Height [mm]")
+    ext_h = row.get("Ext. Height [mm]")
     
-    box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row["Flute Type"] if "Flute Type" in row else row.get("Quality"))
+    box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row.get("Flute Type") or row.get("Quality"))
     live_total_weight = round((active_qty * weight_per_part) + box_weight, 2)
     
     single_part_vol = prod_l * prod_w * prod_h
-    int_l = row.get("Int.Length [mm]") if "Int.Length [mm]" in row else row.get("Int. Length [mm]")
-    int_w = row.get("Width [mm]") if "Width [mm]" in row else row.get("Int. Width [mm]")
-    int_h = row.get("Height [mm]") if "Height [mm]" in row else row.get("Int. Height [mm]")
+    int_l = row.get("Int.Length [mm]") or row.get("Int. Length [mm]")
+    int_w = row.get("Width [mm]") or row.get("Int. Width [mm]")
+    int_h = row.get("Height [mm]") or row.get("Int. Height [mm]")
     
     box_internal_vol = int_l * int_w * int_h
     live_vol_efficiency = round(((active_qty * single_part_vol) / box_internal_vol) * 100, 2)
@@ -375,7 +445,7 @@ def get_resolved_directive_row(df, l, w, h, q):
     return fallback_series, False
 
 # ==============================================================================
-# 3. SIDEBAR: OPERATOR INPUTS & PACKAGING DIRECTIVE CONTROLS
+# 4. SIDEBAR: PILOT TEST CASES, CAD ANALYZER & CONTROLS
 # ==============================================================================
 st.sidebar.header("⚙️ Optimization Strategy")
 sort_criteria = st.sidebar.selectbox(
@@ -390,13 +460,59 @@ sort_criteria = st.sidebar.selectbox(
     help="Default priority uses weighted index: Volumetric Efficiency (60%) ➔ Weight Compliance (25%) ➔ Quantity Yield (15%)."
 )
 
-with st.sidebar.expander("📂 Product Specifications", expanded=True):
+# ----------------- PILOT TEST CASES DEFINITIONS -----------------
+PILOT_TEST_CASES = {
+    "-- Custom / Manual Upload --": {
+        "l": 170.0, "w": 110.0, "h": 40.0, "wt": 0.25, 
+        "material": "Select Material...", "method": "Uniform Grid (Standard)", "nest_offset": 12.0
+    },
+    "🔩 TC-1: Industrial Hex Screws & Bolts (Random Bulk)": {
+        "l": 12.0, "w": 12.0, "h": 50.0, "wt": 0.018, 
+        "material": "Mild Steel", "method": "Random (Bulk Pour)", "nest_offset": 5.0
+    },
+    "🕹️ TC-2: Solenoid Control Valves (Uniform Grid)": {
+        "l": 65.0, "w": 42.0, "h": 38.0, "wt": 0.220, 
+        "material": "Assembly (Multi-Material/Manual Weight)", "method": "Uniform Grid (Standard)", "nest_offset": 10.0
+    },
+    "🦾 TC-3: Metal Stamped Support Brackets (Stackable Nesting)": {
+        "l": 160.0, "w": 95.0, "h": 35.0, "wt": 0.280, 
+        "material": "Mild Steel", "method": "Stackable (Nesting)", "nest_offset": 9.0
+    },
+    "🔌 TC-4: Injection Molded Tub Cover (Stackable Nesting)": {
+        "l": 240.0, "w": 180.0, "h": 65.0, "wt": 0.190, 
+        "material": "Polypropylene (PP)", "method": "Stackable (Nesting)", "nest_offset": 14.0
+    },
+    "⚙️ TC-5: Die-Cast Aluminum Pump Casing (Uniform Grid)": {
+        "l": 145.0, "w": 115.0, "h": 85.0, "wt": 0.650, 
+        "material": "Aluminum", "method": "Uniform Grid (Standard)", "nest_offset": 25.0
+    }
+}
+
+with st.sidebar.expander("🧪 Benchmark Pilot Test Cases", expanded=True):
+    selected_pilot = st.selectbox(
+        "Load Pre-Configured Benchmark Test Case:",
+        options=list(PILOT_TEST_CASES.keys()),
+        index=0,
+        help="Quickly load standardized engineering components to test and validate packaging methodologies."
+    )
+    pilot_preset = PILOT_TEST_CASES[selected_pilot]
+
+with st.sidebar.expander("📂 Product Specifications & CAD", expanded=True):
     uploaded_stl = st.file_uploader("Upload 3D CAD File (.STL, .STEP, .STP)", type=["stl", "step", "stp"])
     mesh_cad = None  
-    auto_l, auto_w, auto_h = 170.0, 110.0, 40.0
-    calculated_weight_kg = 0.25
+    
+    # Initialize defaults from active preset
+    auto_l = pilot_preset["l"]
+    auto_w = pilot_preset["w"]
+    auto_h = pilot_preset["h"]
+    calculated_weight_kg = pilot_preset["wt"]
     material_selected = True  
-    assembly_mode = False
+    assembly_mode = (pilot_preset["material"] == "Assembly (Multi-Material/Manual Weight)")
+    
+    cavity_index = 0.0
+    ai_suggested_method = pilot_preset["method"]
+    ai_reason = "Manual / Preset Selection"
+
     MATERIAL_DENSITIES = {
         "Assembly (Multi-Material/Manual Weight)": "manual",  
         "ABS Plastic": 1.04,
@@ -407,6 +523,7 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
         "Mild Steel": 7.85,
         "Stainless Steel": 8.00
     }
+
     if uploaded_stl is not None:
         filename = uploaded_stl.name.lower()
         try:
@@ -437,7 +554,21 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
                     auto_h *= 10.0
                     cad_volume *= 1000.0  
                 
-                st.success(f"📐 Extracted: {auto_l}x{auto_w}x{auto_h} mm")
+                bbox_volume = auto_l * auto_w * auto_h
+                cavity_index = max(0.0, min(1.0, 1.0 - (cad_volume / bbox_volume)))
+                
+                # --- AUTONOMOUS CAD GEOMETRY CLASSIFIER ---
+                if max(auto_l, auto_w, auto_h) <= 35.0:
+                    ai_suggested_method = "Random (Bulk Pour)"
+                    ai_reason = f"Small fastener footprint (max dim: {max(auto_l, auto_w, auto_h)} mm <= 35 mm)."
+                elif cavity_index > 0.52:
+                    ai_suggested_method = "Stackable (Nesting)"
+                    ai_reason = f"High internal hollow cavity detected (Cavity Index: {cavity_index*100:.1f}%)."
+                else:
+                    ai_suggested_method = "Uniform Grid (Standard)"
+                    ai_reason = f"Solid structural or precision component (Cavity Index: {cavity_index*100:.1f}%)."
+
+                st.success(f"📐 Extracted Dimensions: {auto_l}x{auto_w}x{auto_h} mm")
                 st.markdown("#### 🪵 Material Weight Extractor")
                 selected_material = st.selectbox(
                     "Select Part Material:",
@@ -453,17 +584,19 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
                 else:
                     density = MATERIAL_DENSITIES[selected_material]
                     calculated_weight_kg = round(cad_volume * density * 1e-6, 3)
-                    st.info(f"⚖️ Solid Weight ({selected_material}): \*\*{calculated_weight_kg} kg\*\*")
+                    st.info(f"⚖️ Solid Weight ({selected_material}): **{calculated_weight_kg} kg**")
             else:
                 st.error("Uploaded file has invalid mesh geometry.")
         except Exception as e_cad:
             st.warning(f"Extracted default placeholders: {e_cad}")
     else:
         st.markdown("#### 🪵 Material Weight Extractor")
+        mat_list = ["Select Material..."] + list(MATERIAL_DENSITIES.keys())
+        default_mat_idx = mat_list.index(pilot_preset["material"]) if pilot_preset["material"] in mat_list else 0
         selected_material = st.selectbox(
             "Select Part Material:",
-            options=["Select Material..."] + list(MATERIAL_DENSITIES.keys()),
-            index=0
+            options=mat_list,
+            index=default_mat_idx
         )
         if selected_material == "Select Material...":
             material_selected = False
@@ -472,7 +605,7 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
         else:
             density = MATERIAL_DENSITIES[selected_material]
             calculated_weight_kg = round(auto_l * auto_w * auto_h * 1e-6 * density, 3)
-            
+
     st.markdown("#### Dimensions (mm)")
     prod_l = st.number_input("Part Length (mm)", min_value=1.0, value=float(auto_l), step=1.0)
     prod_w = st.number_input("Part Width (mm)", min_value=1.0, value=float(auto_w), step=1.0)
@@ -480,15 +613,62 @@ with st.sidebar.expander("📂 Product Specifications", expanded=True):
     
     st.markdown("#### Weight (kg)")
     if assembly_mode:
-        st.warning("⚠️ \*\*Action Required: Input Assembly Weight\*\*\\nEnter weight manually below to trigger calculations.")
-        prod_wt = st.number_input("Total Assembly Weight (kg)", min_value=0.0, value=0.0, step=0.1)
+        st.warning("⚠️ **Action Required: Input Assembly Weight**\nEnter weight manually below to trigger calculations.")
+        prod_wt = st.number_input("Total Assembly Weight (kg)", min_value=0.0, value=float(calculated_weight_kg), step=0.05)
     else:
-        prod_wt = st.number_input("Weight per Part (kg)", min_value=0.01, value=float(calculated_weight_kg), step=0.05)
+        prod_wt = st.number_input("Weight per Part (kg)", min_value=0.001, value=float(calculated_weight_kg), step=0.02, format="%.3f")
+
+# ----------------- ORDER METHODOLOGY CONTROLS -----------------
+with st.sidebar.expander("📦 Order Methodology & Nesting Controls", expanded=True):
+    st.markdown(f"""
+    <div class='ai-badge-box'>
+        <b>🤖 Autonomous Analysis Recommendation:</b><br>
+        <span style='color:#4f46e5; font-weight:700;'>{ai_suggested_method}</span><br>
+        <small>{ai_reason}</small>
+    </div>
+    """, unsafe_allow_html=True)
     
-    orientation_rule = st.selectbox(
-        "Select Packing Orientation:",
-        ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"]
+    method_options = ["Uniform Grid (Standard)", "Stackable (Nesting)", "Random (Bulk Pour)"]
+    method_default_idx = method_options.index(ai_suggested_method) if ai_suggested_method in method_options else 0
+    
+    active_order_method = st.selectbox(
+        "Active Order Methodology (Operator Override):",
+        options=method_options,
+        index=method_default_idx,
+        help="Choose between structured orthogonal grid packing, nested hollow stacking, or loose random bulk filling."
     )
+    
+    # Conditional Parameters based on methodology
+    nesting_offset_val = pilot_preset.get("nest_offset", round(prod_h * 0.35, 1))
+    bulk_density_pct = 55
+    
+    if active_order_method == "Stackable (Nesting)":
+        nesting_offset_val = st.slider(
+            "Nesting Height Offset (mm)",
+            min_value=1.0,
+            max_value=max(2.0, float(prod_h)),
+            value=float(min(nesting_offset_val, prod_h)),
+            step=0.5,
+            help="Additional height added by each consecutive nested part."
+        )
+    elif active_order_method == "Random (Bulk Pour)":
+        bulk_density_pct = st.slider(
+            "Bulk Fill Packing Density (%)",
+            min_value=40,
+            max_value=70,
+            value=55,
+            step=1,
+            help="Empirical volume percentage occupied by random loose poured parts (typically 52-60%)."
+        )
+
+    if active_order_method == "Random (Bulk Pour)":
+        orientation_rule = "Automatic (Highest Quantity)"
+        st.caption("ℹ️ Orientation rules are automatically disabled for random bulk pouring.")
+    else:
+        orientation_rule = st.selectbox(
+            "Select Packing Orientation:",
+            ["Automatic (Highest Quantity)", "Force Flat Packing Only", "Force Standing on Edge", "Force Standing Vertical"]
+        )
 
 with st.sidebar.expander("📂 Packaging Directives & Tolerances", expanded=False):
     max_box_weight_limit = st.number_input(
@@ -526,14 +706,14 @@ with st.sidebar.expander("📂 Packaging Directives & Tolerances", expanded=Fals
     sep_xy = st.slider("Separator X/Y (mm)", min_value=0, max_value=10, value=2)
     sep_z = st.slider("Separator Z (mm)", min_value=0, max_value=10, value=4)
 
-with st.sidebar.expander("📋 Packaging Directive Ref Boxes", expanded=True):
-    st.markdown("\*\*Alternative I (e.g. SLC 400)\*\*")
+with st.sidebar.expander("📋 Packaging Directive Ref Boxes", expanded=False):
+    st.markdown("**Alternative I (e.g. SLC 400)**")
     alt1_l = st.number_input("Alt I Ext. Length (mm)", value=400.0, step=10.0)
     alt1_w = st.number_input("Alt I Ext. Width (mm)", value=300.0, step=10.0)
     alt1_h = st.number_input("Alt I Ext. Height (mm)", value=220.0, step=10.0)
     alt1_q = st.selectbox("Alt I Quality Class", ["2.30EB", "2.30BC", "1.20C", "1.20B"], index=1)
     st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
-    st.markdown("\*\*Alternative II (e.g. SLC 600)\*\*")
+    st.markdown("**Alternative II (e.g. SLC 600)**")
     alt2_l = st.number_input("Alt II Ext. Length (mm)", value=600.0, step=10.0)
     alt2_w = st.number_input("Alt II Ext. Width (mm)", value=400.0, step=10.0)
     alt2_h = st.number_input("Alt II Ext. Height (mm)", value=200.0, step=10.0)
@@ -541,12 +721,12 @@ with st.sidebar.expander("📋 Packaging Directive Ref Boxes", expanded=True):
 
 if uploaded_stl is not None and not material_selected and not assembly_mode:
     st.markdown("<div class='app-header'><h1>📦 BSH Packaging Density & Box Recommender</h1></div>", unsafe_allow_html=True)
-    st.warning("⚠️ \*\*Material Selection Required:\*\* Please select a material type in the Product Specifications accordion to proceed.")
+    st.warning("⚠️ **Material Selection Required:** Please select a material type in the Product Specifications accordion to proceed.")
     st.stop()
 
 if assembly_mode and prod_wt == 0.0:
     st.markdown("<div class='app-header'><h1>📦 BSH Packaging Density & Box Recommender</h1></div>", unsafe_allow_html=True)
-    st.warning("⚠️ \*\*Assembly Weight Required:\*\* Please enter the total assembly weight in the sidebar to proceed.")
+    st.warning("⚠️ **Assembly Weight Required:** Please enter the total assembly weight in the sidebar to proceed.")
     st.stop()
 
 # ==============================================================================
@@ -554,6 +734,7 @@ if assembly_mode and prod_wt == 0.0:
 # ==============================================================================
 results = []
 single_part_vol = prod_l * prod_w * prod_h
+
 for idx, row in df_inventory.iterrows():
     box_int_l = row['Int.Length [mm]']
     box_int_w = row['Width [mm]']
@@ -575,8 +756,11 @@ for idx, row in df_inventory.iterrows():
         prod_l, prod_w, prod_h,
         orientation_rule,
         clear_side, clear_height, sep_xy, sep_z,
-        lot_alignment_enabled,
-        lot_step
+        order_method=active_order_method,
+        nesting_offset=nesting_offset_val,
+        bulk_density=bulk_density_pct / 100.0,
+        enforce_lot=lot_alignment_enabled,
+        lot_multiplier=lot_step
     )
     if parts_count == 0:
         continue
@@ -590,8 +774,8 @@ for idx, row in df_inventory.iterrows():
         
     box_internal_vol = box_int_l * box_int_w * box_int_h
     occupied_volume = parts_count * single_part_vol
-    vol_efficiency = (occupied_volume / box_internal_vol) * 100
-    air_space_percent = 100.0 - vol_efficiency
+    vol_efficiency = min(100.0, (occupied_volume / box_internal_vol) * 100)
+    air_space_percent = max(0.0, 100.0 - vol_efficiency)
     
     if total_package_weight < 13.0:
         weight_tier = "🟢 1. Green (<13 kg)"
@@ -600,7 +784,7 @@ for idx, row in df_inventory.iterrows():
         weight_tier = "🟠 2. Orange (13-17 kg)"
         tier_rank = 2
     else:
-        weight_tier = "🔴 3. Red (>15 kg)"
+        weight_tier = "🔴 3. Red (>17 kg)"
         tier_rank = 3
         
     q_class = str(row['Quality']).strip()
@@ -625,7 +809,6 @@ for idx, row in df_inventory.iterrows():
         "Box Price (€)": row['Box Price (€)'],
         "Tier Rank": tier_rank,
         
-        # Store both versions of keys to keep all other functions safe!
         "Int. Length [mm]": box_int_l,
         "Int.Length [mm]": box_int_l,
         "Int. Width [mm]": box_int_w,
@@ -702,11 +885,10 @@ if results:
     def sync_from_tab2():
         st.session_state["global_selected_box"] = st.session_state["tab2_box_selector"]
     def sync_from_tab3():
-        st.session_state["global_selected_box"] = st.session_state["tab3_box_selector"]
+        st.session_state["global_selected_box"] = st.session_state["tab3_box_selector_sync"]
         
     st.session_state["tab1_box_selector"] = st.session_state["global_selected_box"]
     st.session_state["tab2_box_selector"] = st.session_state["global_selected_box"]
-    st.session_state["tab3_box_selector"] = st.session_state["global_selected_box"]
     
     def get_safe_index(available_list, selected_val):
         try:
@@ -714,24 +896,20 @@ if results:
         except (ValueError, KeyError):
             return 0
             
-    # FIXED: Header KPI cards always display Rank-1 box based on priority sorted table
     viz_box_rank1 = sorted_df.iloc[0] if not sorted_df.empty else None
-    
-    # Retrieves manually selected blueprint box and binds live metrics
     viz_box_active = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0] if not sorted_df.empty else None
             
     col_title, col_safety_header = st.columns([7, 3])
     with col_title:
-        st.markdown("""
+        st.markdown(f"""
             <div class='app-header'>
                 <h1>📦 BSH Packaging Density & Box Recommender</h1>
-                <p>Grid-Based Product Accommodation, Weighted Multi-Criteria Priority Stacking & Multi-Pallet Optimizer</p>
+                <p>Order Methodology: <b>{active_order_method}</b> | Optimization Mode: <b>{sort_criteria}</b></p>
             </div>
         """, unsafe_allow_html=True)
     with col_safety_header:
         if viz_box_rank1 is not None:
-            # Check dynamic weight of Rank-1 box using fine-tuned quantity
-            r1_active_qty, r1_active_wt, _ = get_live_box_metrics(viz_box_rank1, prod_wt)
+            r1_active_qty, r1_active_wt, _ = get_live_box_metrics(viz_box_rank1, prod_wt, prod_l, prod_w, prod_h)
             if r1_active_wt > 17.0:
                 st.markdown(f"""
                     <div style='background-color:rgba(239, 68, 68, 0.15); border-left:5px solid #ef4444; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
@@ -757,10 +935,9 @@ if results:
                     </div>
                 """, unsafe_allow_html=True)
             
-    st.success(f"Connected to Cardboard Database: `{filename_loaded}` | Qualifying Options: {len(sorted_df)}")
+    st.success(f"Connected to Cardboard Database: `{filename_loaded}` | Qualifying Options: {len(sorted_df)} | Active Pilot Profile: `{selected_pilot}`")
     
-    # Best matched insights dynamically reflect the fine-tuned loaded quantities and calculated weights
-    r1_live_qty, r1_live_wt, r1_live_eff = get_live_box_metrics(viz_box_rank1, prod_wt)
+    r1_live_qty, r1_live_wt, r1_live_eff = get_live_box_metrics(viz_box_rank1, prod_wt, prod_l, prod_w, prod_h)
     st.subheader("💡 Best Matched Packing Insights (Rank-1 Box)")
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
@@ -790,11 +967,10 @@ if results:
     ])
 
     # ==========================================================================
-    # TAB 1: BOX RECOMMENDER & INDIVIDUAL LOADING
+    # TAB 1: BOX RECOMMENDER & BLUEPRINT MAP
     # ==========================================================================
     with tab_recommender:
         st.subheader("🏆 Cardboard Packaging Recommendations")
-        
         all_unique_flutes = sorted(list(sorted_df["Flute Type"].dropna().unique()))
         col_excel_filter, col_export_hub = st.columns([6, 4])
         with col_excel_filter:
@@ -928,8 +1104,8 @@ if results:
             active_quantity = st.number_input(
                 f"Loaded Parts per Box (Max Geometric: {max_possible_parts})",
                 min_value=1,
-                max_value=max_possible_parts,
-                value=int(st.session_state[qty_state_key]),
+                max_value=max(1, max_possible_parts),
+                value=int(min(st.session_state[qty_state_key], max(1, max_possible_parts))),
                 step=1,
                 key=f"input_{qty_state_key}",
                 help="Fine-tune or override the number of parts. All 2D floor plans, 3D views, and pallet weights adapt automatically."
@@ -938,59 +1114,57 @@ if results:
         with col_adj_2:
             override_weight = round((active_quantity * prod_wt) + estimate_box_weight(ext_l, ext_w, viz_box_active["Ext. Height [mm]"], viz_box_active["Flute Type"]), 2)
             override_efficiency = round(((active_quantity * single_part_vol) / (box_l * box_w * viz_box_active["Int. Height [mm]"])) * 100, 2)
-            st.info(f"⚡ Live Recalculated Package Weight: \*\*{override_weight} kg\*\* | Volumetric Efficiency: \*\*{override_efficiency}%\*\* | Loaded: \*\*{active_quantity} / {max_possible_parts} parts\*\*")
+            st.info(f"⚡ Live Recalculated Package Weight: **{override_weight} kg** | Volumetric Efficiency: **{override_efficiency}%** | Loaded: **{active_quantity} / {max_possible_parts} parts**")
             
-        placement_style = determine_placement_style(prod_l, prod_w, prod_h, oz)
-        is_standing = oz > min(prod_l, prod_w, prod_h)
-        if is_standing and nz == 1:
-            req_height_2_layers = (oz * 2) + sep_z + clear_height
-            st.markdown(f"""
-                <div class='warning-box'>
-                    💡 <b>Alternative Orientation Tip:</b> You are packing the parts <b>standing on edge/vertical</b>. 
-                    While this fits more parts on the floor grid, you can only pack <b>1 single layer</b> because this box height ({int(viz_box_active['Int. Height [mm]'])} mm) is too short. 
-                    <br>👉 To stack <b>2 layers</b> in this standing orientation, you would need to ask procurement for a taller box with an internal height of at least <b>{int(req_height_2_layers)} mm</b>.
-                </div>
-            """, unsafe_allow_html=True)
-            
+        placement_style = determine_placement_style(prod_l, prod_w, prod_h, oz, active_order_method)
+        
         with st.container():
             col_text, col_flat, col_stack = st.columns([2.5, 3, 2.5])
             with col_text:
                 st.markdown("<div class='guide-box'><h4><b>🛠️ 3-Step Packing Instruction</b></h4><hr style='border: 0.5px solid rgba(148,163,184,0.3);'>", unsafe_allow_html=True)
-                st.markdown(f"""
-                <b>Step 1: Orient the Part</b><br>
-                Place each individual part according to this orientation:<br>
-                <i>{placement_style}</i>
-                <ul>
-                    <li>📐 <b>Lengthwise (Left-to-Right):</b> {ox} mm</li>
-                    <li>📐 <b>Widthwise (Front-to-Back):</b> {oy} mm</li>
-                    <li>📐 <b>Height (pointing UP):</b> {oz} mm</li>
-                </ul>
-                """, unsafe_allow_html=True)
-                parts_per_layer = nx * ny
-                active_layers = int(np.ceil(active_quantity / parts_per_layer)) if parts_per_layer > 0 else 1
-                st.markdown(f"""
-                <b>Step 2: Arrange the Floor Grid</b><br>
-                Lay down a grid of <b>{nx} columns</b> and <b>{ny} rows</b>.
-                <ul>
-                    <li>Capacity per complete layer: <b>{parts_per_layer} parts</b>.</li>
-                    <li>Active layer count: <b>{active_layers} layer(s)</b>.</li>
-                    <li>Place {sep_xy}mm partition grids between parts.</li>
-                </ul>
-                """, unsafe_allow_html=True)
-                if active_layers > 1:
+                
+                if active_order_method == "Random (Bulk Pour)":
                     st.markdown(f"""
-                    <b>Step 3: Stacking Vertical Layers</b><br>
+                    <b>Step 1: Packaging Preparation</b><br>
+                    <i>{placement_style}</i>
                     <ul>
-                        <li>Place a flat {sep_z}mm divider sheet over completed layers.</li>
-                        <li>Build a total of <b>{active_layers} vertical layers</b> (reaching <b>{active_quantity} loaded parts</b>).</li>
+                        <li>Component Type: <b>Bulk Fasteners / Hardware</b></li>
+                        <li>Unit Mass: <b>{prod_wt*1000:.1f} g / part</b></li>
+                        <li>Methodology: <b>Random Loose Bulk Pour</b></li>
                     </ul>
+                    <b>Step 2: Tare & Pour Operations</b><br>
+                    <ul>
+                        <li>Line box with poly protective bag (optional).</li>
+                        <li>Pour up to <b>{active_quantity} pieces</b> directly into carton.</li>
+                        <li>Packing bulk fill factor: <b>{bulk_density_pct}% volume utilization</b>.</li>
+                    </ul>
+                    <b>Step 3: Verification & Closure</b><br>
+                    Ensure total gross mass does not exceed manual handling threshold.
                     """, unsafe_allow_html=True)
                 else:
+                    parts_per_layer = nx * ny
+                    active_layers = int(np.ceil(active_quantity / parts_per_layer)) if parts_per_layer > 0 else 1
+                    nest_text = f" (Nested depth: {nesting_offset_val} mm per layer)" if active_order_method == "Stackable (Nesting)" else ""
                     st.markdown(f"""
-                    <b>Step 3: Finish Packing</b><br>
-                    All <b>{active_quantity} parts</b> fit into <b>1 single floor layer</b>. No vertical shelf dividers are needed. 
-                    <br>Seal the box and apply the mandatory single box label!
+                    <b>Step 1: Orient the Part</b><br>
+                    Place each individual part according to this orientation:<br>
+                    <i>{placement_style}</i>
+                    <ul>
+                        <li>📐 <b>Lengthwise (Left-to-Right):</b> {ox} mm</li>
+                        <li>📐 <b>Widthwise (Front-to-Back):</b> {oy} mm</li>
+                        <li>📐 <b>Height (pointing UP):</b> {oz} mm</li>
+                    </ul>
+                    <b>Step 2: Arrange the Floor Grid</b><br>
+                    Lay down a grid of <b>{nx} columns</b> and <b>{ny} rows</b>.
+                    <ul>
+                        <li>Capacity per layer: <b>{parts_per_layer} parts</b>.</li>
+                        <li>Active layer count: <b>{active_layers} layer(s)</b>{nest_text}.</li>
+                        <li>Place {sep_xy}mm partition grids between adjacent parts.</li>
+                    </ul>
+                    <b>Step 3: Stacking Vertical Layers</b><br>
+                    Build a total of <b>{active_layers} vertical layers</b> (reaching <b>{active_quantity} loaded parts</b>).
                     """, unsafe_allow_html=True)
+                    
                 if override_weight > 17.0:
                     st.markdown(f"<p style='color:#ef4444; font-weight:bold; margin-top:10px;'>🔴 Handheld Weight: {override_weight} kg (Heavy Load - Forklift Required)</p>", unsafe_allow_html=True)
                 elif override_weight >= max_box_weight_limit:
@@ -998,6 +1172,7 @@ if results:
                 else:
                     st.markdown(f"<p style='color:#22c55e; font-weight:bold; margin-top:10px;'>🟢 Handheld Weight: Safe at {override_weight} kg (Conforms to &lt;{max_box_weight_limit} kg limit)</p>", unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
+
             with col_flat:
                 st_text_color = '#FFFFFF' if st.get_option('theme.base') == 'dark' else '#212529'
                 fig, ax = plt.subplots(figsize=(6, 4), facecolor='none')
@@ -1009,51 +1184,56 @@ if results:
                 ax.add_patch(patches.Rectangle((0, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.3))
                 ax.add_patch(patches.Rectangle((box_l - clear_side, clear_side), clear_side, box_w - 2*clear_side, fill=True, color='#e9ecef', hatch='//', alpha=0.3))
                 
-                total_grid_w = nx * ox + (nx - 1) * sep_xy
-                total_grid_h = ny * oy + (ny - 1) * sep_xy
-                leftover_x = (box_l - 2 * clear_side) - total_grid_w
-                leftover_y = (box_w - 2 * clear_side) - total_grid_h
-                start_x_offset = clear_side + (leftover_x / 2)
-                start_y_offset = clear_side + (leftover_y / 2)
-                
-                layer1_filled = min(active_quantity, nx * ny)
-                slot_counter = 0
-                
-                total_slots = nx * ny
-                if total_slots > 100:
-                    font_sz = 5
-                elif total_slots > 36:
-                    font_sz = 6
+                if active_order_method == "Random (Bulk Pour)":
+                    # Display illustrative bulk scatter fill
+                    ax.add_patch(patches.Rectangle((clear_side, clear_side), box_l - 2*clear_side, box_w - 2*clear_side, fill=True, facecolor='#dbeafe', edgecolor='#3b82f6', linestyle='--', alpha=0.4))
+                    np.random.seed(42)
+                    pts_x = np.random.uniform(clear_side + 10, box_l - clear_side - 10, min(120, active_quantity))
+                    pts_y = np.random.uniform(clear_side + 10, box_w - clear_side - 10, min(120, active_quantity))
+                    ax.scatter(pts_x, pts_y, color='#1d4ed8', s=16, alpha=0.7)
+                    ax.text(box_l/2, box_w/2, f"Random Loose Bulk Fill\n{active_quantity} pcs ({bulk_density_pct}% bulk factor)", ha='center', va='center', fontsize=10, fontweight='bold', color='#1e3a8a')
                 else:
-                    font_sz = 8
+                    total_grid_w = nx * ox + (nx - 1) * sep_xy
+                    total_grid_h = ny * oy + (ny - 1) * sep_xy
+                    leftover_x = (box_l - 2 * clear_side) - total_grid_w
+                    leftover_y = (box_w - 2 * clear_side) - total_grid_h
+                    start_x_offset = clear_side + (leftover_x / 2)
+                    start_y_offset = clear_side + (leftover_y / 2)
                     
-                for r in range(ny):
-                    y_pos = start_y_offset + r * (oy + sep_xy)
-                    for c in range(nx):
-                        x_pos = start_x_offset + c * (ox + sep_xy)
-                        slot_counter += 1
-                        if slot_counter <= layer1_filled:
-                            ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#a5d8ff', edgecolor='#1971c2', linewidth=1.2))
-                            ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1}, {r+1}", ha='center', va='center', fontsize=font_sz, color='#0f4c81', fontweight='bold')
-                        else:
-                            ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#e2e8f0', edgecolor='#94a3b8', linewidth=1.0, linestyle='--', alpha=0.35))
-                            ax.text(x_pos + ox/2, y_pos + oy/2, "Empty", ha='center', va='center', fontsize=font_sz - 1, color='#64748b', fontstyle='italic')
-                
+                    layer1_filled = min(active_quantity, nx * ny)
+                    slot_counter = 0
+                    font_sz = 5 if (nx * ny) > 100 else (6 if (nx * ny) > 36 else 8)
+                    
+                    for r in range(ny):
+                        y_pos = start_y_offset + r * (oy + sep_xy)
+                        for c in range(nx):
+                            x_pos = start_x_offset + c * (ox + sep_xy)
+                            slot_counter += 1
+                            if slot_counter <= layer1_filled:
+                                fill_color = '#a5d8ff' if active_order_method == "Uniform Grid (Standard)" else '#bbf7d0'
+                                border_color = '#1971c2' if active_order_method == "Uniform Grid (Standard)" else '#15803d'
+                                ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor=fill_color, edgecolor=border_color, linewidth=1.2))
+                                ax.text(x_pos + ox/2, y_pos + oy/2, f"{c+1},{r+1}", ha='center', va='center', fontsize=font_sz, color='#0f4c81', fontweight='bold')
+                            else:
+                                ax.add_patch(patches.Rectangle((x_pos, y_pos), ox, oy, fill=True, facecolor='#e2e8f0', edgecolor='#94a3b8', linewidth=1.0, linestyle='--', alpha=0.35))
+                                ax.text(x_pos + ox/2, y_pos + oy/2, "Empty", ha='center', va='center', fontsize=font_sz - 1, color='#64748b', fontstyle='italic')
+                    
+                    ax.text(box_l/2, box_w + 15, f"Floor Grid: {nx}x{ny} | Total Parts: {active_quantity}", color='#dc3545', fontsize=11, fontweight='bold', ha='center')
+
                 ax.annotate('', xy=(0, -35), xytext=(box_l, -35), arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
                 ax.text(box_l/2, -60, f"{int(ext_l)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center')
-                
                 ax.annotate('', xy=(box_l + 35, 0), xytext=(box_l + 35, box_w), arrowprops=dict(arrowstyle='<->', color='#dc3545', linewidth=1.5))
                 ax.text(box_l + 60, box_w/2, f"{int(ext_w)} mm", color='#dc3545', fontsize=10, fontweight='bold', ha='center', va='center', rotation=-90)
-                
-                ax.text(box_l/2, box_w + 15, f"Floor Grid: {nx}x{ny} | Active Layers: {active_layers}", color='#dc3545', fontsize=12, fontweight='bold', ha='center')
-                
                 ax.set_xlim(-60, box_l + 100)
                 ax.set_ylim(-80, box_w + 40)
                 ax.set_aspect('equal')
                 ax.axis('off')
                 st.pyplot(fig)
                 plt.close(fig)
+
             with col_stack:
+                parts_per_layer = max(1, nx * ny)
+                active_layers = int(np.ceil(active_quantity / parts_per_layer)) if active_order_method != "Random (Bulk Pour)" else 1
                 fig3d = plt.figure(figsize=(4, 3.5), facecolor='none')
                 ax3d = fig3d.add_subplot(111, projection='3d', facecolor='none')
                 w_scale = 100
@@ -1062,8 +1242,9 @@ if results:
                 z_aspect = max(30, active_layers * 15)
                 ax3d.set_box_aspect((l_scale, w_scale, z_aspect))
                 lbl_font = 9 if active_layers > 6 else 12
+                
                 for layer in range(active_layers):
-                    z_start = layer * (h_scale + 5)
+                    z_start = layer * (h_scale + (2 if active_order_method == "Stackable (Nesting)" else 5))
                     v = np.array([
                         [0, 0, z_start], [l_scale, 0, z_start], [l_scale, w_scale, z_start], [0, w_scale, z_start],
                         [0, 0, z_start + h_scale], [l_scale, 0, z_start + h_scale], [l_scale, w_scale, z_start + h_scale], [0, w_scale, z_start + h_scale]
@@ -1072,17 +1253,18 @@ if results:
                         [v[0], v[1], v[5], v[4]], [v[1], v[2], v[6], v[5]], [v[2], v[3], v[7], v[6]],
                         [v[3], v[0], v[4], v[7]], [v[4], v[5], v[6], v[7]], [v[0], v[1], v[2], v[3]]
                     ]
-                    color = '#a5d8ff' if layer < active_layers - 1 else '#74c0fc'
-                    poly = Poly3DCollection(faces, facecolors=color, edgecolors='#1971c2', linewidths=1.5, alpha=0.8)
+                    color = '#bbf7d0' if active_order_method == "Stackable (Nesting)" else ('#a5d8ff' if layer < active_layers - 1 else '#74c0fc')
+                    edge_color = '#15803d' if active_order_method == "Stackable (Nesting)" else '#1971c2'
+                    poly = Poly3DCollection(faces, facecolors=color, edgecolors=edge_color, linewidths=1.5, alpha=0.8)
                     ax3d.add_collection3d(poly)
                     ax3d.text(-35, 20, z_start + h_scale/2, f"L{layer + 1}", color='#dc3545', fontweight='bold', fontsize=lbl_font, ha='right', va='center', zorder=100)
-                    ax3d.plot([-30, 0], [10, 0], [z_start + h_scale/2, z_start + h_scale/2], color='#dc3545', linestyle=':', linewidth=1)
+                
                 ax3d.set_xlim(-50, l_scale + 10)
                 ax3d.set_ylim(-20, w_scale + 10)
                 ax3d.set_zlim(0, active_layers * (h_scale + 5) + 10)
                 ax3d.view_init(elev=22, azim=-65)
                 ax3d.axis('off')
-                plt.title(f"Vertical Blueprint ({active_layers} Layers)", fontsize=11, fontweight='bold', color=st_text_color, pad=10)
+                plt.title(f"Vertical View ({active_layers} Layers)", fontsize=11, fontweight='bold', color=st_text_color, pad=10)
                 st.pyplot(fig3d)
                 plt.close(fig3d)
                 
@@ -1095,12 +1277,10 @@ if results:
                 try:
                     v_coords = mesh_cad.vertices
                     f_indices = mesh_cad.faces
-                    x_v, y_v, z_v = v_coords[:, 0], v_coords[:, 1], v_coords[:, 2]
-                    i_f, j_f, k_f = f_indices[:, 0], f_indices[:, 1], f_indices[:, 2]
                     fig_cad = go.Figure(data=[
                         go.Mesh3d(
-                            x=x_v, y=y_v, z=z_v,
-                            i=i_f, j=j_f, k=k_f,
+                            x=v_coords[:, 0], y=v_coords[:, 1], z=v_coords[:, 2],
+                            i=f_indices[:, 0], j=f_indices[:, 1], k=f_indices[:, 2],
                             color='#d1d5db', opacity=1.0,
                             flatshading=False,
                             lighting=dict(ambient=0.5, diffuse=0.9, roughness=0.15, specular=1.6, fresnel=0.6),
@@ -1115,90 +1295,14 @@ if results:
                 except Exception as e_plotly:
                     st.info(f"Placeholder model: {e_plotly}")
             else:
-                st.info("💡 Please upload a 3D CAD (.STL/.STEP) file in the accordion to activate this rotatable digital twin viewer!")
+                st.info(f"💡 Active component is `{selected_pilot}`. Upload a custom `.STL` or `.STEP` file above to view an interactive digital CAD twin.")
         with col_packing_3d:
             st.markdown("##### 📦 Rotatable 3D Box Packing Layout")
             try:
                 fig_pack = go.Figure()
-                def add_wireframe_compartment(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz):
-                    cv = np.array([
-                        [x_pos, y_pos, z_pos], [x_pos + dx, y_pos, z_pos],
-                        [x_pos + dx, y_pos + dy, z_pos], [x_pos, y_pos + dy, z_pos],
-                        [x_pos, y_pos, z_pos + dz], [x_pos + dx, y_pos + dz, z_pos + dz],
-                        [x_pos + dx, y_pos + dy, z_pos + dz], [x_pos, y_pos + dy, z_pos + dz]
-                    ])
-                    edges_c = [
-                        (0, 1), (1, 2), (2, 3), (3, 0),
-                        (4, 5), (5, 6), (6, 7), (7, 4),
-                        (0, 4), (1, 5), (2, 6), (3, 7)
-                    ]
-                    for edge in edges_c:
-                        fig_scene.add_trace(go.Scatter3d(
-                            x=[cv[edge[0]][0], cv[edge[1]][0]],
-                            y=[cv[edge[0]][1], cv[edge[1]][1]],
-                            z=[cv[edge[0]][2], cv[edge[1]][2]],
-                            mode='lines',
-                            line=dict(color='rgba(150, 150, 150, 0.4)', width=2),
-                            showlegend=False, hoverinfo='skip'
-                        ))
-                def add_plotly_mesh_part(fig_scene, x_pos, y_pos, z_pos, dx, dy, dz, raw_v, raw_f, text_str):
-                    min_v = np.min(raw_v, axis=0)
-                    max_v = np.max(raw_v, axis=0)
-                    raw_extent = max_v - min_v
-                    for d_idx in range(3):
-                        if raw_extent[d_idx] == 0: raw_extent[d_idx] = 1.0
-                    best_perm = None
-                    min_error = float('inf')
-                    for perm in itertools.permutations([0, 1, 2]):
-                        perm_extent = raw_extent[list(perm)]
-                        ratios = np.array([dx, dy, dz]) / perm_extent
-                        error = np.std(ratios)
-                        if error < min_error:
-                            min_error = error
-                            best_perm = perm
-                    v_aligned = (raw_v - min_v)[:, list(best_perm)]
-                    aligned_extent = raw_extent[list(best_perm)]
-                    scale_factor = np.min(np.array([dx, dy, dz]) / aligned_extent)
-                    v_scaled = v_aligned * scale_factor
-                    scaled_extent = aligned_extent * scale_factor
-                    gap_x = dx - scaled_extent[0]
-                    gap_y = dy - scaled_extent[1]
-                    gap_z = dz - scaled_extent[2]
-                    v_final = v_scaled + np.array([x_pos + gap_x/2, y_pos + gap_y/2, z_pos + gap_z/2])
-                    fig_scene.add_trace(go.Mesh3d(
-                        x=v_final[:, 0], y=v_final[:, 1], z=v_final[:, 2],
-                        i=raw_f[:, 0], j=raw_f[:, 1], k=raw_f[:, 2],
-                        color='#74c0fc', opacity=1.0,
-                        flatshading=False,
-                        lighting=dict(ambient=0.5, diffuse=0.9, specular=1.2, roughness=0.15, fresnel=0.5),
-                        name=text_str, hoverinfo="text", text=text_str, showlegend=False
-                    ))
-                total_grid_w = nx * ox + (nx - 1) * sep_xy
-                total_grid_h = ny * oy + (ny - 1) * sep_xy
-                leftover_x = (box_l - 2 * clear_side) - total_grid_w
-                leftover_y = (box_w - 2 * clear_side) - total_grid_h
-                start_x_offset = clear_side + (leftover_x / 2)
-                start_y_offset = clear_side + (leftover_y / 2)
+                parts_per_layer = max(1, nx * ny)
+                active_layers = int(np.ceil(active_quantity / parts_per_layer)) if active_order_method != "Random (Bulk Pour)" else 1
                 
-                parts_placed = 0
-                for layer in range(active_layers):
-                    z_pos = layer * (oz + sep_z)
-                    for r in range(ny):
-                        y_pos = start_y_offset + r * (oy + sep_xy)
-                        for c in range(nx):
-                            if parts_placed >= active_quantity:
-                                break
-                            x_pos = start_x_offset + c * (ox + sep_xy)
-                            add_wireframe_compartment(fig_pack, x_pos, y_pos, z_pos, ox, oy, oz)
-                            if mesh_cad is not None and r == 0 and c == 0:
-                                try:
-                                    add_plotly_mesh_part(
-                                        fig_pack, x_pos, y_pos, z_pos, ox, oy, oz, 
-                                        mesh_cad.vertices, mesh_cad.faces, f"Part Layer {layer+1}"
-                                    )
-                                except Exception:
-                                    pass
-                            parts_placed += 1
                 box_v = np.array([
                     [0, 0, 0], [box_l, 0, 0], [box_l, box_w, 0], [0, box_w, 0],
                     [0, 0, viz_box_active["Int. Height [mm]"]], [box_l, 0, viz_box_active["Int. Height [mm]"]],
@@ -1224,13 +1328,13 @@ if results:
                 st.plotly_chart(fig_pack, use_container_width=True)
             except Exception as e_pack_plotly:
                 st.warning(f"Error rendering interactive 3D box: {e_pack_plotly}")
-                
+
     # ==========================================================================
-    # TAB 2: PALLET STACKING OPTIMIZER & COMPARATIVE ANALYSIS
+    # TAB 2: PALLET STACKING OPTIMIZER
     # ==========================================================================
     with tab_pallet:
         st.subheader("🚛 Multi-Pallet Optimization Engine")
-        st.markdown(f"Pallet transport optimization aligned to packaging directive: \*\*{max_pallet_height_limit} mm max height\*\* and \*\*{max_pallet_weight_limit} kg gross weight limit\*\*.")
+        st.markdown(f"Pallet transport optimization aligned to packaging directive: **{max_pallet_height_limit} mm max height** and **{max_pallet_weight_limit} kg gross weight limit**.")
         
         PALLETS = {
             "EPAL 1 (Standard)": {"l": 1200, "w": 800, "tare": 23.0, "pallet_h": 144.0},
@@ -1241,24 +1345,22 @@ if results:
         row_alt1, found1 = get_resolved_directive_row(df_inventory, alt1_l, alt1_w, alt1_h, alt1_q)
         row_alt2, found2 = get_resolved_directive_row(df_inventory, alt2_l, alt2_w, alt2_h, alt2_q)
         
-        # Calculate maximum default pack counts
         qty_alt1, _, _, _ = calculate_packing(
             row_alt1['Int.Length [mm]'], row_alt1['Width [mm]'], row_alt1['Height [mm]'],
             prod_l, prod_w, prod_h, orientation_rule, clear_side, clear_height, sep_xy, sep_z,
-            lot_alignment_enabled, lot_step
+            order_method=active_order_method, nesting_offset=nesting_offset_val, bulk_density=bulk_density_pct/100.0,
+            enforce_lot=lot_alignment_enabled, lot_multiplier=lot_step
         )
         row_alt1["No of Parts per Box"] = qty_alt1
         qty_alt2, _, _, _ = calculate_packing(
             row_alt2['Int.Length [mm]'], row_alt2['Width [mm]'], row_alt2['Height [mm]'],
             prod_l, prod_w, prod_h, orientation_rule, clear_side, clear_height, sep_xy, sep_z,
-            lot_alignment_enabled, lot_step
+            order_method=active_order_method, nesting_offset=nesting_offset_val, bulk_density=bulk_density_pct/100.0,
+            enforce_lot=lot_alignment_enabled, lot_multiplier=lot_step
         )
         row_alt2["No of Parts per Box"] = qty_alt2
         
-        # CVSE Recommendation remains fully dynamic & reactive to the manual slider:
-        cvse_pcs, cvse_box_wt, _ = get_live_box_metrics(viz_box_rank1, prod_wt)
-        
-        # Reference Alternatives remain strictly fixed to their calculated geometric capacities:
+        cvse_pcs, cvse_box_wt, _ = get_live_box_metrics(viz_box_rank1, prod_wt, prod_l, prod_w, prod_h)
         a1_pcs = int(row_alt1["No of Parts per Box"])
         a1_box_weight = estimate_box_weight(
             row_alt1["Ext. Length [mm]"], 
@@ -1276,7 +1378,6 @@ if results:
         )
         a2_box_wt = round((a2_pcs * prod_wt) + a2_box_weight, 2)
         
-        # Calculate dynamic Pallet Stack Metrics using dynamically adjusted box configurations
         bt_cvse, _, _, pcs_cvse, wt_cvse, _, _, _ = calculate_pallet_stacking(
             1200, 800, viz_box_rank1["Ext. Length [mm]"], viz_box_rank1["Ext. Width [mm]"], viz_box_rank1["Ext. Height [mm]"], 
             cvse_box_wt, cvse_pcs, max_h=pure_box_max_h
@@ -1295,7 +1396,6 @@ if results:
         potential_saving_alt2 = max(0.0, cost_a2 - cost_cvse)
         
         st.markdown("### 📊 Executive Yield & Cost Impact Overview")
-        
         wt_cvse_class = "win" if wt_cvse <= max_pallet_weight_limit else "danger"
         wt_a1_class = "win" if wt_a1 <= max_pallet_weight_limit else "danger"
         wt_a2_class = "win" if wt_a2 <= max_pallet_weight_limit else "danger"
@@ -1358,7 +1458,6 @@ if results:
 </div>
 """, unsafe_allow_html=True)
         
-        # FIXED: Priority score winner check based on live recalculations
         best_overall_box_spec = viz_box_rank1["Box ID / Specification"]
         st.markdown(f"""
         <div class='success-box'>
@@ -1368,11 +1467,11 @@ if results:
         """, unsafe_allow_html=True)
         
         st.markdown("<hr style='margin:25px 0;'>", unsafe_allow_html=True)
-        st.markdown(f"### 📦 Palletization Report & Interactive 3D Stacking Model")
+        st.markdown("### 📦 Palletization Report & Interactive Stacking Model")
         
         safe_index_t2 = get_safe_index(available_boxes, st.session_state["global_selected_box"])
         selected_box_t2 = st.selectbox(
-            "Select any Cardboard Box to inspect its detailed pallet loading report & rotatable 3D stack (Synchronized):",
+            "Select any Cardboard Box to inspect its detailed pallet loading report (Synchronized):",
             options=available_boxes,
             index=safe_index_t2,
             key="tab2_box_selector",
@@ -1380,163 +1479,53 @@ if results:
         )
         
         viz_box_t2 = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
-        
-        # Pull dynamically adjusted active loading metrics
-        active_t2_pcs, active_t2_wt, _ = get_live_box_metrics(viz_box_t2, prod_wt)
+        active_t2_pcs, active_t2_wt, _ = get_live_box_metrics(viz_box_t2, prod_wt, prod_l, prod_w, prod_h)
         bx_ext_l = viz_box_t2["Ext. Length [mm]"]
         bx_ext_w = viz_box_t2["Ext. Width [mm]"]
         bx_ext_h = viz_box_t2["Ext. Height [mm]"]
         
-        col_metrics, col_plotly_pallet = st.columns([4, 6])
-        with col_metrics:
-            st.markdown(f"#### 📋 Stacking Report for \*\*{st.session_state['global_selected_box']}\*\*")
-            st.caption(f"Calculations reflect active configuration: \*\*{active_t2_pcs} pcs/box\*\* @ \*\*{active_t2_wt} kg/box\*\*")
-            
-            b_total_1, z_layers_1, _, p_pcs_1, p_wt_1, orient_1, nx_1, ny_1 = calculate_pallet_stacking(
-                PALLETS["EPAL 1 (Standard)"]["l"], PALLETS["EPAL 1 (Standard)"]["w"],
-                bx_ext_l, bx_ext_w, bx_ext_h, active_t2_wt, active_t2_pcs, PALLETS["EPAL 1 (Standard)"]["tare"], max_h=pure_box_max_h
-            )
-            b_total_2, z_layers_2, _, p_pcs_2, p_wt_2, orient_2, nx_2, ny_2 = calculate_pallet_stacking(
-                PALLETS["EPAL 2 (Industrial)"]["l"], PALLETS["EPAL 2 (Industrial)"]["w"],
-                bx_ext_l, bx_ext_w, bx_ext_h, active_t2_wt, active_t2_pcs, PALLETS["EPAL 2 (Industrial)"]["tare"], max_h=pure_box_max_h
-            )
+        b_total_1, z_layers_1, _, p_pcs_1, p_wt_1, orient_1, nx_1, ny_1 = calculate_pallet_stacking(
+            PALLETS["EPAL 1 (Standard)"]["l"], PALLETS["EPAL 1 (Standard)"]["w"],
+            bx_ext_l, bx_ext_w, bx_ext_h, active_t2_wt, active_t2_pcs, PALLETS["EPAL 1 (Standard)"]["tare"], max_h=pure_box_max_h
+        )
+        b_total_2, z_layers_2, _, p_pcs_2, p_wt_2, orient_2, nx_2, ny_2 = calculate_pallet_stacking(
+            PALLETS["EPAL 2 (Industrial)"]["l"], PALLETS["EPAL 2 (Industrial)"]["w"],
+            bx_ext_l, bx_ext_w, bx_ext_h, active_t2_wt, active_t2_pcs, PALLETS["EPAL 2 (Industrial)"]["tare"], max_h=pure_box_max_h
+        )
+        
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
             st.markdown(f"""
             <div style='background-color: var(--background-color); padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid var(--text-color); border-left: 5px solid #228be6;'>
                 <h5 style='margin-top: 0px;'>🥇 EPAL 1 standard (1200 x 800 mm)</h5>
                 <b>Orientation:</b> {orient_1}<br>
                 📐 <b>Layer Layout Grid:</b> {nx_1} x {ny_1} (X x Y)<br>
-                🪜 <b>Stacking Height (Vertical Layers):</b> {z_layers_1} layers<br>
+                🪜 <b>Stacking Height:</b> {z_layers_1} layers<br>
                 📦 <b>Total Boxes:</b> {b_total_1} units<br>
                 ✨ <b>Total Pieces:</b> <b style='color:#2b8a3e;'>{p_pcs_1} Pcs</b><br>
                 ⚖️ <b>Pallet Weight:</b> <b>{p_wt_1} kg</b> (&lt;{max_pallet_weight_limit} kg directive)
             </div>
             """, unsafe_allow_html=True)
+        with col_m2:
             st.markdown(f"""
             <div style='background-color: var(--background-color); padding: 15px; border-radius: 8px; border: 1px solid var(--text-color); border-left: 5px solid #15aabf;'>
                 <h5 style='margin-top: 0px;'>🥈 EPAL 2 Industrial (1200 x 1000 mm)</h5>
                 <b>Orientation:</b> {orient_2}<br>
                 📐 <b>Layer Layout Grid:</b> {nx_2} x {ny_2} (X x Y)<br>
-                🪜 <b>Stacking Height (Vertical Layers):</b> {z_layers_2} layers<br>
+                🪜 <b>Stacking Height:</b> {z_layers_2} layers<br>
                 📦 <b>Total Boxes:</b> {b_total_2} units<br>
                 ✨ <b>Total Pieces:</b> <b style='color:#2b8a3e;'>{p_pcs_2} Pcs</b><br>
                 ⚖️ <b>Pallet Weight:</b> <b>{p_wt_2} kg</b> (&lt;{max_pallet_weight_limit} kg directive)
             </div>
             """, unsafe_allow_html=True)
-        with col_plotly_pallet:
-            st.markdown("##### 🔄 High-Definition Rotatable 3D Palletizer View")
-            pallet_sel = st.radio("Choose Stacking Blueprint Pallet View:", options=["EPAL 1 (1200x800)", "EPAL 2 (1200x1000)"], horizontal=True)
-            active_p_spec = PALLETS["EPAL 1 (Standard)"] if "EPAL 1" in pallet_sel else PALLETS["EPAL 2 (Industrial)"]
-            p_boxes, p_layers, p_l_qty, _, _, p_orient, nx_act, ny_act = calculate_pallet_stacking(
-                active_p_spec["l"], active_p_spec["w"],
-                bx_ext_l, bx_ext_w, bx_ext_h, active_t2_wt, active_t2_pcs, active_p_spec["tare"], max_h=pure_box_max_h
-            )
-            try:
-                fig_pallet_3d = go.Figure()
-                pallet_h = active_p_spec["pallet_h"] 
-                fig_pallet_3d.add_trace(go.Mesh3d(
-                    x=[0, active_p_spec["l"], active_p_spec["l"], 0, 0, active_p_spec["l"], active_p_spec["l"], 0],
-                    y=[0, 0, active_p_spec["w"], active_p_spec["w"], 0, 0, active_p_spec["w"], active_p_spec["w"]],
-                    z=[122, 122, 122, 122, 144, 144, 144, 144],
-                    i=[0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1],
-                    j=[1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6],
-                    k=[2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5],
-                    color='#d2b48c', opacity=0.95, name="Top Deck Boards",
-                    flatshading=True, lighting=dict(ambient=0.6, diffuse=0.8, specular=0.1)
-                ))
-                runners_y = [
-                    (0, 100),
-                    (active_p_spec["w"]/2 - 50, active_p_spec["w"]/2 + 50),
-                    (active_p_spec["w"] - 100, active_p_spec["w"])
-                ]
-                for r_idx, (y0, y1) in enumerate(runners_y):
-                    fig_pallet_3d.add_trace(go.Mesh3d(
-                        x=[0, active_p_spec["l"], active_p_spec["l"], 0, 0, active_p_spec["l"], active_p_spec["l"], 0],
-                        y=[y0, y0, y1, y1, y0, y0, y1, y1],
-                        z=[22, 22, 22, 22, 122, 122, 122, 122],
-                        i=[0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1],
-                        j=[1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6],
-                        k=[2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5],
-                        color='#cd853f', opacity=0.95, name=f"Runner {r_idx+1}",
-                        flatshading=True, lighting=dict(ambient=0.6, diffuse=0.8, specular=0.1)
-                    ))
-                fig_pallet_3d.add_trace(go.Mesh3d(
-                    x=[0, active_p_spec["l"], active_p_spec["l"], 0, 0, active_p_spec["l"], active_p_spec["l"], 0],
-                    y=[0, 0, active_p_spec["w"], active_p_spec["w"], 0, 0, active_p_spec["w"], active_p_spec["w"]],
-                    z=[0, 0, 0, 0, 22, 22, 22, 22],
-                    i=[0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1],
-                    j=[1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6],
-                    k=[2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5],
-                    color='#d2b48c', opacity=0.95, name="Bottom Boards",
-                    flatshading=True, lighting=dict(ambient=0.6, diffuse=0.8, specular=0.1)
-                ))
-                bx_dx = bx_ext_l if p_orient == "Lengthwise (L-parallel)" else bx_ext_w
-                bx_dy = bx_ext_w if p_orient == "Lengthwise (L-parallel)" else bx_ext_l
-                bx_dz = bx_ext_h
-                start_x = (active_p_spec["l"] - nx_act * bx_dx) / 2
-                start_y = (active_p_spec["w"] - ny_act * bx_dy) / 2
-                line_x, line_y, line_z = [], [], []
-                colors_gradient = ["#1c7ed6", "#228be6", "#339af0", "#4dabf7", "#74c0fc", "#a5d8ff"]
-                
-                for layer in range(p_layers):
-                    z0 = layer * bx_dz + pallet_h 
-                    z1 = z0 + bx_dz
-                    color = colors_gradient[layer % len(colors_gradient)]
-                    for r in range(ny_act):
-                        y0 = start_y + r * bx_dy
-                        y1 = y0 + bx_dy
-                        for c in range(nx_act):
-                            x0 = start_x + c * bx_dx
-                            x1 = x0 + bx_dx
-                            edges = [
-                                ((x0, y0, z0), (x1, y0, z0)), ((x1, y0, z0), (x1, y1, z0)),
-                                ((x1, y1, z0), (x0, y1, z0)), ((x0, y1, z0), (x0, y0, z0)),
-                                ((x0, y0, z1), (x1, y0, z1)), ((x1, y0, z1), (x1, y1, z1)),
-                                ((x1, y1, z1), (x0, y1, z1)), ((x0, y1, z1), (x0, y0, z1)),
-                                ((x0, y0, z0), (x0, y0, z1)), ((x1, y0, z0), (x1, y0, z1)),
-                                ((x1, y1, z0), (x1, y1, z1)), ((x0, y1, z0), (x0, y1, z1))
-                            ]
-                            for p1, p2 in edges:
-                                line_x.extend([p1[0], p2[0], None])
-                                line_y.extend([p1[1], p2[1], None])
-                                line_z.extend([p1[2], p2[2], None])
-                            fig_pallet_3d.add_trace(go.Mesh3d(
-                                x=[x0, x1, x1, x0, x0, x1, x1, x0],
-                                y=[y0, y0, y1, y1, y0, y0, y1, y1],
-                                z=[z0, z0, z0, z0, z1, z1, z1, z1],
-                                i=[0, 0, 4, 4, 0, 0, 2, 2, 0, 0, 1, 1],
-                                j=[1, 2, 5, 6, 1, 5, 3, 7, 3, 7, 2, 6],
-                                k=[2, 3, 6, 7, 5, 4, 7, 6, 7, 4, 6, 5],
-                                color=color, opacity=0.55, showlegend=False, hoverinfo='skip',
-                                flatshading=True,
-                                lighting=dict(ambient=0.6, diffuse=0.8, roughness=0.3, specular=0.15)
-                            ))
-                fig_pallet_3d.add_trace(go.Scatter3d(
-                    x=line_x, y=line_y, z=line_z,
-                    mode='lines', line=dict(color='#1864ab', width=2),
-                    name="Cardboard Boxes"
-                ))
-                fig_pallet_3d.update_layout(
-                    scene=dict(
-                        xaxis=dict(title="Length (mm)", range=[-50, active_p_spec["l"]+50], gridcolor='lightgray'),
-                        yaxis=dict(title="Width (mm)", range=[-50, active_p_spec["w"]+50], gridcolor='lightgray'),
-                        zaxis=dict(title="Height (mm)", range=[0, 1100], gridcolor='lightgray'),
-                        aspectmode='data',
-                        camera=dict(eye=dict(x=1.6, y=1.6, z=1.2))
-                    ),
-                    margin=dict(l=0, r=0, b=0, t=0),
-                    height=500
-                )
-                st.plotly_chart(fig_pallet_3d, use_container_width=True)
-            except Exception as e_pack_plotly:
-                st.warning(f"Error rendering interactive 3D pallet: {e_pack_plotly}")
 
     # ==========================================================================
-    # TAB 3: MCKEE GRAVITY COMPRESSION SAFETY CHECK
+    # TAB 3: MCKEE COMPRESSION SAFETY CHECK
     # ==========================================================================
     with tab_compression:
-        st.subheader("🗜 ... Corrugated Cardboard McKee Compression Strength Checker")
-        st.markdown(f"Validate if the bottom cardboard box can handle vertical static loads on a \*\*{max_pallet_height_limit} mm\*\* pallet layout.")
-        st.markdown("#### ⚙️ Stacking Setup")
+        st.subheader("🗜️ Corrugated Cardboard McKee Compression Strength Checker")
+        st.markdown(f"Validate if the bottom cardboard box can handle vertical static loads on a **{max_pallet_height_limit} mm** pallet layout.")
+        
         col_setup_1, col_setup_2 = st.columns(2)
         with col_setup_1:
             stack_style = st.selectbox(
@@ -1545,65 +1534,17 @@ if results:
                 help="Single Pallet checks column load. Double Stacking adds the entire gross weight of the top pallet."
             )
         with col_setup_2:
-            cvse_id = viz_box_rank1["Box ID / Specification"]
-            alt1_id = f"{row_alt1['BoxSize']} [{alt1_q}]"
-            alt2_id = f"{row_alt2['BoxSize']} [{alt2_q}]"
-            
-            dropdown_mapping = [
-                (f"👑 CVSE Recom Box: {cvse_id}", "cvse"),
-                (f"📋 Packaging Directive Alt 1: {alt1_id}", "alt1"),
-                (f"📋 Packaging Directive Alt 2: {alt2_id}", "alt2"),
-                ("────────── OTHER INVENTORY BOXES ──────────", "separator")
-            ]
-            for b in available_boxes:
-                if b != cvse_id:
-                    dropdown_mapping.append((f"📦 Other: {b}", b))
-                    
-            selected_display_label = st.selectbox(
+            safe_index_t3 = get_safe_index(available_boxes, st.session_state["global_selected_box"])
+            selected_box_t3 = st.selectbox(
                 "Select Box Type to inspect compression strength (Synchronized):",
-                options=[item[0] for item in dropdown_mapping],
-                index=0,
-                key="tab3_box_selector_custom"
+                options=available_boxes,
+                index=safe_index_t3,
+                key="tab3_box_selector_sync",
+                on_change=sync_from_tab3
             )
-            
-            selected_key_type = next((item[1] for item in dropdown_mapping if item[0] == selected_display_label), "cvse")
-            
-            if selected_key_type == "cvse":
-                viz_box_t3 = viz_box_rank1
-                st.session_state["global_selected_box"] = cvse_id
-            elif selected_key_type == "alt1":
-                viz_box_t3 = pd.Series({
-                    "Box ID / Specification": alt1_id,
-                    "Quality Class": alt1_q,
-                    "Int. Length [mm]": row_alt1["Int.Length [mm]"],
-                    "Int. Width [mm]": row_alt1["Width [mm]"],
-                    "Int. Height [mm]": row_alt1["Height [mm]"],
-                    "Ext. Length [mm]": alt1_l,
-                    "Ext. Width [mm]": alt1_w,
-                    "Ext. Height [mm]": alt1_h,
-                    "Total Weight (kg)": wt_alt1,
-                    "No of Parts per Box": qty_alt1,
-                    "Flute Type": alt1_q
-                })
-            elif selected_key_type == "alt2":
-                viz_box_t3 = pd.Series({
-                    "Box ID / Specification": alt2_id,
-                    "Quality Class": alt2_q,
-                    "Int. Length [mm]": row_alt2["Int.Length [mm]"],
-                    "Int. Width [mm]": row_alt2["Width [mm]"],
-                    "Int. Height [mm]": row_alt2["Height [mm]"],
-                    "Ext. Length [mm]": alt2_l,
-                    "Ext. Width [mm]": alt2_w,
-                    "Ext. Height [mm]": alt2_h,
-                    "Total Weight (kg)": wt_alt2,
-                    "No of Parts per Box": qty_alt2,
-                    "Flute Type": alt2_q
-                })
-            else:
-                viz_box_t3 = sorted_df[sorted_df["Box ID / Specification"] == selected_key_type].iloc[0]
-                st.session_state["global_selected_box"] = selected_key_type
-                
-        st.markdown("#### 🪵 3. Load, Environment & Logistics Parameters")
+            viz_box_t3 = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
+
+        st.markdown("#### 🪵 Load, Environment & Logistics Parameters")
         col_moisture, col_spread, col_fragility = st.columns(3)
         with col_moisture:
             moisture_sel = st.selectbox("Moisture (Humidity):", ["Dry", "Normal", "Humid", "Wet"], index=1)
@@ -1611,6 +1552,7 @@ if results:
             spread_sel = st.selectbox("Load spread:", ["Even", "Uneven", "Center", "Corner"], index=0)
         with col_fragility:
             fragility_sel = st.selectbox("Fragility:", ["Low", "Medium", "High"], index=1)
+            
         col_storage, col_transport = st.columns(2)
         with col_storage:
             storage_sel = st.selectbox("Storage Duration:", ["Short (days)", "Medium (weeks)", "Long (months)"], index=1)
@@ -1645,9 +1587,7 @@ if results:
         bx_ext_w_t3 = viz_box_t3.get("Ext.Width [mm]") or viz_box_t3.get("Ext. Width [mm]")
         bx_ext_h_t3 = viz_box_t3["Ext. Height [mm]"]
         
-        # McKee dynamically grabs the fine-tuned live quantity & weight rather than the database defaults
-        active_t3_pcs, active_t3_wt, _ = get_live_box_metrics(viz_box_t3, prod_wt)
-        
+        active_t3_pcs, active_t3_wt, _ = get_live_box_metrics(viz_box_t3, prod_wt, prod_l, prod_w, prod_h)
         _, z_layers_calc_t3, best_layer_qty_t3, _, p_wt_calc_t3, _, _, _ = calculate_pallet_stacking(
             1200, 800, bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, active_t3_wt, active_t3_pcs
         )
@@ -1669,64 +1609,26 @@ if results:
             
         st.markdown("#### 🔍 Structural Safety Verdict:")
         if actual_bottom_load_t3 == 0:
-            st.markdown(f"""
-            <div class='success-box'>
-                <b>🟢 Safe (Single Layer Stack):</b> No other layers stacked above this box on the pallet. Stacking failure is mathematically impossible.
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown("<div class='success-box'><b>🟢 Safe (Single Layer Stack):</b> No other layers stacked above this box on the pallet. Stacking failure is mathematically impossible.</div>", unsafe_allow_html=True)
         elif actual_bottom_load_t3 <= bct_safe_load_t3:
-            st.markdown(f"""
-            <div class='success-box'>
-                <b>🟢 Safe Stacking Approved:</b> The live actual load of <b>{actual_bottom_load_t3} kg</b> is within the safe design limit of <b>{bct_safe_load_t3} kg</b>! 
-                Cardboard quality class <b>{q_class_t3} ({q_name_t3})</b> is structurally safe for bottom layers under these environment variables!
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"<div class='success-box'><b>🟢 Safe Stacking Approved:</b> The live actual load of <b>{actual_bottom_load_t3} kg</b> is within the safe design limit of <b>{bct_safe_load_t3} kg</b>! Quality <b>{q_class_t3}</b> is structurally sound.</div>", unsafe_allow_html=True)
         else:
-            st.markdown(f"""
-            <div class='danger-box'>
-                <b>🚨 Warning - Structural Failure Risk:</b> The live actual load of <b>{actual_bottom_load_t3} kg</b> exceeds the safe design capacity of <b>{bct_safe_load_t3} kg</b>!<br>
-                <b>Recommendation:</b> Upgrade cardboard flute, decrease stacking height, or reinforce load paths.
-            </div>
-            """, unsafe_allow_html=True)
-            
-        st.markdown("<div class='guide-box'><h5>🧮 Step-by-Step Mathematical Workings (McKee Metric Standard):</h5>"
-                    "The Box Compression Test (BCT) is computed dynamically using live units:</div>", unsafe_allow_html=True)
-        st.latex(r"\text{BCT (Newtons)} = 1.82 \times \text{ECT} \times \sqrt{t \times P}")
-        st.latex(r"\text{BCT (kg)} = \frac{\text{BCT (Newtons)}}{9.81\text{ m/s}^2}")
-        st.latex(r"\text{Safe Design Capacity} = \frac{\text{BCT (kg)}}{\text{Combined Safety Factor (SF)}}")
-        st.markdown(f"""
-        <div class='guide-box' style='margin-top:-20px; border-top-left-radius:0px; border-top-right-radius:0px; border-top:0px;'>
-            <b>Active Live Parameters (Based on {active_t3_pcs} Pcs Loaded):</b>
-            <ul>
-                <li><b>ECT:</b> Quality class <b>{q_class_t3}</b> baseline is <b>{ect_val_t3} N/mm</b>.</li>
-                <li><b>t (Thickness):</b> Quality class <b>{q_class_t3}</b> baseline is <b>{thickness_val_t3} mm</b>.</li>
-                <li><b>P (Perimeter):</b> Measured boundary is <b>{int(box_perimeter_t3)} mm</b>.</li>
-            </ul>
-            <hr style='border: 0.5px solid rgba(148,163,184,0.3);'>
-            <b>Live Calculations:</b><br><br>
-            <b>1. Pristine Crushing Force:</b> 1.82 × {ect_val_t3} N/mm × √({thickness_val_t3} mm × {int(box_perimeter_t3)} mm) = <b>{bct_n_t3:.2f} Newtons</b><br>
-            <b>2. Mass Conversion (kg):</b> {bct_n_t3:.2f} N ÷ 9.81 m/s² = <b>{bct_kg_t3} kg</b><br>
-            <b>3. Environmental Safety Limit ({sf_t3}x):</b> {bct_kg_t3} kg ÷ {sf_t3} = <b>{bct_safe_load_t3} kg</b>
-        </div>
-        """, unsafe_allow_html=True)
+            st.markdown(f"<div class='danger-box'><b>🚨 Warning - Structural Failure Risk:</b> The live actual load of <b>{actual_bottom_load_t3} kg</b> exceeds safe capacity (<b>{bct_safe_load_t3} kg</b>)! Upgrade cardboard flute or reduce stack height.</div>", unsafe_allow_html=True)
 
 # Fail-safe warning display
 if not results:
     st.warning("⚠️ No suitable boxes in your database can fit this product under the active weight or dimension parameters.")
 
 # ==============================================================================
-# 7. COLLABORATIVE FEEDBACK HUB (WITH TEAMS WEBHOOK NOTIFICATIONS)
+# 7. COLLABORATIVE FEEDBACK HUB & ADMIN VIEW
 # ==============================================================================
 st.sidebar.markdown("<hr style='margin:15px 0; border:0; border-top:1px solid rgba(148,163,184,0.3);'>", unsafe_allow_html=True)
 st.sidebar.subheader("💬 App Feedback Hub")
-
 with st.sidebar.form("feedback_form", clear_on_submit=True):
     user_name = st.text_input("Your Name / Department:", placeholder="e.g., Jane Doe (Logistics)")
     rating = st.select_slider("Rate this tool:", options=["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐"], value="⭐⭐⭐⭐⭐")
     feedback_text = st.text_area("How can we improve this tool?", placeholder="Enter your feedback or bug reports here...")
-    
     submitted = st.form_submit_button("Submit Feedback", use_container_width=True)
-    
     if submitted:
         if feedback_text.strip() == "":
             st.error("Please enter some feedback comments before submitting.")
@@ -1737,80 +1639,12 @@ with st.sidebar.form("feedback_form", clear_on_submit=True):
                 "Rating": rating,
                 "Comments": feedback_text.strip()
             }
-            
-            # 1. Log Locally to CSV
             log_feedback_locally(feedback_entry)
             st.success("🎉 Thank you! Your feedback has been logged.")
-            
-            # 2. Trigger secure MS Teams notification
-            try:
-                import json
-                from urllib import request
-                
-                # Retrieve webhook URL securely from Secrets
-                if "teams" in st.secrets and st.secrets["teams"]["webhook_url"] != "":
-                    WEBHOOK_URL = st.secrets["teams"]["webhook_url"]
-                    
-                    # Design a modern Adaptive Card for Teams
-                    payload = {
-                        "type": "message",
-                        "attachments": [
-                            {
-                                "contentType": "application/vnd.microsoft.card.adaptive",
-                                "content": {
-                                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                                    "type": "AdaptiveCard",
-                                    "version": "1.2",
-                                    "body": [
-                                        {
-                                            "type": "TextBlock",
-                                            "text": "📦 New App Feedback Received!",
-                                            "weight": "Bolder",
-                                            "size": "Medium",
-                                            "color": "Accent"
-                                        },
-                                        {
-                                            "type": "FactSet",
-                                            "facts": [
-                                                {"title": "📅 Timestamp:", "value": feedback_entry["Timestamp"]},
-                                                {"title": "👤 Submitted By:", "value": feedback_entry["User"]},
-                                                {"title": "⭐ Rating:", "value": feedback_entry["Rating"]}
-                                            ]
-                                        },
-                                        {
-                                            "type": "TextBlock",
-                                            "text": f"💬 Comments:\n\"{feedback_entry['Comments']}\"",
-                                            "wrap": True,
-                                            "italic": True
-                                        }
-                                    ]
-                                }
-                            }
-                        ]
-                    }
-                    
-                    # Build and send secure HTTPS POST request
-                    req = request.Request(url=WEBHOOK_URL, method="POST")
-                    req.add_header("Content-Type", "application/json")
-                    jsondata = json.dumps(payload).encode("utf-8")
-                    
-                    with request.urlopen(req, data=jsondata) as response:
-                        if response.status not in [200, 201, 202]:
-                            print(f"Teams returned unexpected code: {response.status}")
-                else:
-                    print("Teams notification skipped: 'webhook_url' not configured in st.secrets.")
-                    
-            except Exception as e_teams:
-                print(f"Failed to post Teams webhook: {e_teams}")
 
-# ==============================================================================
-# 8. SECURE ADMIN VIEW PANEL
-# ==============================================================================
 st.markdown("<br><br><hr style='border:0; border-top:1px solid rgba(148,163,184,0.2);'>", unsafe_allow_html=True)
-
 with st.expander("🔐 Admin Panel: View Collected Feedback"):
     admin_password = st.text_input("Enter Admin Password to view logs:", type="password", key="admin_pwd_input")
-    
     if admin_password == "BSHAdmin2026":
         feedback_file = "feedback_log.csv"
         if os.path.exists(feedback_file):
@@ -1818,7 +1652,6 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
                 feed_df = pd.read_csv(feedback_file)
                 st.markdown(f"### 📋 Total Submissions: {len(feed_df)}")
                 st.dataframe(feed_df, use_container_width=True)
-                
                 csv_feedback = feed_df.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="📥 Export Feedback Database to CSV",
