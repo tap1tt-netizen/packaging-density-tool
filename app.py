@@ -577,7 +577,7 @@ with st.sidebar.expander("📂 Product Specifications & CAD", expanded=True):
     # Sync with root state
     st.session_state["spec_material"] = selected_material
     
-    # Material-Density Evaluator: Calculate density instantly based on the active state values
+    # Material-Density Evaluator (CORRECTED WEIGHT CONVERSION)
     temp_l = st.session_state["spec_prod_l"]
     temp_w = st.session_state["spec_prod_w"]
     temp_h = st.session_state["spec_prod_h"]
@@ -589,15 +589,19 @@ with st.sidebar.expander("📂 Product Specifications & CAD", expanded=True):
     else:
         density = MATERIAL_DENSITIES[selected_material]
         mesh_display = st.session_state.get("active_cad_mesh")
+        
         if mesh_display is not None and hasattr(mesh_display, "volume") and mesh_display.volume > 0:
             cad_volume = mesh_display.volume
             # Handle standard cm to mm scaling variables
-            is_cm_scale = temp_l < 500.0
+            is_cm_scale = temp_l < 50.0 # Standard threshold to check if CAD bounds are in cm
             if is_cm_scale:
-                cad_volume = cad_volume * 1000.0 if cad_volume < 100000 else cad_volume
+                cad_volume *= 1000.0 # Convert cm3 to mm3
+            
+            # mm3 * (g/cm3) * 1e-6 -> kg
             calculated_weight_kg = round(cad_volume * density * 1e-6, 3)
         else:
-            calculated_weight_kg = round(temp_l * temp_w * temp_h * 1e-6 * density, 3)
+            # Manual inputs: (L * W * H in mm3) * density * 1e-6 -> kg
+            calculated_weight_kg = round(temp_l * temp_w * temp_h * density * 1e-6, 3)
         
         st.session_state["spec_prod_wt"] = calculated_weight_kg
         st.info(f"⚖️ Solid Weight ({selected_material}): **{calculated_weight_kg} kg**")
