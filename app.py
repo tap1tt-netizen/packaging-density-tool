@@ -11,235 +11,34 @@ from PIL import Image
 import base64
 import plotly.graph_objects as go
 import itertools
+from email.mime.text import MIMEText
 
-# ==============================================================================
-# 1. PAGE CONFIGURATION & ENTERPRISE DESIGN SYSTEM (CSS)
-# ==============================================================================
+# 🌟 IMPORT MODULAR MODULES
+from styles import inject_corporate_theme
+from database import load_database, log_feedback
+from calculations import (
+    calculate_packing, determine_placement_style,
+    estimate_box_weight, get_live_box_metrics, calculate_pallet_stacking
+)
+
+# 1. PAGE CONFIGURATION & THEME INJECTION
 st.set_page_config(
     page_title="Packaging Density & Box Recommender Tool",
     page_icon="📦",
     layout="wide",
     initial_sidebar_state="expanded"
 )
-# Initialize session state for freight if not present
+inject_corporate_theme()
+
+# Initialize session state variables
 if "global_freight_mode" not in st.session_state:
     st.session_state["global_freight_mode"] = "All Freight Modes"
-# Custom Theme-Proof Styling: Supports Light and Dark themes perfectly
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght=400;500;600;700;800&display=swap');
-    html, body, [class*="css"] {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-    /* Executive SaaS Header */
-    .app-header {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-        padding: 22px 28px;
-        border-radius: 14px;
-        color: #ffffff;
-        margin-bottom: 22px;
-        box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.2);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-    .app-header h1 {
-        font-size: 24px;
-        font-weight: 800;
-        letter-spacing: -0.02em;
-        margin: 0;
-        color: #ffffff !important;
-    }
-    .app-header p {
-        font-size: 13px;
-        color: #94a3b8;
-        margin: 5px 0 0 0;
-    }
-    /* Modern KPI Cards */
-    .metric-box {
-        background-color: var(--background-color);
-        padding: 16px 18px;
-        border-radius: 12px;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        border-left: 5px solid #2563eb;
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
-        min-height: 110px;
-        color: var(--text-color);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .metric-box:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 18px -4px rgba(0,0,0,0.08);
-    }
-    .stDataFrame {
-        border-radius: 12px;
-        overflow: hidden;
-    }
-    .guide-box {
-        background-color: var(--background-color);
-        padding: 20px;
-        border-radius: 12px;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        color: var(--text-color);
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
-    }
-    .warning-box {
-        background-color: rgba(245, 159, 0, 0.12);
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 5px solid #f59f00;
-        margin-bottom: 15px;
-        color: var(--text-color);
-    }
-    .danger-box {
-        background-color: rgba(239, 68, 68, 0.12);
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 5px solid #ef4444;
-        margin-bottom: 15px;
-        color: var(--text-color);
-    }
-    .success-box {
-        background-color: rgba(34, 197, 94, 0.12);
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 5px solid #22c55e;
-        margin-bottom: 15px;
-        color: var(--text-color);
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-        padding-bottom: 4px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 8px 8px 0px 0px;
-        padding: 10px 18px;
-        font-weight: 600;
-        font-size: 14px;
-    }
-    .comparison-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 20px;
-        margin-top: 15px;
-        margin-bottom: 25px;
-    }
-    .comp-card {
-        background-color: var(--background-color);
-        border-radius: 14px;
-        padding: 22px;
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        display: flex;
-        flex-direction: column;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .comp-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 18px -4px rgba(0,0,0,0.08);
-    }
-    .comp-card.hero {
-        border: 2px solid #2563eb;
-        box-shadow: 0 10px 25px rgba(37, 99, 235, 0.12);
-        position: relative;
-        background-color: rgba(37, 99, 235, 0.015);
-    }
-    .hero-badge {
-        position: absolute;
-        top: -12px;
-        right: 22px;
-        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-        color: white !important;
-        font-size: 10px;
-        font-weight: 800;
-        padding: 4px 12px;
-        border-radius: 20px;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
-    }
-    .card-header {
-        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-        padding-bottom: 12px;
-        margin-bottom: 15px;
-    }
-    .card-header h3 {
-        margin: 0;
-        font-size: 18px;
-        font-weight: 800;
-        letter-spacing: -0.01em;
-    }
-    .card-header .dims {
-        font-size: 13px;
-        color: #64748b;
-        margin-top: 4px;
-    }
-    .metric-row {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 10px;
-        font-size: 14px;
-    }
-    .metric-row .label {
-        color: #64748b;
-    }
-    .metric-row .val {
-        font-weight: 700;
-    }
-    .val.win {
-        color: #22c55e !important;
-    }
-    .val.danger {
-        color: #ef4444 !important;
-    }
-    .val.saving {
-        background-color: rgba(34, 197, 94, 0.15);
-        color: #22c55e !important;
-        padding: 2px 8px;
-        border-radius: 6px;
-        font-size: 13px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ==============================================================================
-# 2. BULLETPROOF DATABASE READER
-# ==============================================================================
-@st.cache_data
-def load_database():
-    possible_files = ['1.xlsx', '1.xlsx_Sheet1_Sheet1.csv']
-    df = None
-    loaded_file = None
-    for file in possible_files:
-        if os.path.exists(file):
-            loaded_file = file
-            if file.endswith('.csv'):
-                df = pd.read_csv(file)
-            else:
-                df = pd.read_excel(file)
-            break
-    if df is None:
-        raise FileNotFoundError("Could not find box database file.")
-        # Drop visual spacing rows/empty spacer rows
-    df = df.dropna(subset=['BoxSize']).copy()
-    
-    # Filter out single-flute qualities from database dynamically
-    df = df[~df['Quality'].astype(str).str.strip().isin(['1.20B', '1.20C'])].copy()
-    
-    numeric_cols = [
-        'Ext. Length [mm]', 'Ext.Width [mm]', 'Ext. Height [mm]',
-        'Int.Length [mm]', 'Width [mm]', 'Height [mm]', 'Max. Load [kg]'
-    ]
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-    df['Box Price (€)'] = pd.to_numeric(df['PL'], errors='coerce').fillna(0.0)
-    return df, loaded_file
 
 try:
     df_inventory, filename_loaded = load_database()
 except Exception as e:
     st.error("⚠️ Database connection failed!")
-    st.info("Please place your cardboard database file named `1.xlsx` in this folder:")
-    st.code(os.getcwd())
+    st.info("Please place your cardboard database file named `1.xlsx` in this folder.")
     st.stop()
 
 # ==============================================================================
@@ -417,92 +216,6 @@ if assembly_mode and prod_wt == 0.0:
     st.warning("⚠️ **Assembly Weight Required:** Please enter the total assembly weight in the sidebar to proceed.")
     st.stop()
 
-# ==============================================================================
-# 4. RECOMMENDATION SYSTEM MATHEMATICS
-# ==============================================================================
-def calculate_packing(box_int_l, box_int_w, box_int_h, p_l, p_w, p_h, rule, enforce_lot=False, lot_multiplier=24):
-    dims = sorted([p_l, p_w, p_h])
-    h_dim, w_dim, l_dim = dims[0], dims[1], dims[2]
-    if rule == "Force Flat Packing Only":
-        orientations = [(l_dim, w_dim, h_dim), (w_dim, l_dim, h_dim)]
-    elif rule == "Force Standing on Edge":
-        orientations = [(l_dim, h_dim, w_dim), (h_dim, l_dim, w_dim)]
-    elif rule == "Force Standing Vertical":
-        orientations = [(w_dim, h_dim, l_dim), (h_dim, w_dim, l_dim)]
-    else:
-        orientations = [
-            (p_l, p_w, p_h), (p_l, p_h, p_w),
-            (p_w, p_l, p_h), (p_w, p_h, p_l),
-            (p_h, p_l, p_w), (p_h, p_w, p_l)
-        ]
-    best_qty = 0
-    best_config = (p_l, p_w, p_h)
-    best_grid_layout = (0, 0, 0)
-    for px, py, pz in orientations:
-        nx = max(0, int((box_int_l - (2 * clear_side) + sep_xy) // (px + sep_xy)))
-        ny = max(0, int((box_int_w - (2 * clear_side) + sep_xy) // (py + sep_xy)))
-        nz = max(0, int((box_int_h - clear_height + sep_z) // (pz + sep_z)))
-        total_parts = nx * ny * nz
-        if total_parts > best_qty:
-            best_qty = total_parts
-            best_config = (px, py, pz)
-            best_grid_layout = (nx, ny, nz)
-    if enforce_lot and best_qty >= lot_multiplier:
-        aligned_qty = (best_qty // lot_multiplier) * lot_multiplier
-        return aligned_qty, best_config, best_grid_layout, best_qty
-    return best_qty, best_config, best_grid_layout, best_qty
-
-def determine_placement_style(p_l, p_w, p_h, oz):
-    dims = sorted([p_l, p_w, p_h])
-    if int(oz) == int(dims[0]):
-        return "🟢 FLAT / HORIZONTAL (Resting on wide base, most stable)"
-    elif int(oz) == int(dims[1]):
-        return "⚠️ STANDING ON SIDE / EDGE"
-    else:
-        return "🚨 STANDING VERTICAL / ON END (Unstable, prone to tipping)"
-
-def estimate_box_weight(ext_l, ext_w, ext_h, quality):
-    if pd.isna(ext_l) or pd.isna(ext_w) or pd.isna(ext_h):
-        return 0.15
-    sheet_l_m = (2 * (ext_l + ext_w) + 40) / 1000.0
-    sheet_w_m = (ext_h + ext_w) / 1000.0
-    flat_area = sheet_l_m * sheet_w_m
-    grammage_map = {'1.20B': 0.40, '1.20C': 0.45, '2.30EB': 0.70, '2.30BC': 0.85}
-    g = grammage_map.get(str(quality).strip(), 0.50)
-    return flat_area * g
-
-# Helper to retrieve either manual fine-tuned or max default quantity & package weight
-# Helper to retrieve either manual fine-tuned or max default quantity & package weight
-def get_live_box_metrics(row, weight_per_part):
-    box_spec = row["Box ID / Specification"]
-    qty_key = f"manual_qty_{box_spec}"
-    default_max_qty = int(row["No of Parts per Box"])
-    # If the user has manually tuned the quantity, fetch it from session_state
-    active_qty = int(st.session_state.get(qty_key, default_max_qty))
-    
-    # Recalculate dynamic package weight
-    ext_l = row.get("Ext. Length [mm]") if "Ext. Length [mm]" in row else row.get("Ext. Length [mm]")
-    
-    # Robust Width Lookup: Check both spacing variations
-    ext_w = row.get("Ext.Width [mm]") if "Ext.Width [mm]" in row else row.get("Ext. Width [mm]")
-    
-    ext_h = row.get("Ext. Height [mm]") if "Ext. Height [mm]" in row else row.get("Ext. Height [mm]")
-    
-    box_weight = estimate_box_weight(ext_l, ext_w, ext_h, row["Flute Type"] if "Flute Type" in row else row.get("Quality"))
-    live_total_weight = round((active_qty * weight_per_part) + box_weight, 2)
-    
-    # Recalculate volumetric efficiency based on active loaded parts
-    single_part_vol = prod_l * prod_w * prod_h
-    
-    # Robust Internal Dimension Lookups
-    int_l = row.get("Int.Length [mm]") if "Int.Length [mm]" in row else row.get("Int. Length [mm]")
-    int_w = row.get("Width [mm]") if "Width [mm]" in row else row.get("Int. Width [mm]")
-    int_h = row.get("Height [mm]") if "Height [mm]" in row else row.get("Int. Height [mm]")
-    
-    box_internal_vol = int_l * int_w * int_h
-    live_vol_efficiency = round(((active_qty * single_part_vol) / box_internal_vol) * 100, 2)
-    
-    return active_qty, live_total_weight, live_vol_efficiency
 
 # ==============================================================================
 # 5. EXECUTE CALCULATION ENGINE
@@ -526,12 +239,13 @@ for idx, row in df_inventory.iterrows():
             continue
             
     parts_count, pack_orient, grid_layout, raw_max_qty = calculate_packing(
-        box_int_l, box_int_w, box_int_h, 
-        prod_l, prod_w, prod_h,
-        orientation_rule,
-        lot_alignment_enabled,
-        lot_step
-    )
+    box_int_l, box_int_w, box_int_h, 
+    prod_l, prod_w, prod_h,
+    orientation_rule,
+    clear_side, clear_height, sep_xy, sep_z,  # 🌟 ADDED THESE SPACES
+    lot_alignment_enabled,
+    lot_step
+)
     if parts_count == 0:
         continue
         
@@ -652,11 +366,16 @@ if results:
         st.session_state["global_selected_box"] = current_best_box
         
     def sync_from_tab1():
-        st.session_state["global_selected_box"] = st.session_state["tab1_box_selector"]
+        if "tab1_box_selector" in st.session_state:
+            st.session_state["global_selected_box"] = st.session_state["tab1_box_selector"]
+
     def sync_from_tab2():
-        st.session_state["global_selected_box"] = st.session_state["tab2_box_selector"]
+        if "tab2_box_selector" in st.session_state:
+            st.session_state["global_selected_box"] = st.session_state["tab2_box_selector"]
+
     def sync_from_tab3():
-        st.session_state["global_selected_box"] = st.session_state["tab3_box_selector"]
+        if "tab3_box_selector" in st.session_state:
+            st.session_state["global_selected_box"] = st.session_state["tab3_box_selector"]
         
     st.session_state["tab1_box_selector"] = st.session_state["global_selected_box"]
     st.session_state["tab2_box_selector"] = st.session_state["global_selected_box"]
@@ -668,8 +387,28 @@ if results:
         except (ValueError, KeyError):
             return 0
             
-    # FIXED: Header KPI cards always display Rank-1 box based on priority sorted table
-    viz_box_rank1 = sorted_df.iloc[0] if not sorted_df.empty else None
+    # ==============================================================================
+    # DYNAMIC FREIGHT-AWARE HEADER RECOMMENDATION (FIXED)
+    # ==============================================================================
+    # 1. Retrieve current transport selection from global session state
+    active_freight_mode = st.session_state.get("global_freight_mode", "All Freight Modes")
+    
+    # 2. Map standard flutes based on BSH engineering selection
+    if "Land" in active_freight_mode:
+        header_flutes = ["2.30EB"]
+    elif "Sea" in active_freight_mode:
+        header_flutes = ["2.30BC"]
+    else:
+        header_flutes = ["2.30EB", "2.30BC"]
+
+    # 3. Apply active filters to identify the actual Rank-1 box for this transport mode
+    header_filtered_df = sorted_df[sorted_df["Flute Type"].isin(header_flutes)].copy()
+    
+    # Use the filtered winner (with a safe fallback to the general winner if empty)
+    if not header_filtered_df.empty:
+        viz_box_rank1 = header_filtered_df.iloc[0]
+    else:
+        viz_box_rank1 = sorted_df.iloc[0] if not sorted_df.empty else None
     
     # Retrieves manually selected blueprint box and binds live metrics
     viz_box_active = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0] if not sorted_df.empty else None
@@ -685,7 +424,13 @@ if results:
     with col_safety_header:
         if viz_box_rank1 is not None:
             # Check dynamic weight of Rank-1 box using fine-tuned quantity
-            r1_active_qty, r1_active_wt, _ = get_live_box_metrics(viz_box_rank1, prod_wt)
+            # 1. Fetch live metrics
+            r1_live_qty, r1_live_wt, r1_live_eff = get_live_box_metrics(viz_box_rank1, prod_wt, prod_l, prod_w, prod_h, clear_side, clear_height)
+
+            # 2. Bridge variables so both safety checks and KPI blocks work perfectly 🌟
+            r1_active_wt = r1_live_wt
+            r1_active_qty = r1_live_qty
+
             if r1_active_wt > 17.0:
                 st.markdown(f"""
                     <div style='background-color:rgba(239, 68, 68, 0.15); border-left:5px solid #ef4444; padding:15px; border-radius:10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-top:10px;'>
@@ -714,7 +459,7 @@ if results:
     st.success(f"Connected to Cardboard Database: `{filename_loaded}` | Qualifying Options: {len(sorted_df)}")
     
     # FIXED: Best matched insights dynamically reflect the fine-tuned loaded quantities and calculated weights
-    r1_live_qty, r1_live_wt, r1_live_eff = get_live_box_metrics(viz_box_rank1, prod_wt)
+    r1_live_qty, r1_live_wt, r1_live_eff = get_live_box_metrics(viz_box_rank1, prod_wt, prod_l, prod_w, prod_h, clear_side, clear_height)
     st.subheader("💡 Best Matched Packing Insights (Rank-1 Box)")
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
@@ -909,7 +654,31 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
         # Apply filters from active selection list
         active_filters = selected_flutes if selected_flutes else freight_flutes
         filtered_df = sorted_df[sorted_df["Flute Type"].isin(active_filters)].copy()
+
+        # 🌟 DYNAMIC FREIGHT MODE SYNC RESOLVER (FIXED) 🌟
+        # Initialize a state tracker for the last selected freight mode if it doesn't exist
+        if "last_freight_mode" not in st.session_state:
+            st.session_state["last_freight_mode"] = freight_mode
+
+        # Detect if the user has changed the freight mode dropdown
+        freight_mode_changed = (st.session_state["last_freight_mode"] != freight_mode)
+
+        if not filtered_df.empty:
+            qualifying_boxes_list = list(filtered_df["Box ID / Specification"].values)
+            new_top_filtered_box = qualifying_boxes_list[0]
             
+            # Force-reset to the top-ranking box if:
+            # 1. The freight mode changed, OR
+            # 2. The currently selected box is no longer qualifying in the list
+            if freight_mode_changed or (st.session_state.get("global_selected_box") not in qualifying_boxes_list):
+                st.session_state["global_selected_box"] = new_top_filtered_box
+                st.session_state["tab1_box_selector"] = new_top_filtered_box
+                st.session_state["tab2_box_selector"] = new_top_filtered_box
+                st.session_state["tab3_box_selector"] = new_top_filtered_box
+                st.session_state["last_freight_mode"] = freight_mode  # Sync tracker state
+                
+                # Force an immediate rerun to refresh the header KPI cards and blueprint dropdowns
+                st.rerun()    
         keep_columns = [
             "Box ID / Specification",
             "Box Footprint (Ext)",
@@ -1413,20 +1182,30 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
         row_alt1, found1 = get_resolved_directive_row(df_inventory, alt1_l, alt1_w, alt1_h, alt1_q)
         row_alt2, found2 = get_resolved_directive_row(df_inventory, alt2_l, alt2_w, alt2_h, alt2_q)
         
-        # Calculate maximum default pack counts
+        # 1. Correct Alt I packing calculation with explicit spacing buffers
         qty_alt1, _, _, _ = calculate_packing(
             row_alt1['Int.Length [mm]'], row_alt1['Width [mm]'], row_alt1['Height [mm]'],
-            prod_l, prod_w, prod_h, orientation_rule, lot_alignment_enabled, lot_step
+            prod_l, prod_w, prod_h, 
+            orientation_rule, 
+            clear_side, clear_height, sep_xy, sep_z,  # Explicit spacing buffers
+            lot_alignment_enabled, 
+            lot_step
         )
         row_alt1["No of Parts per Box"] = qty_alt1
+        
+        # 2. Correct Alt II packing calculation with explicit spacing buffers
         qty_alt2, _, _, _ = calculate_packing(
             row_alt2['Int.Length [mm]'], row_alt2['Width [mm]'], row_alt2['Height [mm]'],
-            prod_l, prod_w, prod_h, orientation_rule, lot_alignment_enabled, lot_step
+            prod_l, prod_w, prod_h, 
+            orientation_rule, 
+            clear_side, clear_height, sep_xy, sep_z,  # Explicit spacing buffers (FIXED)
+            lot_alignment_enabled, 
+            lot_step
         )
         row_alt2["No of Parts per Box"] = qty_alt2
         
         # CVSE Recommendation remains fully dynamic & reactive to the manual slider:
-        cvse_pcs, cvse_box_wt, _ = get_live_box_metrics(viz_box_rank1, prod_wt)
+        cvse_pcs, cvse_box_wt, _ = get_live_box_metrics(viz_box_rank1, prod_wt, prod_l, prod_w, prod_h, clear_side, clear_height)
         
         # Reference Alternatives remain strictly fixed to their calculated geometric capacities:
         a1_pcs = int(row_alt1["No of Parts per Box"])
@@ -1462,8 +1241,9 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
         cost_cvse = bt_cvse * viz_box_rank1["Box Price (€)"]
         cost_a1 = bt_a1 * row_alt1["Box Price (€)"]
         cost_a2 = bt_a2 * row_alt2["Box Price (€)"]
-        potential_saving_alt1 = max(0.0, cost_a1 - cost_cvse)
-        potential_saving_alt2 = max(0.0, cost_a2 - cost_cvse)
+        # Calculate actual delta savings
+        potential_saving_alt1 = cost_a1 - cost_cvse
+        potential_saving_alt2 = cost_a2 - cost_cvse
         
         st.markdown("### 📊 Executive Yield & Cost Impact Overview")
         
@@ -1474,60 +1254,97 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
         yield_cvse_class = "win" if pcs_cvse >= max(pcs_a1, pcs_a2) else "val"
         yield_a1_class = "win" if pcs_a1 > max(pcs_cvse, pcs_a2) else "val"
         yield_a2_class = "win" if pcs_a2 > max(pcs_cvse, pcs_a1) else "val"
-        
+        # 1. Helper function to dynamically determine CSS color style and Overweight label
+        def get_box_weight_markup(wt, limit):
+            if wt < limit:
+                return "color: #22c55e;", f"{wt:.2f} kg"  # 🟢 Green (Safe)
+            elif wt <= 17.0:
+                return "color: #f59f00;", f"{wt:.2f} kg (Moderate)"  # 🟠 Orange (Caution)
+            else:
+                return "color: #ef4444;", f"{wt:.2f} kg (Overweight!)"  # 🔴 Red (Danger)
+
+        # 2. Resolve weights for all three options dynamically
+        cvse_color, cvse_weight_text = get_box_weight_markup(cvse_box_wt, max_box_weight_limit)
+        a1_color, a1_weight_text = get_box_weight_markup(a1_box_wt, max_box_weight_limit)
+        a2_color, a2_weight_text = get_box_weight_markup(a2_box_wt, max_box_weight_limit)
+
+        # 3. Dynamic Savings/Loss formatting for CVSE (Card 1) vs Alt 1
+        if potential_saving_alt1 > 0:
+            saving_text_alt1 = f"€ {potential_saving_alt1:.2f} Save"
+            saving_class_alt1 = "val saving"  # Green background pill style
+        elif potential_saving_alt1 < 0:
+            saving_text_alt1 = f"+ € {abs(potential_saving_alt1):.2f} Cost"
+            saving_class_alt1 = "val danger"  # Red text style
+        else:
+            saving_text_alt1 = "€ 0.00 (Neutral)"
+            saving_class_alt1 = "val"
+
+        # 4. Dynamic Savings/Loss formatting for Alt 2 (Card 3) vs CVSE
+        if potential_saving_alt2 > 0:
+            saving_text_alt2 = f"€ {potential_saving_alt2:.2f} Save"
+            saving_style_alt2 = "color: #22c55e;" # Green text style
+        elif potential_saving_alt2 < 0:
+            saving_text_alt2 = f"+ € {abs(potential_saving_alt2):.2f} Loss"
+            saving_style_alt2 = "color: #ef4444; font-weight:700;" # Red text style
+        else:
+            saving_text_alt2 = "€ 0.00 (Neutral)"
+            saving_style_alt2 = "color: #64748b;"
+
+        # ==============================================================================
+        # RENDER DYNAMIC EXECUTIVE CARDS
+        # ==============================================================================
         card_col1, card_col2, card_col3 = st.columns(3)
         with card_col1:
-            st.markdown(f"""
-<div class="comp-card hero" style="min-height: 380px;">
+            st.markdown(f"""<div class="comp-card hero" style="min-height: 380px;">
     <div class="hero-badge">👑 CVSE Optimized</div>
     <div class="card-header">
-        <h3 style="color: var(--text-color);">{viz_box_rank1['Box ID / Specification']}</h3>
-        <div class="dims">{int(viz_box_rank1['Ext. Length [mm]'])}x{int(viz_box_rank1['Ext. Width [mm]'])}x{int(viz_box_rank1['Ext. Height [mm]'])} mm</div>
+    <h3 style="color: var(--text-color);">{viz_box_rank1['Box ID / Specification']}</h3>
+    <div class="dims">{int(viz_box_rank1['Ext. Length [mm]'])}x{int(viz_box_rank1['Ext. Width [mm]'])}x{int(viz_box_rank1['Ext. Height [mm]'])} mm</div>
     </div>
     <div class="metric-row"><span class="label">Quality</span><span class="val">{viz_box_rank1['Quality Class']}</span></div>
     <div class="metric-row"><span class="label">Parts / Box</span><span class="val">{cvse_pcs} Pcs</span></div>
     <div class="metric-row"><span class="label">Total Pallet Yield</span><span class="val {yield_cvse_class}">{pcs_cvse} Pcs</span></div>
     <div class="metric-row"><span class="label">Gross Weight</span><span class="val {wt_cvse_class}">{wt_cvse} kg</span></div>
+    <div class="metric-row"><span class="label">Single Box Weight</span><span class="val" style="{cvse_color}">{cvse_weight_text}</span></div>
     <div class="metric-row" style="margin-top:12px; border-top:1px dashed rgba(148,163,184,0.3); padding-top:10px;">
-        <span class="label">Total Box Cost</span><span class="val">€ {cost_cvse:.2f}</span>
+    <span class="label">Total Box Cost</span><span class="val">€ {cost_cvse:.2f}</span>
     </div>
-    <div class="metric-row"><span class="label">Saving (vs Alt I)</span><span class="val saving">€ {potential_saving_alt1:.2f} Save</span></div>
-</div>
-""", unsafe_allow_html=True)
+    <div class="metric-row"><span class="label">Saving (vs Alt I)</span><span class="{saving_class_alt1}">{saving_text_alt1}</span></div>
+    </div>""", unsafe_allow_html=True)
+
         with card_col2:
-            st.markdown(f"""
-<div class="comp-card" style="min-height: 380px;">
+            st.markdown(f"""<div class="comp-card" style="min-height: 380px;">
     <div class="card-header">
-        <h3 style="color: var(--text-color);">Packaging Directive Alt 1</h3>
-        <div class="dims">{int(alt1_l)}x{int(alt1_w)}x{int(alt1_h)} mm</div>
+    <h3 style="color: var(--text-color);">Packaging Directive Alt 1</h3>
+    <div class="dims">{int(alt1_l)}x{int(alt1_w)}x{int(alt1_h)} mm</div>
     </div>
     <div class="metric-row"><span class="label">Quality</span><span class="val">{alt1_q}</span></div>
     <div class="metric-row"><span class="label">Parts / Box</span><span class="val">{a1_pcs} Pcs</span></div>
     <div class="metric-row"><span class="label">Total Pallet Yield</span><span class="val {yield_a1_class}">{pcs_a1} Pcs</span></div>
     <div class="metric-row"><span class="label">Gross Weight</span><span class="val {wt_a1_class}">{wt_a1} kg</span></div>
+    <div class="metric-row"><span class="label">Single Box Weight</span><span class="val" style="{a1_color}">{a1_weight_text}</span></div>
     <div class="metric-row" style="margin-top:12px; border-top:1px dashed rgba(148,163,184,0.3); padding-top:10px;">
-        <span class="label">Total Box Cost</span><span class="val">€ {cost_a1:.2f}</span>
+    <span class="label">Total Box Cost</span><span class="val">€ {cost_a1:.2f}</span>
     </div>
     <div class="metric-row"><span class="label">Saving (vs Alt I)</span><span class="val" style="color: #64748b;">Baseline Reference</span></div>
-</div>
-""", unsafe_allow_html=True)
+    </div>""", unsafe_allow_html=True)
+
         with card_col3:
-            st.markdown(f"""
-<div class="comp-card" style="min-height: 380px;">
+            st.markdown(f"""<div class="comp-card" style="min-height: 380px;">
     <div class="card-header">
-        <h3 style="color: var(--text-color);">Packaging Directive Alt 2</h3>
-        <div class="dims">{int(alt2_l)}x{int(alt2_w)}x{int(alt2_h)} mm</div>
+    <h3 style="color: var(--text-color);">Packaging Directive Alt 2</h3>
+    <div class="dims">{int(alt2_l)}x{int(alt2_w)}x{int(alt2_h)} mm</div>
     </div>
     <div class="metric-row"><span class="label">Quality</span><span class="val">{alt2_q}</span></div>
     <div class="metric-row"><span class="label">Parts / Box</span><span class="val">{a2_pcs} Pcs</span></div>
     <div class="metric-row"><span class="label">Total Pallet Yield</span><span class="val {yield_a2_class}">{pcs_a2} Pcs</span></div>
     <div class="metric-row"><span class="label">Gross Weight</span><span class="val {wt_a2_class}">{wt_a2} kg</span></div>
+    <div class="metric-row"><span class="label">Single Box Weight</span><span class="val" style="{a2_color}">{a2_weight_text}</span></div>
     <div class="metric-row" style="margin-top:12px; border-top:1px dashed rgba(148,163,184,0.3); padding-top:10px;">
-        <span class="label">Total Box Cost</span><span class="val">€ {cost_a2:.2f}</span>
+    <span class="label">Total Box Cost</span><span class="val">€ {cost_a2:.2f}</span>
     </div>
-    <div class="metric-row"><span class="label">Saving (vs CVSE)</span><span class="val" style="color: #ef4444; font-weight:700;">+ € {potential_saving_alt2:.2f} Loss</span></div>
-</div>
-""", unsafe_allow_html=True)
+    <div class="metric-row"><span class="label">Saving (vs CVSE)</span><span class="val" style="{saving_style_alt2}">{saving_text_alt2}</span></div>
+    </div>""", unsafe_allow_html=True)
         
         # FIXED: Priority score winner check based on live recalculations
         best_overall_box_spec = viz_box_rank1["Box ID / Specification"]
@@ -1558,7 +1375,7 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
         viz_box_t2 = sorted_df[sorted_df["Box ID / Specification"] == st.session_state["global_selected_box"]].iloc[0]
         
         # Pull dynamically adjusted active loading metrics
-        active_t2_pcs, active_t2_wt, _ = get_live_box_metrics(viz_box_t2, prod_wt)
+        active_t2_pcs, active_t2_wt, _ = get_live_box_metrics(viz_box_t2, prod_wt, prod_l, prod_w, prod_h, clear_side, clear_height)
         bx_ext_l = viz_box_t2["Ext. Length [mm]"]
         bx_ext_w = viz_box_t2["Ext. Width [mm]"]
         bx_ext_h = viz_box_t2["Ext. Height [mm]"]
@@ -1832,7 +1649,7 @@ with st.expander("🔐 Admin Panel: View Collected Feedback"):
         bx_ext_h_t3 = viz_box_t3["Ext. Height [mm]"]
         
         # FIXED: McKee dynamically grabs the fine-tuned live quantity & weight rather than the database defaults
-        active_t3_pcs, active_t3_wt, _ = get_live_box_metrics(viz_box_t3, prod_wt)
+        active_t3_pcs, active_t3_wt, _ = get_live_box_metrics(viz_box_t2, prod_wt, prod_l, prod_w, prod_h, clear_side, clear_height)
         
         _, z_layers_calc_t3, best_layer_qty_t3, _, p_wt_calc_t3, _, _, _ = calculate_pallet_stacking(
             1200, 800, bx_ext_l_t3, bx_ext_w_t3, bx_ext_h_t3, active_t3_wt, active_t3_pcs
